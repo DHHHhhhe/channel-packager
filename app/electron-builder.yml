@@ -20,6 +20,8 @@ extraResources:
 
 win:
   target: portable
+  # build/icon.ico 由 scripts/make-icon.ps1 生成，改图形重跑该脚本即可
+  icon: build/icon.ico
 
 portable:
   artifactName: 渠道分包工具-${version}.exe
