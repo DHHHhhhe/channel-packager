@@ -7,3 +7,15 @@
 # picking either side (task state lives in task.json, not index.md). See
 # .trellis/spec/cli/backend/directory-structure.md for details.
 .trellis/workspace/*/journal-*.md merge=union
+
+# 行尾统一为 LF。本机 core.autocrlf=true，若不在此固定，检出时会被改写成 CRLF，
+# 使工作区出现整仓库的假改动。
+* text=auto eol=lf
+
+# 二进制文件不做行尾转换
+*.jar binary
+*.jks binary
+*.apk binary
+*.png binary
+*.ico binary
+*.exe binary
