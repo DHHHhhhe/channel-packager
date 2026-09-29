@@ -60,6 +60,11 @@ export function addKeystore(sourcePath: string, options: AddKeystoreOptions = {}
   const keystoreFile = keystoreRelativePath(id)
   fs.copyFileSync(sourcePath, resolveInData(keystoreFile))
 
+  const derivedAlias = deriveAlias(sourcePath)
+  const derivedPassword = derivePassword(sourcePath)
+  const alias = options.alias ?? derivedAlias
+  const storePassword = options.storePassword ?? derivedPassword
+
   const item: JksItem = {
     id,
     displayName: options.displayName ?? path.basename(sourcePath),
@@ -67,12 +72,13 @@ export function addKeystore(sourcePath: string, options: AddKeystoreOptions = {}
     sourcePath,
     sha256,
     fileSize: stat.size,
-    alias: options.alias ?? deriveAlias(sourcePath),
-    storePassword: options.storePassword ?? derivePassword(sourcePath),
+    alias,
+    storePassword,
     app: options.app ?? id,
-    // 用户只要动过别名或口令，就不再算规律推导出来的
+    // 判定依据是最终值是否等于按文件名推导的结果。界面会先自动带出再让用户改，
+    // 所以不能看「调用方有没有传值」——那样永远都是手工，这个字段就失去意义了
     credentialSource:
-      options.alias !== undefined || options.storePassword !== undefined ? 'manual' : 'derived',
+      alias === derivedAlias && storePassword === derivedPassword ? 'derived' : 'manual',
     importedAt: new Date().toISOString(),
   }
 

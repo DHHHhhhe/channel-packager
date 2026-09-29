@@ -101,6 +101,9 @@
  ---break---
  */
 :root {
+  /* 布局尺寸：来自参考站实测值，类名里用 w-[var(--sidebar-width)] 消费，不散落魔法数字 */
+  --sidebar-width: 272px;
+  --topbar-height: 48px;
   --background:
     oklch(1 0 0);
   --foreground:

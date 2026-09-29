@@ -149,19 +149,45 @@ node -e "const c=require('./channelConfig.sample.json');const t=c.channelInfoLis
 
 ## 阶段 4：UI 与拖拽
 
-- [ ] `renderer/styles.css`：写入 `design.md`「设计系统」的 light/dark 令牌（CSS 变量），Tailwind v4 用 `@theme inline` 映射，shadcn/ui 组件直接消费 —— **不逐处硬编码色值**。
-- [ ] 字体栈含中文回退（`"Geist", "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC", system-ui, sans-serif`）。Geist 的 Latin 子集自托管（woff2，约 30–50 KB），**不引 CDN** —— 应用须离线可用。
-- [ ] 布局骨架对齐参考站实测值：侧边栏 `272px`、顶栏 `48px`（sticky + 底部 1px 边框）、卡片圆角 `14px`。
-- [ ] `preload/index.js`：`contextBridge` 暴露白名单 API，含 `webUtils.getPathForFile`。
-- [ ] 主界面：拖拽区 / 文件选择框 → 显示所选 APK 路径。
-- [ ] jks 列表：新增（含「套用模板」「导入 JSON」两个选项）、编辑、删除（带确认，**删副本**）。列表显示来源路径与 SHA256 前 8 位，并提供「从原文件重新导入」按钮。
-- [ ] 渠道列表：增删改查表格，渠道必填、别名选填。
-- [ ] 模板编辑页：独立于任何 jks，改它不影响已有副本。
-- [ ] 出包页：选 jks → 勾渠道 → 选输出目录（默认 `<APK 同级>\渠道包\`）→ 选签名模式 → 开始。
-- [ ] 进度区：阶段提示 + 实时输出行。
-- [ ] 密码框旁常驻明文存储提示。
+- [x] `renderer/styles.css`：写入 `design.md`「设计系统」的 light/dark 令牌（CSS 变量），Tailwind v4 用 `@theme inline` 映射，shadcn/ui 组件直接消费 —— **不逐处硬编码色值**。shadcn 生成的 oklch 令牌与 `design.md` 的十六进制表逐项核对一致，未改写。
+- [x] 字体栈含中文回退（`"Geist Variable", "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif`）。Geist 的 Latin 子集自托管（`dist/assets/geist-latin-*.woff2`，29.4 KB），**无 CDN**。
+- [x] 布局骨架对齐参考站实测值：侧边栏 `272px`、顶栏 `48px`（sticky + 底部 1px 边框）、卡片圆角 `14px`。另按 `design.md` 修了四处 shadcn 默认值与设计稿的偏差（卡片纵向内边距 12px、卡片标题 14px、表头 44px/`px-3`、单元格 `p-3`、按钮 36px、输入框圆角 8px）。
+- [x] `preload/preload.ts`：`contextBridge` 暴露白名单 API，含 `webUtils.getPathForFile`。
+- [x] 主界面：拖拽区 / 文件选择框 → 显示所选 APK 路径。拖拽用 `webUtils.getPathForFile`（Electron ≥32 已移除 `File.path`）；并在 `main.tsx` 全局 `preventDefault` 掉 `dragover`/`drop`，否则文件拖到窗口空白处会让 Electron 直接导航过去。
+- [x] jks 列表：新增（含「套用模板」「导入 JSON」两个选项）、编辑、删除（带确认，**删副本**）。列表显示来源路径与 SHA256 前 8 位，并提供「从原文件重新导入」按钮。
+- [x] 渠道列表：增删改查表格，渠道必填、别名选填；附「按模板生成」与渠道名去重校验。
+- [x] 模板编辑页：独立于任何 jks，改它不影响已有副本。
+- [x] 出包页：选 jks → 勾渠道 → 选输出目录（默认 `<APK 同级>\渠道包\`）→ 选签名模式 → 开始。「开始出包」按钮先置灰并提示待阶段 5 接入。
+- [x] 进度区：`ProgressPanel` 只吃「阶段文案 + 原始输出行」，不预设事件结构，待阶段 5 由 `task:progress` 填充。
+- [x] 密码框旁常驻明文存储提示。
 
 **验证**：手动走查全部验收项中的界面部分；重点验证「改副本不影响模板」与「中文未掉到系统默认字体」。
+
+> **阶段 4 实测结果**（CDP 驱动真实界面：真实鼠标事件、`DOM.setFileInputFiles` 选文件，一次性 jks 现场生成）：
+>
+> | 走查项 | 结果 |
+> |---|---|
+> | 侧边栏 / 顶栏 / 卡片圆角 / 卡片纵向内边距 / 卡片 gap / 卡片 header 左内边距 / 卡片标题字号 | `272px` / `48px` / `14px` / `12px` / `12px` / `16px` / `14px`，与设计稿逐项一致 |
+> | 中文字形实际用哪个字体（宽度比对） | 中文五种写法都渲染成 `112px` —— 显式中文回退在这台机器上是保险，不是可观测差异；英文栈宽 `142.47` 与纯 Geist 完全一致、与雅黑/system-ui 的 `148.01` 不同，**确认 Latin 走的是 Geist** |
+> | 模板页改两行后保存 | 保存前提示「有未保存的修改」，保存后提示消失，状态文案「模板已保存。」 |
+> | 后缀重复校验 | 把后缀改成种子里已有的 `gf` 时被拦下，提示「后缀重复：gf」，未写盘 |
+> | 新增 jks 选文件后自动带出 | 路径 / 显示名 `uitest.jks` / 别名 `uitest` / 口令 `uitest@123` / 应用名 `uitest` |
+> | 明文存储提示 | 常驻显示 |
+> | 勾「套用模板」后前缀默认值 | `uitest`（等于 jks 文件名） |
+> | 新增后落库 | 表格出现 `uitest.jks`，凭据来源徽章「推导」，SHA256 前 8 位显示 |
+> | 生成副本（13 条模板 × 前缀） | 渠道名 `uitest_uitest_a`、`uitest_uitest_b`、`uitest_tx_flow`…，别名与 `defaultExtraInfo.app = uitest` 均正确 |
+> | 删 1 条渠道并保存 | 13 → 12，提示「渠道列表已保存。」 |
+> | **改副本是否波及模板** | `template.json` 仍 **13** 条、前两条仍是 `uitest_a/走查甲`、`uitest_b/走查乙`（**未被加前缀**）；`channels/uitest.json` 12 条带前缀 —— 两者完全独立 |
+> | 换掉原文件后「从原文件重新导入」 | 「原文件已变化（SHA256 7ac03395），副本未自动同步。如需更新，请删除后重新新增。」 |
+> | 删除 jks 的确认框 | 标题「删除 uitest.jks」+ 说明「会同时删除 data/keystores/ 下的副本与它的渠道列表，无法撤销。原文件不受影响。」 |
+> | 确认删除后 | 表格剩 0 行；`keystores/`、`channels/` 目录都空了；`jks.json` 的 `items` 为空 |
+> | 页面运行时错误 | `[]`（全程无 React 报错） |
+>
+> **顺带修掉的字段语义 bug**：`addKeystore` 原先按「调用方有没有传 alias/storePassword」判定 `credentialSource`。界面总是先自动带出再传值，导致该字段恒为 `manual`、徽章恒显示「手工」。改为比对最终值是否等于按文件名推导的结果，徽章才正确显示「推导」。
+>
+> **新增时的凭据校验顺序**：R21 要求校验只读副本，而新增时副本还不存在。实现取「先建副本与条目 → 按副本校验 → 不通过就把条目与副本一起删掉」，净效果等同于没保存，既不绕过副本约束，也不会留下半条脏数据。
+>
+> **「导入 JSON」落在渲染层**：用 `<input type="file">` + `file.text()` 读内容，不走 `channels:import` IPC（那是阶段 6 配置包导入用的）。K3「原样导入」照办，只取 `channelInfoList`，`defaultExtraInfo.app` 仍取该 jks 的 `app`。
 
 ## 阶段 5：出包流水线
 
