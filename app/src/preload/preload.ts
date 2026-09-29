@@ -2,6 +2,14 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IPC_CHANNELS } from '../shared/constants/channels'
 import type { RendererApi } from '../shared/types/api'
 import type { RuntimeCheckResult } from '../shared/types/runtime'
+import type {
+  ChannelConfig,
+  JksMutation,
+  JksMutationResult,
+  RefreshResult,
+  StoreSnapshot,
+  TemplateFile,
+} from '../shared/types/store'
 
 /**
  * 渲染进程触达宿主的唯一入口。
@@ -20,6 +28,30 @@ const api: RendererApi = {
 
   checkRuntime(): Promise<RuntimeCheckResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.runtimeCheck)
+  },
+
+  loadStore(): Promise<StoreSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.storeLoad)
+  },
+
+  saveJks(mutation: JksMutation): Promise<JksMutationResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.storeSaveJks, mutation)
+  },
+
+  refreshJksFromSource(id: string): Promise<RefreshResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.jksRefreshFromSource, id)
+  },
+
+  getChannels(id: string): Promise<ChannelConfig> {
+    return ipcRenderer.invoke(IPC_CHANNELS.storeGetChannels, id)
+  },
+
+  saveChannels(id: string, config: ChannelConfig): Promise<ChannelConfig> {
+    return ipcRenderer.invoke(IPC_CHANNELS.storeSaveChannels, id, config)
+  },
+
+  saveTemplate(template: TemplateFile): Promise<TemplateFile> {
+    return ipcRenderer.invoke(IPC_CHANNELS.storeSaveTemplate, template)
   },
 }
 

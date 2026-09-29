@@ -79,13 +79,21 @@ Rename-Item app\resources\bin\apksigner.jar.bak app\resources\bin\apksigner.jar
 
 ## 阶段 2：配置存储层
 
-- [ ] `src/main/store.js`：读写 `data/jks.json`、`data/template.json`、`data/channels/<id>.json`、`data/keystores/`。
-- [ ] `src/main/paths.js`：数据根目录按 `design.md` 解析 —— **`PORTABLE_EXECUTABLE_DIR` 优先**（打包后 exe 真实目录），开发态回退工程目录；不可写则回退 `app.getPath('userData')`。同时 `app.setPath('userData', <dataDir>/.runtime)`，否则 Chromium 缓存会另落一份到 `%APPDATA%`。
-- [ ] **jks 副本导入**：新增时复制源文件到 `data/keystores/<id>.jks`，同时算 `sha256` 与 `fileSize` 记录。同 `id` 且 SHA256 相同 → 提示已存在并跳过；同 `id` 但 SHA256 不同 → 改用 `<id>_2`，**不覆盖**。
-- [ ] **删除 jks**：一并删除 `keystores/<id>.jks` 与 `channels/<id>.json`。
-- [ ] **刷新**：`jks:refreshFromSource` 读 `sourcePath` 算 SHA256 比对，返回「未变化 / 已变化 / 原文件不可访问」；**不自动同步**。
-- [ ] 从工作目录现有 `channelConfig.sample.json` 生成模板种子：取 13 条带别名的渠道，**剥掉 `demo_` 前缀**，得到 `{suffix, alias}` 列表。
-- [ ] 凭据推导函数：`deriveAlias(name)` → `<basename>`，`derivePassword(name)` → `<basename>@123`。
+- [x] `src/main/paths.ts`：数据根目录 **`PORTABLE_EXECUTABLE_DIR` 优先**，其次打包态取 exe 所在目录。
+  - **开发态不能用 `app.getPath('exe')`**（design.md 的示例代码就是这么写的）：开发时它指向 `node_modules/electron/dist/electron.exe`，数据会落进 node_modules 并被下一次重装清掉。开发态改用 `app.getAppPath()`，即 `app/data`。
+  - 可写性判断真写一个探针文件再删掉，而不是 `fs.access` —— 只读介质、ACL、杀软占用都可能让它说谎。
+  - `app.setPath('userData', <dataDir>/.runtime)`，否则 Chromium 缓存会另落一份到 `%APPDATA%`，便携版就不便携了。这一步必须在 ready 之前做。
+  - `data/` 不可写时回退 `app.getPath('userData')/data`（回退位置要在改写 userData **之前**取，否则取到的是改写后的值），并由 `usedFallback` 上报给界面。
+  - `resolveInData()` 解析相对路径并挡住 `../` 逃逸。
+- [x] `src/main/store.ts`：读写 `data/jks.json`、`data/template.json`、`data/channels/<id>.json`。
+  - 写入一律先写 `.tmp` 再 `rename`，中途崩溃不会把原文件截成半个 JSON。
+  - JSON 坏掉或缺失一律按「还没有」处理并给默认值，不让坏文件把应用卡在启动阶段。
+  - 首次启动把 `TEMPLATE_SEED` 落成 `data/template.json`，之后以文件为准。
+- [x] **jks 副本导入**：复制源文件到 `data/keystores/<id>.jks`，记录 `sha256` / `fileSize` / `sourcePath`。同 `id` 且 SHA256 相同 → `duplicate` 跳过；同 `id` 但 SHA256 不同 → 退到 `<id>_2`、`<id>_3`，**不覆盖**。新增时顺手建一份空渠道文件，保证 `channels/<id>.json` 与条目一一对应。
+- [x] **删除 jks**：先解析副本路径（越界即失败），再改列表，最后删副本与 `channels/<id>.json`。
+- [x] **刷新**：`jks:refreshFromSource` 读 `sourcePath` 算 SHA256 比对，返回 `unchanged` / `changed` / `source-unavailable`；**只报告差异，不自动同步**。
+- [x] 模板种子 `src/shared/constants/templateSeed.ts`：由 `channelConfig.sample.json` **脚本生成**（避免手抄中文别名出错），13 条 `{suffix, alias}`，已剥掉渠道前缀。固化进源码而不是运行时读文件 —— 打包后仓库文件不在，应用必须自包含。
+- [x] 凭据推导 `src/shared/utils/credentials.ts`：`deriveAlias()` → `<basename>`，`derivePassword()` → `<basename>@123`。放在 shared 是因为主进程导入时用，界面预填输入框时也要用。用户只要动过别名或口令，`credentialSource` 就记成 `manual`。
 
 **验证**
 
@@ -93,6 +101,21 @@ Rename-Item app\resources\bin\apksigner.jar.bak app\resources\bin\apksigner.jar
 # 模板种子应为 13 条，且 suffix 不含 demo_
 node -e "const c=require('./channelConfig.sample.json');const t=c.channelInfoList.filter(x=>x.alias).map(x=>({suffix:x.channel.replace(/^demo_/,''),alias:x.alias}));console.log(t.length);console.log(t)"
 ```
+
+> **阶段 2 实测结果**（用两份临时生成的测试 jks 跑完整链路，未碰真实私钥）：
+>
+> | 动作 | 结果 |
+> |---|---|
+> | `loadStore()` | `dataDir = app\data`、`usedFallback = false`、模板 13 条、`demo_` 前缀残留 0 |
+> | 新增 `dir1\testkey.jks` | `added`，`id = testkey`，`keystoreFile = keystores/testkey.jks`，别名与口令推导为 `testkey` / `testkey@123`，`credentialSource = derived` |
+> | 重复导入同一文件 | `duplicate`，提示「「testkey」已存在且内容相同，已跳过」 |
+> | 导入 `dir2\testkey.jks`（同基名、内容不同） | `added`，`id = testkey_2` —— **未覆盖** |
+> | `refreshJksFromSource` | 两份均 `unchanged`；不存在的 id 抛错 |
+> | 删除 `testkey` | 副本与 `channels/testkey.json` 均消失，`testkey_2` 完好 |
+>
+> `data/` 目录结构实测：`jks.json` / `template.json` / `keystores/` / `channels/` / `logs/` / `.runtime/`；Chromium 缓存全部落在 `.runtime/` 内，`%APPDATA%` 下没有另起一份。
+>
+> **界面要注意**：主进程 handler 抛出的错误，渲染层收到的是 `Error invoking remote method '<通道名>': Error: <真正的原因>`。阶段 4 展示错误时必须把这层前缀剥掉，否则用户看到的是通道名而不是问题本身。
 
 > **`keystoreFile` 是签名唯一路径。** 出包与 keytool 校验都只用 `data/keystores/` 下的副本，`sourcePath` 仅用于显示与刷新 —— 这是 R21 的核心，实现时别把两者混用。
 

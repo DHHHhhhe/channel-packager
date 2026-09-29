@@ -1,9 +1,22 @@
-import { app, BrowserWindow, session, shell } from 'electron'
+import { app, BrowserWindow, dialog, session, shell } from 'electron'
 import path from 'node:path'
 import { registerRuntimeIpc } from './ipc/runtime'
+import { registerStoreIpc } from './ipc/store'
+import { initPaths } from './paths'
 
 /** dev 时由 vite-plugin-electron 注入；打包后不存在 */
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
+
+// 必须在 ready 之前：app.setPath('userData') 要在此前生效，否则 Chromium 缓存会另落一份到 %APPDATA%
+try {
+  initPaths()
+} catch (error) {
+  dialog.showErrorBox(
+    '无法初始化数据目录',
+    error instanceof Error ? error.message : String(error),
+  )
+  app.exit(1)
+}
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -63,6 +76,7 @@ app.whenReady().then(() => {
 
   // 先注册 IPC，再建窗口：渲染层挂载时就会查运行时，晚了会拿到空结果
   registerRuntimeIpc()
+  registerStoreIpc()
 
   createWindow()
 
