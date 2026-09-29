@@ -332,8 +332,35 @@ console.log('一致', JSON.stringify(a.channelInfoList)===JSON.stringify(b.chann
 | 图标 | electron-builder 输出 | `default Electron icon is used` —— **未配应用图标**，分发时仍是 Electron 默认图标 |
 
 > **未能自动化的那一项**：打包版里「点导入配置包 → 原生对话框选包 → 预览 → 确认导入」这条链路没有跑通自动化，原因是本机**桌面会话处于锁屏状态**，且这个原生对话框把控件暴露成**没有任何 UIA Pattern 的 Pane**（文件名框 `class=Edit`、`AutoId=1001`，`GetSupportedPatterns()` 为空；保存按钮 `class=Button`、`AutoId=1`，无 `InvokePattern`），`WM_SETTEXT` 写进去也不生效。按键注入又只能送到锁屏界面。已确认到「点击 → `#32770` 对话框以正确标题弹出」这一步；对话框之后的逻辑由阶段 6 的测试入口覆盖（跑的是打包版所打包的同一份源码，导出/导入/冲突/SHA256 共 30 余项断言全绿）。若要补上这一段，需要一台解锁的机器，或用 `computer-use` 之类的系统级自动化。
->
-> 另需补的收尾项：**应用图标**（现在分发出去是 Electron 默认图标），以及 README 里把「只发 exe」与「发 exe + 配置包」两种分发语义写清楚。
+
+---
+
+## 收尾项（阶段 7 之后）
+
+| 项 | 状态 | 处理 |
+|---|---|---|
+| 应用图标 | 已解决 | 新增 `app/scripts/make-icon.ps1` 生成 `app/build/icon.ico`（16/24/32/48/64/128/256 七档 PNG 容器），`electron-builder.yml` 里 `win.icon` 指向它。重新打包后日志中 `default Electron icon is used` 消失，从 exe 里 `ExtractAssociatedIcon` 取出的 48×48 图标即新图形。exe 体积不变（113.9 MB） |
+| `package.json` 缺 `author` | 已解决 | 补 `author: dhhheee` 与 `license: MIT`，electron-builder 的 `author is missed` 警告消失 |
+| README | 已解决 | 新增根目录 `README.md`：功能对比、使用步骤、数据目录结构、配置包分发语义与明文口令警告、从源码构建（含 `prepare:runtime` 的产物来源表）、已知注意事项、第三方组件归属 |
+| LICENSE | 已解决 | 新增根目录 `LICENSE`（MIT，Copyright (c) 2026 dhhheee） |
+| `pnpm dist` 在本机不可用 | 已记录 | 写进 README 的「已知注意事项」。根因是 pnpm 把脚本体里的 `node` 替换成它自身运行所在的 Node，而本机 pnpm 跑在 DSH Desktop 的 Electron-as-Node 里，于是 `.bin/electron-builder.CMD` 内部的 `node cli.js` 变成 `DSH Desktop.exe cli.js`。绕开方式是直接调 `.CMD`。**不在仓库里加 workaround 代码** —— 普通 Node 环境下 `pnpm dist` 本来就正常，为单一环境加脚本反而给开源用户增加噪音 |
+| 分发链路自动化 | 仍缺 | 见上一段的说明，受限于锁屏桌面，需要在解锁的机器上补跑 |
+
+### 顺带修正的两份过期 spec
+
+本会话实际踩到、且与既有 spec 文档冲突的两处，已改正：
+
+| 文档 | 原文（错） | 改后 |
+|---|---|---|
+| `.trellis/spec/shared/pnpm-electron-setup.md` | 教人把 `node-linker` / `shamefully-hoist` 写进 `.npmrc` | 改为写进 `pnpm-workspace.yaml`（camelCase），并注明 pnpm 10+ 会**静默忽略** `.npmrc` 里的这些键 |
+| `.trellis/spec/frontend/electron-browser-api-restrictions.md` | 说 `File.path` 不可用是 context isolation 导致，并建议「在主进程处理拖拽」 | 改为 Electron 32 移除了 `File.path`，正确做法是 preload 里 `webUtils.getPathForFile(file)` 经 contextBridge 暴露；并补充「主进程根本感知不到拖拽」与 `sandbox: false` 两个坑 |
+
+pnpm 那条是实测确认的（pnpm 11.8.0）：
+
+| 写法 | 结果 |
+|---|---|
+| 只在 `.npmrc` 写 `node-linker=hoisted` | 被忽略。`node_modules` 仍是 `.pnpm` + 符号链接，传递依赖 `clsx` 没提升到顶层 |
+| 在 `pnpm-workspace.yaml` 写 `nodeLinker: hoisted` | 生效。`clsx`、`react` 直接落在顶层，且是真实目录而非符号链接 |
 
 ## 风险与回滚点
 
