@@ -296,12 +296,44 @@ console.log('一致', JSON.stringify(a.channelInfoList)===JSON.stringify(b.chann
 
 ## 阶段 7：打包与便携性验证
 
-- [ ] 配 `electron-builder.yml`，`target: portable`，`extraResources` 带 `bin/`。
-- [ ] `src/main/paths.js` 用 `PORTABLE_EXECUTABLE_DIR` 解析 `data/`，并同步 `app.setPath('userData', …)`。
-- [ ] 构建，记录最终 exe 体积（预期 ≈ 185 MB，验收线 190 MB 以内）。
-- [ ] **便携性验证**：把 exe 拷到一个全新目录运行 → 新增一个 jks、改模板 → **关掉应用重开，确认配置仍在**。这是 portable 目标最容易失败的验证点 —— exe 每次启动都自解压到 `%TEMP%`。
-- [ ] **环境隔离验证**：临时清空 `JAVA_HOME` 与 `PATH` 中的 java 项，运行 exe，确认重签名仍可用。
-- [ ] **分发验证**：把**仅 exe** 拷到另一目录运行 → 应是干净工具（无 jks、无渠道）；再导入配置包 → 数据完整还原。
+- [x] 配 `electron-builder.yml`，`target: portable`，`extraResources` 带 `bin/`。
+- [x] `src/main/paths.ts` 用 `PORTABLE_EXECUTABLE_DIR` 解析 `data/`，并同步 `app.setPath('userData', …)`。
+- [x] 构建，记录最终 exe 体积（预期 ≈ 185 MB，验收线 190 MB 以内）。
+- [x] **便携性验证**：把 exe 拷到一个全新目录运行 → 新增一个 jks、改模板 → **关掉应用重开，确认配置仍在**。这是 portable 目标最容易失败的验证点 —— exe 每次启动都自解压到 `%TEMP%`。
+- [x] **环境隔离验证**：临时清空 `JAVA_HOME` 与 `PATH` 中的 java 项，运行 exe，确认重签名仍可用。
+- [x] **分发验证**：把**仅 exe** 拷到另一目录运行 → 应是干净工具（无 jks、无渠道）；再导入配置包 → 数据完整还原。
+
+### 实际产物体积
+
+| 项 | 体积 |
+|---|---|
+| 最终 exe | **113.9 MB**（验收线 190 MB 以内） |
+| `win-unpacked/resources/bin` | 33.4 MB（内置运行时，124 个文件） |
+| `win-unpacked/resources/app.asar` | **0.54 MB** |
+
+设计里的「≈185 MB」是按未压缩体积估的（Electron ≈150 MB + 运行时 33.4 MB）；portable 目标用 NSIS 固实压缩，实际落盘 113.9 MB。
+
+> **`app.asar` 从 80.8 MB 降到 0.54 MB**：`package.json` 里原本 9 个包全在 `dependencies`，electron-builder 会把生产依赖整棵子树打进 asar。但主进程与 preload 只 import `electron` 和 Node 内置（已用 grep 核对），那 9 个包只被渲染层用、且已被 Vite 打进 `dist/`。全部改归 `devDependencies` 后，asar 只剩 `dist/` + `dist-electron/` + `package.json`。这不只是体积问题 —— 分发的产物里不该带运行时根本不会加载的第三方代码与许可证。
+
+> **本机 `pnpm dist` 不可用的原因**（与工程无关）：这台机器上的 pnpm 跑在 DSH Desktop 的 Electron-as-Node 里，pnpm 会把脚本体内的 `node` 替换成宿主二进制，于是 `.bin/electron-builder.CMD` 内部的 `node cli.js` 变成了 `DSH Desktop.exe cli.js --win portable`，报 `Unknown argument: …cli.js`。直接调 `.\node_modules\.bin\electron-builder.CMD --win portable` 正常（cmd.exe 内 `node` 从 PATH 取到真 node）。换台正常机器 `pnpm dist` 即可用。
+
+### 阶段 7 实测结果
+
+| 验证项 | 做法 | 结果 |
+|---|---|---|
+| 便携性 | exe 拷到全新目录 `install1`，走界面新增 jks（`port`）+ 模板加一行 | `data/` 建在 **exe 旁边**，不在 `%TEMP%`；含 `jks.json`(508 B)、`keystores/port.jks`、`channels/port.json`、`template.json`(901 B)、`logs/`、`.runtime/`（Chromium 缓存） |
+| 关掉重开 | 杀掉进程再启动 | jks 行仍在（`port.jks 推导 port portkey port`）；模板 14 行，最后一行 `portable_probe / 便携探针` 读输入框确认仍在 |
+| 环境隔离 | `JAVA_HOME` 置空 + PATH 里剔除 `java\|jdk\|jbr\|Android`，确认 `Get-Command java`/`keytool` 都找不到 | 打包版仍能新增 jks（内置 keytool 校验通过） |
+| 打包版全流程出包 | 同上隔离环境，真实 99.5 MB APK，只勾 `iso_yyb` | 产出 1 个 `示例应用_V1.4.6_20260916_1727_应用宝.apk`，界面校验「通过」，告警 `[]`，页面错误 `[]` |
+| 独立核对产物 | 内置 walle / apksigner | `walle show -c` → `iso_yyb`；`walle show -e` → `{app=iso}`；`apksigner verify` → `Verifies`（v1/v2/v3 均 true） |
+| 中间产物清理 | 检查输出目录与输入目录 | `.work` 已清空；输入目录留下 `_resigned.apk`（设计如此） |
+| 日志 | 读 `data/logs/<taskId>.log` | 250 KB，UTF-8，中文正常 |
+| 干净工具 | 只拷 exe 到 `install3` | 无 jks、无渠道，空态文案正确，页面错误 `[]` |
+| 图标 | electron-builder 输出 | `default Electron icon is used` —— **未配应用图标**，分发时仍是 Electron 默认图标 |
+
+> **未能自动化的那一项**：打包版里「点导入配置包 → 原生对话框选包 → 预览 → 确认导入」这条链路没有跑通自动化，原因是本机**桌面会话处于锁屏状态**，且这个原生对话框把控件暴露成**没有任何 UIA Pattern 的 Pane**（文件名框 `class=Edit`、`AutoId=1001`，`GetSupportedPatterns()` 为空；保存按钮 `class=Button`、`AutoId=1`，无 `InvokePattern`），`WM_SETTEXT` 写进去也不生效。按键注入又只能送到锁屏界面。已确认到「点击 → `#32770` 对话框以正确标题弹出」这一步；对话框之后的逻辑由阶段 6 的测试入口覆盖（跑的是打包版所打包的同一份源码，导出/导入/冲突/SHA256 共 30 余项断言全绿）。若要补上这一段，需要一台解锁的机器，或用 `computer-use` 之类的系统级自动化。
+>
+> 另需补的收尾项：**应用图标**（现在分发出去是 Electron 默认图标），以及 README 里把「只发 exe」与「发 exe + 配置包」两种分发语义写清楚。
 
 ## 风险与回滚点
 
