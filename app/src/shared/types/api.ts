@@ -8,6 +8,7 @@ import type {
   StoreSnapshot,
   TemplateFile,
 } from './store'
+import type { TaskInput, TaskProgressEvent, TaskStartResult, WalleShowResult } from './task'
 
 /**
  * preload 通过 contextBridge 暴露到 window.api 的白名单接口。
@@ -45,4 +46,19 @@ export interface RendererApi {
     password: string,
     expectedAlias?: string,
   ): Promise<CredentialVerifyResult>
+
+  /**
+   * 启动出包任务。按契约**立刻**返回 taskId，不等待跑完 ——
+   * 阶段与实时输出都走 onTaskProgress，终态事件里带完整结果。
+   */
+  runTask(input: TaskInput): Promise<TaskStartResult>
+
+  /**
+   * 订阅出包进度，返回取消订阅函数。
+   * 组件卸载时务必调用，否则重复挂载会累积监听器、同一行输出收到多次。
+   */
+  onTaskProgress(listener: (event: TaskProgressEvent) => void): () => void
+
+  /** 用 walle show 查看某个 APK 的渠道信息 */
+  showChannel(apkPath: string): Promise<WalleShowResult>
 }

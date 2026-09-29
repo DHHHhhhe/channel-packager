@@ -191,11 +191,13 @@ node -e "const c=require('./channelConfig.sample.json');const t=c.channelInfoLis
 
 ## 阶段 5：出包流水线
 
-- [ ] `src/main/signer.js`：zipalign → apksigner sign → apksigner verify。
-- [ ] `src/main/walle.js`：`batch2 -f`、`batch -c`、`show`。
-- [ ] `src/main/pipeline.js`：按 `design.md` 的 7 步编排，含第 3d 步「把重签名结果还原成原包名」。
-- [ ] `src/main/logger.js`：每次任务一份日志，UTF-8 落盘，**任务结束后不删除**。
-- [ ] 第 6 步用 `walle show` 校验产物渠道号。
+- [x] `src/main/signer.ts`：zipalign → apksigner sign → apksigner verify。
+- [x] `src/main/walle.ts`：`batch2 -f` 与 `show`。**`batch -c` 未实现** —— 应用的渠道数据始终来自 `channels/<id>.json`，走的是 `batch2 -f`；命令行传渠道列表那条路径没有调用方，不凭空造一个。
+- [x] `src/main/pipeline.ts`：按 `design.md` 的 7 步编排，含第 3d 步「把重签名结果还原成原包名」。
+- [x] `src/main/logger.ts`：每次任务一份日志，UTF-8 落盘，**任务结束后不删除**。
+- [x] 第 6 步用 `walle show` 校验产物渠道号。
+- [x] 额外的 `walle:show` IPC 与出包页的「查看渠道」按钮（K7 要求保留该功能）。
+- [x] 同时只允许一个出包任务；重复启动会明确拒绝，而不是让两个任务的进度互相覆盖。
 
 **关键约束**：所有子进程用 `spawn(cmd, [args], { windowsHide: true })` 的**数组参数**形式，不拼 shell 字符串 —— 中文路径与中文文件名（`示例应用_V1.4.6_..._应用宝.apk`）必须原样传递。
 
@@ -210,6 +212,29 @@ $J = "$bin\jre\bin\java.exe"
 & $J -jar "$bin\walle-cli-all.jar" show -e "<产物路径>"   # 期望: {app=sample}
 & $J -jar "$bin\apksigner.jar" verify -v "<产物路径>"      # 期望: Verifies
 ```
+
+> **阶段 5 实测结果**（真实 99.5 MB APK，脱敏名 `示例应用_V1.4.6_20260916_1727.apk`，全程走界面；jks 为现场生成的一次性 `sample.jks`，别名 `sample` / 口令 `sample@123`，未复制任何真实私钥）：
+>
+> | 场景 | 结果 |
+> |---|---|
+> | 套用模板 + 前缀 `sample`，只勾「应用宝」出包 | 产物 `示例应用_V1.4.6_20260916_1727_应用宝.apk`（**与验收项逐字一致**，无 `_resigned` 残留） |
+> | 界面产物表 | 文件名 / 渠道号 `sample_yyb` / 别名 `应用宝` / 校验 **通过** |
+> | 独立 `walle show -c` | `sample_yyb` |
+> | 独立 `walle show -e` | `{app=sample}` |
+> | 独立 `apksigner verify -v` | `Verifies`；v1 / v2 / v3 均 true |
+> | 出包页「查看渠道」按钮 | 「渠道号：sample_yyb ｜ 额外信息：{app=sample}」 |
+> | `signMode = skip` | 同样产出 `示例应用_V1.4.6_20260916_1727_应用宝.apk`，渠道号校验通过 |
+> | `_resigned.apk` 另存 | `示例应用_V1.4.6_20260916_1727_resigned.apk`（99.5 MB，在 APK 同级） |
+> | 工作目录 | 成功后 `<outputDir>\.work\<taskId>` 已清空，只剩空的 `.work` 容器 |
+> | 日志 | `data/logs/<taskId>.log`，3871 行、UTF-8、中文路径正常、任务结束后仍在 |
+> | 告警 / 页面错误 | 均为空 |
+>
+> **实测踩到并修掉的两个真问题**：
+>
+> 1. **`walle show` 的输出格式是 `<绝对路径> : <值>` 一行**，不是只打印渠道号。原实现取整行当渠道号，导致每个产物都被判「渠道号校验未通过」。改为按 ` : ` 切分取后半段 —— 不能按最后一个冒号切，Windows 路径里的 `C:\` 也是冒号。
+> 2. **java 工具与 zipalign 的输出编码要分开处理**。java 在中文 Windows 上按系统编码（GBK）写 stdout，加 `-Dfile.encoding=UTF-8 -Dsun.stdout.encoding=UTF-8 -Dsun.stderr.encoding=UTF-8` 后正常；`zipalign.exe` 是原生 C++ 程序，这三个参数对它无效，只能按 GBK 解码（`TextDecoder('gbk')`，实测可用）。修之前日志里的中文路径是 `ʾ��Ӧ��` 这样的乱码。
+>
+> **口令不进命令行**：apksigner 支持 `--ks-pass env:<名字>` / `--key-pass env:<名字>`（`sign --help` 已列出该格式），所以用环境变量传口令，而不是像 bat 那样写 `pass:<明文>` —— 后者在任务管理器与进程列表里都能看到。keytool 那边同理用 `-storepass:env`。
 
 ## 阶段 6：导入导出
 

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Package, Upload } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Eye, Package, Upload } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 import { ProgressPanel } from '@/components/ProgressPanel'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -14,11 +15,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import type { ChannelEntry } from '@shared/types/store'
+import type { SignMode, TaskResult, TaskStage } from '@shared/types/task'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { useAppStore } from '@/store/app-store'
 
-type SignMode = 'sign' | 'skip'
+const STAGE_LABELS: Record<TaskStage, string> = {
+  validate: '校验输入',
+  prepare: '准备工作目录',
+  align: 'zipalign 对齐',
+  sign: 'apksigner 重签名',
+  'verify-sign': '校验签名',
+  rename: '还原为原包名',
+  'resigned-copy': '另存 _resigned',
+  'channel-json': '写渠道配置',
+  walle: 'walle 写渠道',
+  check: '校验产物渠道号',
+  publish: '移动到输出目录',
+  done: '完成',
+  failed: '失败',
+}
 
 /** 默认输出到 APK 同级的「渠道包」目录（K11） */
 function defaultOutputDir(apkPath: string): string {
@@ -40,6 +57,33 @@ export function PackScreen() {
   const [outputDir, setOutputDir] = useState('')
   const [signMode, setSignMode] = useState<SignMode>('sign')
   const [status, setStatus] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
+
+  const [running, setRunning] = useState(false)
+  const [stage, setStage] = useState<string | null>(null)
+  const [lines, setLines] = useState<string[]>([])
+  const [result, setResult] = useState<TaskResult | null>(null)
+  // null 表示「本界面还没启动过任务」；此时到达的进度一定属于本次启动
+  const taskIdRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    const unsubscribe = window.api.onTaskProgress((event) => {
+      const current = taskIdRef.current
+      if (current !== null && event.taskId !== current) {
+        return
+      }
+      setStage(STAGE_LABELS[event.stage])
+      if (event.line !== undefined && event.line !== '') {
+        setLines((previous) => [...previous.slice(-499), event.line as string])
+      } else if (event.message !== '') {
+        setLines((previous) => [...previous.slice(-499), `— ${event.message}`])
+      }
+      if (event.result) {
+        setResult(event.result)
+        setRunning(false)
+      }
+    })
+    return unsubscribe
+  }, [])
 
   useEffect(() => {
     if (jksItems.length === 0) {
@@ -108,10 +152,54 @@ export function PackScreen() {
     })
   }
 
+  const handleShowChannel = async () => {
+    if (!apkPath.trim()) {
+      setStatus({ kind: 'error', text: '请先选择 APK。' })
+      return
+    }
+    setStatus(null)
+    try {
+      const shown = await window.api.showChannel(apkPath.trim())
+      if (shown.ok) {
+        setStatus({
+          kind: 'ok',
+          text: `渠道号：${shown.channel || '(空)'}${shown.extraInfo ? ` ｜ 额外信息：${shown.extraInfo}` : ''}`,
+        })
+      } else {
+        setStatus({ kind: 'error', text: `没能读出渠道信息：${shown.message}` })
+      }
+    } catch (error) {
+      setStatus({ kind: 'error', text: ipcErrorMessage(error) })
+    }
+  }
+
+  const handleStart = async () => {
+    setLines([])
+    setResult(null)
+    setStatus(null)
+    setStage('启动中')
+    taskIdRef.current = null
+    setRunning(true)
+    try {
+      const started = await window.api.runTask({
+        apkPath: apkPath.trim(),
+        jksId,
+        channelCodes: [...picked],
+        signMode,
+        outputDir: outputDir.trim(),
+      })
+      taskIdRef.current = started.taskId
+    } catch (error) {
+      setRunning(false)
+      setStage('失败')
+      setLines([ipcErrorMessage(error)])
+    }
+  }
+
   const allPicked = channels.length > 0 && picked.size === channels.length
   const blockers = useMemo(() => {
     const list: string[] = []
-    if (!apkPath) {
+    if (!apkPath.trim()) {
       list.push('尚未选择 APK')
     }
     if (!selectedJks) {
@@ -127,6 +215,8 @@ export function PackScreen() {
     }
     return list
   }, [apkPath, selectedJks, channels.length, picked.size, outputDir])
+
+  const canStart = blockers.length === 0 && !running
 
   return (
     <div className="flex flex-col gap-4">
@@ -179,15 +269,21 @@ export function PackScreen() {
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="apk-path">APK 路径</Label>
-            <Input
-              id="apk-path"
-              value={apkPath}
-              onChange={(event) => {
-                setApkPath(event.target.value)
-                setOutputDir(defaultOutputDir(event.target.value))
-              }}
-              placeholder="拖入或选择后自动填入"
-            />
+            <div className="flex items-center gap-2">
+              <Input
+                id="apk-path"
+                value={apkPath}
+                onChange={(event) => {
+                  setApkPath(event.target.value)
+                  setOutputDir(defaultOutputDir(event.target.value))
+                }}
+                placeholder="拖入或选择后自动填入"
+              />
+              <Button variant="outline" onClick={handleShowChannel} title="用 walle show 读这个包的渠道号">
+                <Eye />
+                查看渠道
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -251,9 +347,7 @@ export function PackScreen() {
                 variant="outline"
                 size="sm"
                 onClick={() =>
-                  setPicked(
-                    allPicked ? new Set() : new Set(channels.map((entry) => entry.channel)),
-                  )
+                  setPicked(allPicked ? new Set() : new Set(channels.map((entry) => entry.channel)))
                 }
                 disabled={channels.length === 0}
               >
@@ -297,18 +391,75 @@ export function PackScreen() {
         </p>
       ) : null}
 
-      <ProgressPanel stage={null} lines={[]} />
+      <ProgressPanel stage={stage} lines={lines} />
 
       <div className="flex flex-wrap items-center gap-3">
-        <Button disabled title="出包流水线在阶段 5 接入">
-          开始出包
+        <Button onClick={handleStart} disabled={!canStart}>
+          {running ? '出包中…' : '开始出包'}
         </Button>
         {blockers.length > 0 ? (
-          <span className="text-sm text-muted-foreground">
-            还差：{blockers.join('、')}
-          </span>
+          <span className="text-sm text-muted-foreground">还差：{blockers.join('、')}</span>
         ) : null}
       </div>
+
+      {result ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              {result.ok ? '出包完成' : '出包失败'}
+              {result.ok ? <Badge variant="outline">{result.artifacts.length} 个包</Badge> : null}
+            </CardTitle>
+            <CardDescription>
+              {result.message}
+              {result.outputDir ? ` ｜ 输出目录：${result.outputDir}` : ''}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {result.artifacts.length > 0 ? (
+              <div className="overflow-hidden rounded-lg border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>文件名</TableHead>
+                      <TableHead>渠道号</TableHead>
+                      <TableHead>别名</TableHead>
+                      <TableHead>校验</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {result.artifacts.map((artifact) => (
+                      <TableRow key={artifact.fileName}>
+                        <TableCell className="max-w-[20rem] truncate" title={artifact.path}>
+                          {artifact.fileName}
+                        </TableCell>
+                        <TableCell>{artifact.channel || '(空)'}</TableCell>
+                        <TableCell>{artifact.alias ?? '—'}</TableCell>
+                        <TableCell>
+                          {artifact.verified ? (
+                            <Badge variant="outline">通过</Badge>
+                          ) : (
+                            <Badge variant="destructive">{artifact.note ?? '未通过'}</Badge>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : null}
+
+            {result.warnings.length > 0 ? (
+              <ul className="flex list-disc flex-col gap-1 pl-5 text-sm text-muted-foreground">
+                {result.warnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            ) : null}
+
+            <p className="text-xs text-muted-foreground">日志：{result.logFile}</p>
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   )
 }

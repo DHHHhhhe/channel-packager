@@ -3,6 +3,7 @@ import path from 'node:path'
 import { registerCredentialIpc } from './ipc/credential'
 import { registerRuntimeIpc } from './ipc/runtime'
 import { registerStoreIpc } from './ipc/store'
+import { registerTaskIpc } from './ipc/task'
 import { initPaths } from './paths'
 
 /** dev 时由 vite-plugin-electron 注入；打包后不存在 */
@@ -79,6 +80,7 @@ app.whenReady().then(() => {
   registerRuntimeIpc()
   registerStoreIpc()
   registerCredentialIpc()
+  registerTaskIpc()
 
   createWindow()
 

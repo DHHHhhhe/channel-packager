@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import { IPC_CHANNELS } from '../shared/constants/channels'
 import type { RendererApi } from '../shared/types/api'
 import type { RuntimeCheckResult } from '../shared/types/runtime'
@@ -11,6 +11,7 @@ import type {
   StoreSnapshot,
   TemplateFile,
 } from '../shared/types/store'
+import type { TaskInput, TaskProgressEvent, TaskStartResult, WalleShowResult } from '../shared/types/task'
 
 /**
  * 渲染进程触达宿主的唯一入口。
@@ -61,6 +62,28 @@ const api: RendererApi = {
     expectedAlias?: string,
   ): Promise<CredentialVerifyResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.credVerify, id, password, expectedAlias)
+  },
+
+  runTask(input: TaskInput): Promise<TaskStartResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.taskRun, input)
+  },
+
+  onTaskProgress(listener: (event: TaskProgressEvent) => void): () => void {
+    /*
+     * 只把事件负载交给回调。IpcRendererEvent 上挂着 sender，把它漏进渲染层
+     * 等于递出去一条回主进程的通道，白名单就形同虚设。
+     */
+    const handler = (_event: IpcRendererEvent, payload: TaskProgressEvent): void => {
+      listener(payload)
+    }
+    ipcRenderer.on(IPC_CHANNELS.taskProgress, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.taskProgress, handler)
+    }
+  },
+
+  showChannel(apkPath: string): Promise<WalleShowResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.walleShow, apkPath)
   },
 }
 
