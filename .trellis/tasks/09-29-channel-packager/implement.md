@@ -121,13 +121,31 @@ node -e "const c=require('./channelConfig.sample.json');const t=c.channelInfoLis
 
 ## 阶段 3：凭据校验（keytool）
 
-- [ ] `cred:verify` IPC：用内置 `keytool -list -keystore <data/keystores 下的副本> -storepass <pw>` 校验（**不用 `sourcePath`**）。
-- [ ] 解析输出（**GBK 编码**，keytool 中文输出在 UTF-8 下是乱码）取出真实别名。
-- [ ] 成功/失败结果回传界面，成功时回填别名。
+- [x] `cred:verify` IPC：用内置 `keytool -list -v -keystore <data/keystores 下的副本>` 校验（**不用 `sourcePath`**）。
+- [x] 口令走 **`-storepass:env <变量名>`** 而不是计划里写的 `-storepass <pw>`。后者会把明文口令写进进程命令行，任务管理器和进程列表都能看到；走环境变量可以避开。已实测该参数在内置 JDK 17 上可用。
+- [x] **编码问题用强制英文 locale 解决，而不是解码 GBK。** 加 `-J-Duser.language=en -J-Duser.country=US` 后输出是纯 ASCII（实测非 ASCII 字节数为 0），既不用按 GBK 解码，也不受使用者系统语言影响 —— 否则中文系统输出 GBK 中文、英文系统输出英文，解析逻辑得写两套。
+  - 实测确认：裁剪后的 JRE **没有** `jdk.localedata` 模块，但 keytool 的提示语资源在 `java.base` 里，所以中文环境下确实输出 GBK 中文（`-list` 有 98 个非 ASCII 字节）。计划里"要么加 `-J-Dfile.encoding=UTF-8`，要么按 GBK 解码"这条是对的，只是强制 locale 更省事。
+- [x] 解析 `Alias name:` 取真实别名。契约：`ok: true` 的语义是「口令正确，且能确定唯一可用的别名」——口令对但库里有多个条目、又对不上用户填的别名时仍算不通过，返回 `aliases` 让界面提示或选择。
+- [x] 错误映射：`password was incorrect` → 口令不正确；`Keystore file does not exist` → 副本文件不存在；`UnrecoverableKeyException` → 密钥口令不正确；`Invalid keystore format` → 不是有效的 keystore 文件；其余原样透出（截断到 200 字）。
+- [x] `runtime.ts` 增加 `resolveRuntimeComponentPath(key)`，keytool 路径不再各处手拼 `jre/bin/keytool.exe`。
 
 **验证**：`sample.jks` + `sample@123` 通过；`legacy.jks` + `legacy@123` 失败并给出明确提示。
 
-> 注意：`keytool` 输出为 GBK。要么加 `-J-Dfile.encoding=UTF-8`，要么按 GBK 解码。这是实现时最容易踩的坑之一。
+> **阶段 3 实测结果**（测试 jks 现场用内置 keytool 生成，不碰真实私钥）：
+>
+> | 场景 | 结果 |
+> |---|---|
+> | 口令正确、别名填错（库里只 1 条） | `ok: true`，别名改为 `alpha`，提示「别名「single」不在库中，已改为「alpha」」 |
+> | 口令错误 | `ok: false`，「口令不正确」 |
+> | 口令与别名都正确 | `ok: true`，无多余提示 |
+> | 空口令 | `ok: false`，「口令不能为空」 |
+> | 库中 2 条、未指定别名 | `ok: false`，「口令正确，但库中有多个条目，需要指定别名：one、two」 |
+> | 库中 2 条、指定 `two` | `ok: true`，`alias = two` |
+> | 库中 2 条、指定不存在的别名 | `ok: false`，列出「现有条目：one、two」 |
+> | **源文件删除后校验** | **仍 `ok: true`** —— 确实只读副本，R21 成立 |
+> | 源文件删除后刷新 | `source-unavailable` |
+>
+> **真实数据只读探测**：工作目录 25 个真实 jks 中，24 个用推导规则 `<基名>@123` 直接通过，1 个报「口令不正确」（即口令不明的那份）。失败形态只有「通过 / 口令不正确」两种，没有出现格式非法的文件 —— 说明 `derivePassword` 的推导规则在这批数据上成立，界面预填默认值可以直接用。该探测只读，未复制、未改动任何真实文件。
 
 ## 阶段 4：UI 与拖拽
 

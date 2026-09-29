@@ -4,6 +4,7 @@ import type { RendererApi } from '../shared/types/api'
 import type { RuntimeCheckResult } from '../shared/types/runtime'
 import type {
   ChannelConfig,
+  CredentialVerifyResult,
   JksMutation,
   JksMutationResult,
   RefreshResult,
@@ -52,6 +53,14 @@ const api: RendererApi = {
 
   saveTemplate(template: TemplateFile): Promise<TemplateFile> {
     return ipcRenderer.invoke(IPC_CHANNELS.storeSaveTemplate, template)
+  },
+
+  verifyCredentials(
+    id: string,
+    password: string,
+    expectedAlias?: string,
+  ): Promise<CredentialVerifyResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.credVerify, id, password, expectedAlias)
   },
 }
 

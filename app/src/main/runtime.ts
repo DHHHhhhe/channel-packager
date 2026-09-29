@@ -29,6 +29,21 @@ export function resolveBinDir(): string {
     : path.join(app.getAppPath(), 'resources', 'bin')
 }
 
+/** 组件清单里合法的 key */
+export type RuntimeComponentKey = (typeof COMPONENT_SPECS)[number]['key']
+
+/**
+ * 取某个运行时组件的绝对路径。
+ * 调用方不要自己拼 `jre/bin/keytool.exe` 这类相对路径 —— 布局只在这里定义一份。
+ */
+export function resolveRuntimeComponentPath(key: RuntimeComponentKey): string {
+  const spec = COMPONENT_SPECS.find((entry) => entry.key === key)
+  if (!spec) {
+    throw new Error(`未知的运行时组件：${key}`)
+  }
+  return path.join(resolveBinDir(), spec.relativePath)
+}
+
 function inspect(binDir: string, spec: ComponentSpec): RuntimeComponent {
   const fullPath = path.join(binDir, spec.relativePath)
   let sizeBytes = 0

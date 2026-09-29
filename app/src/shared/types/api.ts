@@ -1,6 +1,7 @@
 import type { RuntimeCheckResult } from './runtime'
 import type {
   ChannelConfig,
+  CredentialVerifyResult,
   JksMutation,
   JksMutationResult,
   RefreshResult,
@@ -34,4 +35,14 @@ export interface RendererApi {
   getChannels(id: string): Promise<ChannelConfig>
   saveChannels(id: string, config: ChannelConfig): Promise<ChannelConfig>
   saveTemplate(template: TemplateFile): Promise<TemplateFile>
+
+  /**
+   * 用内置 keytool 校验凭据，并取回真实别名。
+   * 只用副本文件，不读 sourcePath。
+   */
+  verifyCredentials(
+    id: string,
+    password: string,
+    expectedAlias?: string,
+  ): Promise<CredentialVerifyResult>
 }

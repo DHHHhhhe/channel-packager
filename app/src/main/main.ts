@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, session, shell } from 'electron'
 import path from 'node:path'
+import { registerCredentialIpc } from './ipc/credential'
 import { registerRuntimeIpc } from './ipc/runtime'
 import { registerStoreIpc } from './ipc/store'
 import { initPaths } from './paths'
@@ -77,6 +78,7 @@ app.whenReady().then(() => {
   // 先注册 IPC，再建窗口：渲染层挂载时就会查运行时，晚了会拿到空结果
   registerRuntimeIpc()
   registerStoreIpc()
+  registerCredentialIpc()
 
   createWindow()
 

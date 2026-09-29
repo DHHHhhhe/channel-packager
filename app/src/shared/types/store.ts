@@ -96,3 +96,18 @@ export interface RefreshResult {
   sourceFileSize?: number
   message?: string
 }
+
+/**
+ * 凭据校验结果。
+ * `ok` 为 true 的语义是「口令正确，且能确定唯一可用的别名」——
+ * 口令对但库里有多个条目、又对不上用户填的别名时，仍然算不通过，需要用户指定。
+ */
+export interface CredentialVerifyResult {
+  ok: boolean
+  /** 确定下来的别名，ok 为 true 时才有值 */
+  alias?: string
+  /** 库中实际存在的全部别名，供界面提示与选择 */
+  aliases: string[]
+  /** 给用户看的原因或提示 */
+  message?: string
+}
