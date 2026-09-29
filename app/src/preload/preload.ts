@@ -12,6 +12,14 @@ import type {
   TemplateFile,
 } from '../shared/types/store'
 import type { TaskInput, TaskProgressEvent, TaskStartResult, WalleShowResult } from '../shared/types/task'
+import type {
+  ChannelExportResult,
+  ChannelImportResult,
+  ConflictStrategy,
+  PackExportResult,
+  PackImportResult,
+  PackPreviewResult,
+} from '../shared/types/pack'
 
 /**
  * 渲染进程触达宿主的唯一入口。
@@ -84,6 +92,30 @@ const api: RendererApi = {
 
   showChannel(apkPath: string): Promise<WalleShowResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.walleShow, apkPath)
+  },
+
+  exportChannels(id: string, app: string): Promise<ChannelExportResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.channelsExport, id, app)
+  },
+
+  importChannels(id: string, app: string): Promise<ChannelImportResult | null> {
+    return ipcRenderer.invoke(IPC_CHANNELS.channelsImport, id, app)
+  },
+
+  exportConfigPack(): Promise<PackExportResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.packExport)
+  },
+
+  pickConfigPack(): Promise<PackPreviewResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.packImport)
+  },
+
+  applyConfigPack(input: {
+    packPath: string
+    conflictStrategy: ConflictStrategy
+    overwriteTemplate: boolean
+  }): Promise<PackImportResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.packImportApply, input)
   },
 }
 

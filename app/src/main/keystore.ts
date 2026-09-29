@@ -14,12 +14,12 @@ export function sha256File(filePath: string): string {
 }
 
 /** 副本在 data/ 下的相对路径。统一存正斜杠，JSON 跨平台可读 */
-function keystoreRelativePath(id: string): string {
+export function keystoreRelativePath(id: string): string {
   return `keystores/${id}.jks`
 }
 
 /** 同 id 已被占用时退到 <id>_2、<id>_3…，绝不覆盖已有副本 */
-function allocateId(baseId: string, taken: ReadonlySet<string>): string {
+export function allocateId(baseId: string, taken: ReadonlySet<string>): string {
   if (!taken.has(baseId)) {
     return baseId
   }

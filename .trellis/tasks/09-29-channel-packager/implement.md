@@ -238,9 +238,10 @@ $J = "$bin\jre\bin\java.exe"
 
 ## 阶段 6：导入导出
 
-- [ ] `channels:import`：读 JSON → **原样复制** `channelInfoList`（渠道名与别名逐字保留，不做前缀替换）。
-- [ ] `channels:export`：写 JSON，结构与 `channelConfig.sample.json` 完全一致。
-- [ ] 导入时校验 JSON 结构；结构不符给出明确错误而不是静默吞掉。
+- [x] `channels:import`：读 JSON → **原样复制** `channelInfoList`（渠道名与别名逐字保留，不做前缀替换）。
+- [x] `channels:export`：写 JSON，结构与 `channelConfig.sample.json` 完全一致。
+- [x] 导入时校验 JSON 结构；结构不符给出明确错误而不是静默吞掉。
+- [x] 文件选择对话框放在主进程（`dialog.showSaveDialog` / `showOpenDialog`），渲染层只发「要做什么」，不接触任意路径。
 
 **验证**
 
@@ -256,13 +257,42 @@ console.log('一致', JSON.stringify(a.channelInfoList)===JSON.stringify(b.chann
 
 ### 配置包（R25）
 
-- [ ] `src/main/configpack.js`：导出 zip，含 `manifest.json`（版本 / 导出时间 / 各文件 SHA256）、`jks.json`、`keystores/`、`channels/`、`template.json`。
-- [ ] 导入时逐文件校验 SHA256，不匹配即中止并指明是哪个文件。
-- [ ] 冲突处理：同 `id` 且 SHA256 相同 → 跳过；同 `id` 但内容不同 → 让用户选「跳过 / 保留两份（自动加后缀）/ 覆盖」，**不静默覆盖**。
-- [ ] 导入按钮旁直接写明「配置包含明文密码与私钥」，不能只写在文档里。
-- [ ] 导出**不含** `logs/` 与 `.runtime/`。
+- [x] `src/main/configpack.ts`：导出 zip，含 `manifest.json`（版本 / 导出时间 / 各文件 SHA256）、`jks.json`、`keystores/`、`channels/`、`template.json`。
+- [x] 导入时逐文件校验 SHA256，不匹配即中止并指明是哪个文件。
+- [x] 冲突处理：同 `id` 且 SHA256 相同 → 跳过；同 `id` 但内容不同 → 让用户选「跳过 / 保留两份（自动加后缀）/ 覆盖」，**不静默覆盖**。
+- [x] 导入按钮旁直接写明「配置包含明文密码与私钥」，不能只写在文档里。
+- [x] 导出**不含** `logs/` 与 `.runtime/`。
+- [x] 界面先做只读预览（校验 + 冲突探测），用户选完策略再真正落盘 —— 设计只写了 `pack:import` 一个通道，但「让用户选」必然需要一个不改数据的探测步骤，故拆成 `pack:import`（选包 + 校验 + 探测）与 `pack:importApply`（按策略落盘）。
 
 **验证**：导出 → 在另一个干净目录导入 → jks、渠道、模板全部还原，并可直接出包。
+
+> **不用新增依赖**：zip 读写直接用内置 JRE 里的 `jar.exe`（`jdk.jartool` 已被 jlink 保留，与 java/keytool 同一个 JRE）。此前考虑过 `adm-zip`，实测 `jar` 够用且更省依赖：
+>
+> | 用途 | 命令 |
+> |---|---|
+> | 打包 | `jar --create --no-manifest --file=<包> -C <暂存目录> .` |
+> | 解包 | `jar --extract --file=<包>`，工作目录用 `spawn` 的 `cwd`（`-C` 只对 create 有效） |
+>
+> 中文文件名按 UTF-8 存入 zip 且能正确还原。**路径穿越也已验证**：手工造了一个含 `../evil.txt` 条目的 zip，`jar --extract` 没有写到目标目录之外；`configpack.ts` 另外用 `safeJoin` 再挡一层（manifest 里的路径由包作者提供，不能直接信）。
+>
+> **阶段 6 实测结果**（用真实主进程模块跑，不走原生对话框；临时测试入口用 `rolldown` 打包后在 Electron 里执行，未进仓库）：
+>
+> | 场景 | 结果 |
+> |---|---|
+> | 导出配置包 | 6 个文件 / 6247 字节；条目为 `manifest.json`、`jks.json`、`template.json`、`keystores/{a,b}.jks`、`channels/{a,b}.json` |
+> | 导出排除项 | **不含** `logs/`、`.runtime/`，也不含 `META-INF/`（用了 `--no-manifest`） |
+> | 清空 data 后导入 | 2 个 jks 全还原；别名 / 口令 / app / `keystoreFile` 逐字段一致；渠道列表逐字段一致；模板还原 |
+> | 导入后可否直接出包 | 内置 keytool 校验副本 `ok:true`（`alias=akey`）；错误口令仍返回「口令不正确」，不会误判 |
+> | `channels:export` | 条数、`defaultExtraInfo.app`、`channelInfoList` 与存储逐字段一致 |
+> | `channels:import` | 渠道名与别名**原样保留**（`RAW_one`/`原样甲`，未被加前缀）；文件里的 `app` 与本 jks 不同时给出说明且不采用 |
+> | 结构校验 | 6 种坏输入各自命中预期错误：非 JSON / 顶层是数组 / 缺 `channelInfoList` / `channel` 为空 / `alias` 非字符串 / 条目非对象 |
+> | 冲突：同 id 同 SHA256 | 跳过 2 个，不写入 |
+> | 冲突：同 id 不同内容 | 探测到 1 个冲突；`skip` → 跳过 2、条目数不变；`keep-both` → 另存 `a_2`（原 `a` 保留，共 3 条）；`overwrite` → 就地覆盖 1 个，副本内容回到包内那份 |
+> | SHA256 不符 | 中止并指明文件：「文件校验失败：keystores/a.jks（SHA256 与 manifest 不符…）」 |
+> | 非本工具的 zip | 拒绝：「这不是本工具导出的配置包：缺少 manifest.json」 |
+> | 界面 | 模板页有「配置包」卡片与导出/导入按钮，**明文密码与私钥的提示直接写在页面上**；渠道页在选中 jks 后出现「导入 JSON」「导出 JSON」 |
+>
+> **实测抓到的真 bug**：导入冲突策略 `keep-both` 时，新条目用了新 id（`a_2`）却仍按原 id 去 `findIndex` 定位替换，结果把原条目 `a` 顶掉 —— 导入后 `items` 只剩 `a_2,b`，`a` 消失。已改为只有 `overwrite` 才就地替换，`keep-both` 一律追加。这个问题不测就看不出来：`a_2` 的副本与渠道文件都正常落盘，只有原条目不见了。
 
 ## 阶段 7：打包与便携性验证
 

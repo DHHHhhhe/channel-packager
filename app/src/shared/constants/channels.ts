@@ -24,7 +24,10 @@ export const IPC_CHANNELS = {
   walleShow: 'walle:show',
 
   packExport: 'pack:export',
+  /** 选包 + 校验 + 探测冲突，只读不改 */
   packImport: 'pack:import',
+  /** 用户确认冲突策略后真正落盘 */
+  packImportApply: 'pack:importApply',
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]

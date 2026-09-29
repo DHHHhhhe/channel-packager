@@ -9,6 +9,14 @@ import type {
   TemplateFile,
 } from './store'
 import type { TaskInput, TaskProgressEvent, TaskStartResult, WalleShowResult } from './task'
+import type {
+  ChannelExportResult,
+  ChannelImportResult,
+  ConflictStrategy,
+  PackExportResult,
+  PackImportResult,
+  PackPreviewResult,
+} from './pack'
 
 /**
  * preload 通过 contextBridge 暴露到 window.api 的白名单接口。
@@ -61,4 +69,23 @@ export interface RendererApi {
 
   /** 用 walle show 查看某个 APK 的渠道信息 */
   showChannel(apkPath: string): Promise<WalleShowResult>
+
+  /** 导出某个 jks 的渠道为 JSON；取消时 canceled 为 true */
+  exportChannels(id: string, app: string): Promise<ChannelExportResult>
+
+  /** 导入渠道 JSON（原样复制渠道名与别名）。用户取消时返回 null */
+  importChannels(id: string, app: string): Promise<ChannelImportResult | null>
+
+  /** 导出配置包 zip。导出前界面必须提示包内含明文密码与私钥 */
+  exportConfigPack(): Promise<PackExportResult>
+
+  /** 选配置包并校验、探测冲突。只读，不改任何数据 */
+  pickConfigPack(): Promise<PackPreviewResult>
+
+  /** 按用户选定的冲突策略真正导入 */
+  applyConfigPack(input: {
+    packPath: string
+    conflictStrategy: ConflictStrategy
+    overwriteTemplate: boolean
+  }): Promise<PackImportResult>
 }

@@ -100,6 +100,50 @@ export function ChannelsScreen() {
     })
   }
 
+  const handleExportJson = async () => {
+    if (!selected) {
+      return
+    }
+    setStatus(null)
+    try {
+      const result = await window.api.exportChannels(selected.id, selected.app)
+      if (result.canceled) {
+        return
+      }
+      setStatus({
+        kind: 'ok',
+        text: `已导出 ${result.count ?? 0} 条渠道：${result.path}（可直接给 walle 的 batch2 -f 用）`,
+      })
+    } catch (error) {
+      setStatus({ kind: 'error', text: ipcErrorMessage(error) })
+    }
+  }
+
+  const handleImportJson = async () => {
+    if (!selected) {
+      return
+    }
+    if (dirty && !window.confirm('导入会覆盖当前未保存的修改，继续？')) {
+      return
+    }
+    setStatus(null)
+    try {
+      const result = await window.api.importChannels(selected.id, selected.app)
+      if (result === null) {
+        return
+      }
+      // 导入是原样复制渠道名与别名，不做前缀替换，所以直接替换整份列表
+      setRows(result.config.channelInfoList.map((entry) => newPairRow(entry.channel, entry.alias ?? '')))
+      setDirty(false)
+      setStatus({
+        kind: 'ok',
+        text: `已导入 ${result.count} 条渠道并保存。${result.notes.join(' ')}`,
+      })
+    } catch (error) {
+      setStatus({ kind: 'error', text: ipcErrorMessage(error) })
+    }
+  }
+
   const handleSave = async () => {
     if (!selected) {
       return
@@ -152,6 +196,12 @@ export function ChannelsScreen() {
         actions={
           <>
             {dirty ? <span className="text-xs text-muted-foreground">有未保存的修改</span> : null}
+            <Button variant="outline" onClick={handleImportJson} disabled={saving || loading}>
+              导入 JSON
+            </Button>
+            <Button variant="outline" onClick={handleExportJson} disabled={saving || loading}>
+              导出 JSON
+            </Button>
             <Button onClick={handleSave} disabled={saving || loading || !dirty}>
               {saving ? '保存中…' : '保存渠道列表'}
             </Button>
