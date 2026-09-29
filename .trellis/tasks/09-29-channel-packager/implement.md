@@ -331,7 +331,29 @@ console.log('一致', JSON.stringify(a.channelInfoList)===JSON.stringify(b.chann
 | 干净工具 | 只拷 exe 到 `install3` | 无 jks、无渠道，空态文案正确，页面错误 `[]` |
 | 图标 | electron-builder 输出 | `default Electron icon is used` —— **未配应用图标**，分发时仍是 Electron 默认图标 |
 
-> **未能自动化的那一项**：打包版里「点导入配置包 → 原生对话框选包 → 预览 → 确认导入」这条链路没有跑通自动化，原因是本机**桌面会话处于锁屏状态**，且这个原生对话框把控件暴露成**没有任何 UIA Pattern 的 Pane**（文件名框 `class=Edit`、`AutoId=1001`，`GetSupportedPatterns()` 为空；保存按钮 `class=Button`、`AutoId=1`，无 `InvokePattern`），`WM_SETTEXT` 写进去也不生效。按键注入又只能送到锁屏界面。已确认到「点击 → `#32770` 对话框以正确标题弹出」这一步；对话框之后的逻辑由阶段 6 的测试入口覆盖（跑的是打包版所打包的同一份源码，导出/导入/冲突/SHA256 共 30 余项断言全绿）。若要补上这一段，需要一台解锁的机器，或用 `computer-use` 之类的系统级自动化。
+> **当时未能自动化的那一项**：打包版里「点导出配置包 / 导入配置包 → 原生对话框 → 确认」这条链路当时没跑通，原因是本机**桌面会话处于锁屏状态**（按键注入只能送到锁屏界面），且这个原生对话框把控件暴露成**没有任何 UIA Pattern 的 Pane**（文件名框 `class=Edit`、`AutoId=1001`，`GetSupportedPatterns()` 为空；保存按钮 `class=Button`，无 `InvokePattern`），`WM_SETTEXT` 写进去也不生效。当时只确认到「点击 → `#32770` 对话框以正确标题弹出」这一步。**该缺口已在解锁的机器上补跑通过，见下节。**
+
+### 分发验证实测（解锁桌面后补跑）
+
+两个安装目录各只放 exe：`install2` 走界面新增 1 个 jks（`dist` / 口令 `dist@123` / 别名 `distkey`）并按模板生成 13 条渠道；`install3` 保持干净。
+
+| 环节 | 做法 | 结果 |
+|---|---|---|
+| 导出 | 打包版点「导出配置包」→ 原生保存对话框 → 确认 | `Documents\渠道配置包_2026-09-30.zip`，4001 字节；界面提示 `已导出配置包：…（4 个文件，4 KB）` |
+| 干净工具 | 启动 install3 | `checkRuntime().ok = true`；jks 数 0；`data/` 只有 `template.json` 与空目录 |
+| 导入 | 点「导入配置包」→ 原生打开对话框选中包 → 预览 → 确认导入 | 预览显示「包内 1 个 jks、1 份渠道文件」「校验已通过」「没有冲突：包内条目要么本机没有，要么与本机完全相同」 |
+| 还原比对 | 与 install2 逐文件 SHA256 比对 | `jks.json` `BF97FF70F8CFCD3D`、`template.json` `73FF88B4E8C094AD`、`channels/dist.json` `289E6D3FB3FE32BD`、`keystores/dist.jks` `14C22E2F889705FD` —— 四项全一致 |
+| 独立校验 | 用还原出来的 jks 校验凭据 | `{ok:true, alias:'distkey', aliases:['distkey']}` |
+| 渠道还原 | 读回渠道列表 | 13 条，首条 `dist_jl_flow/巨量`，末条 `dist_uc/UC` |
+
+驱动原生对话框的两个关键点（都是踩过坑才定下来的）：
+
+| 问题 | 现象 | 可行做法 |
+|---|---|---|
+| 确认按钮点不动 | `WM_COMMAND(IDOK)` 被 DirectUI 忽略；对「保存(&S)」按钮发 `BM_CLICK` 无效；真实鼠标点击会以 `canceled` 收场 | 向对话框 `PostMessage(WM_KEYDOWN/WM_KEYUP, VK_RETURN)`。保存对话框有默认文件名，回车即可确认 |
+| 输入法吞字符 | 中文输入法的标点模式把 `\`→`、`、`:`→`：`；字母串被吞进组字缓冲，回车被当成上屏；`KEYEVENTF_UNICODE` 注入、`ActivateKeyboardLayout(en-US)`、`WM_INPUTLANGCHANGEREQUEST` 都拦不住（TSF 输入法） | **完全不打字**：剪贴板放完整路径，在文件名框按 `Ctrl+V`。粘贴不经过输入法，`\` 与 `:` 原样进入，随后回车打开 |
+
+> 顺带排掉一个假警报：过程中出现过 `spawn …\Temp\<解压目录>\resources\bin\jre\bin\jar.exe ENOENT`，且 `checkRuntime().ok = false`、六个运行时组件全缺。根因是我的清理脚本**先删 `%TEMP%` 解压目录、后杀进程** —— 正在运行的文件删不掉，留下残缺目录，而 portable stub 下次启动会复用同名目录。按「先杀进程（要连解压目录里的子进程一起杀，只杀 stub 不够）再删目录」的顺序重跑，`checkRuntime().ok = true`，六个组件齐全。**便携版本身没有问题**：`7za l` 能列出 exe 内的 `resources\bin`，解压后 124 个文件也在。
 
 ---
 
@@ -344,7 +366,7 @@ console.log('一致', JSON.stringify(a.channelInfoList)===JSON.stringify(b.chann
 | README | 已解决 | 新增根目录 `README.md`：功能对比、使用步骤、数据目录结构、配置包分发语义与明文口令警告、从源码构建（含 `prepare:runtime` 的产物来源表）、已知注意事项、第三方组件归属 |
 | LICENSE | 已解决 | 新增根目录 `LICENSE`（MIT，Copyright (c) 2026 dhhheee） |
 | `pnpm dist` 在本机不可用 | 已记录 | 写进 README 的「已知注意事项」。根因是 pnpm 把脚本体里的 `node` 替换成它自身运行所在的 Node，而本机 pnpm 跑在 DSH Desktop 的 Electron-as-Node 里，于是 `.bin/electron-builder.CMD` 内部的 `node cli.js` 变成 `DSH Desktop.exe cli.js`。绕开方式是直接调 `.CMD`。**不在仓库里加 workaround 代码** —— 普通 Node 环境下 `pnpm dist` 本来就正常，为单一环境加脚本反而给开源用户增加噪音 |
-| 分发链路自动化 | 仍缺 | 见上一段的说明，受限于锁屏桌面，需要在解锁的机器上补跑 |
+| 分发链路自动化 | 已解决 | 桌面解锁后补跑通过：install2 导出配置包（4 文件 / 4001 字节）→ install3（仅 exe，干净）导入 → 四个文件 SHA256 与 install2 全一致，`verifyCredentials` 通过，13 条渠道还原。驱动原生对话框的可行做法见「分发验证实测」一节 |
 
 ### 顺带修正的两份过期 spec
 
