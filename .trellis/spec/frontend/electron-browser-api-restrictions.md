@@ -192,38 +192,85 @@ await window.api.notification.show({
 
 ## Behavioral Differences
 
-### 1. File Input
+### 1. File Input — `File.path` was REMOVED in Electron 32
 
-The `<input type="file">` element works, but `File.path` is **NOT available** due to context isolation:
+`<input type="file">` still works and the `File` object is still a real `File`. What disappeared is the **non-standard `path` property** Electron used to attach to it.
+
+> This is **not** a context-isolation consequence. `File.path` was removed from Electron itself in **v32** — it is gone even with `contextIsolation: false` and `nodeIntegration: true`. Code that "worked last year" breaks after the Electron upgrade, which makes the wrong explanation ("context isolation broke it") tempting and very misleading.
 
 ```typescript
-// Won't work - path is undefined
+// Broken on Electron >= 32 — path is undefined
 const handleFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
   const file = e.target.files?.[0];
-  console.log(file.path); // undefined!
+  console.log(file.path); // undefined
 };
-
-// Use IPC for file paths
-const result = await window.api.dialog.selectFile();
-console.log(result.path); // "/Users/.../file.txt"
 ```
+
+**Correct replacement: `webUtils.getPathForFile(file)`.** It is an Electron module (`require('electron').webUtils`), so it is reachable **only from the preload script**. Expose it over the context bridge and hand it the `File` object itself:
+
+```typescript
+// preload.ts
+import { contextBridge, webUtils } from 'electron';
+
+contextBridge.exposeInMainWorld('api', {
+  // The renderer passes the File object; the preload resolves the real absolute path.
+  pathForFile(file: File): string {
+    return webUtils.getPathForFile(file);
+  },
+});
+```
+
+```tsx
+// renderer — File objects survive the context bridge; the path does not exist there
+const onDrop = (e: React.DragEvent) => {
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  if (!file) {
+    return;
+  }
+  const realPath = window.api.pathForFile(file); // "C:\\...\\app.apk"
+  void window.api.importKeystore(realPath);
+};
+```
+
+Two gotchas that cost real debugging time:
+
+| Gotcha                                    | Why                                                                                                     | Fix                                                                       |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `webUtils` is `undefined` inside preload  | The preload runs in a **sandboxed** context by default (`sandbox: true`), where `require('electron')` exposes only a small subset | Set `sandbox: false` in `webPreferences`, or use the sandbox-safe preload API |
+| Reaching for a main-process IPC round trip | The main process never learns about a drag-drop at all                                                   | Resolve the path in the preload; send only the resulting **string** over IPC |
+
+`window.api.dialog.selectFile()` is still the right pattern when *your app* opens the picker. `webUtils.getPathForFile` is the right pattern when the **user** drops or picks a file.
 
 See [ipc-electron.md](./ipc-electron.md) for details on context isolation.
 
 ### 2. Drag and Drop
 
-Same issue - `File.path` from drag events is not available:
+A drop is pure renderer-side DOM: **the main process never learns it happened**. "Handle drag-drop in the main process" is therefore not an option — the path must be resolved where the `File` object lives (the preload) and then passed to the main process as data.
 
 ```typescript
-// Won't work
+// Broken on Electron >= 32
 const handleDrop = (e: DragEvent) => {
   const file = e.dataTransfer.files[0];
-  console.log(file.path); // undefined!
+  console.log(file.path); // undefined
 };
-
-// Use IPC to handle dropped files
-// Implement drag-drop handling in main process
 ```
+
+```typescript
+// Correct — preload resolves the path, main process receives a plain string
+// preload.ts:  pathForFile(file) { return webUtils.getPathForFile(file) }
+const handleDrop = (e: DragEvent) => {
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  if (!file) {
+    return;
+  }
+  const realPath = window.api.pathForFile(file);
+  void window.api.importKeystore(realPath);
+};
+```
+
+Call `e.preventDefault()` on **both** `dragover` and `drop`. Without it on `dragover`, the browser refuses the drop and `drop` never fires.
 
 ### 3. Clipboard
 
@@ -287,7 +334,7 @@ Check this document or [ipc-electron.md](./ipc-electron.md) to ensure the API is
 | `alert()`               | Unreliable       | Toast component               |
 | `confirm()`             | Unreliable       | Confirmation dialog component |
 | `window.print()`        | Limited          | `webContents.print()` via IPC |
-| `File.path`             | Not available    | IPC file dialog               |
+| `File.path`             | **Removed in Electron 32** | `webUtils.getPathForFile(file)` in preload |
 | `navigator.clipboard`   | Text only        | Electron clipboard via IPC    |
 | `Notification`          | Limited          | Electron Notification via IPC |
 | `navigator.geolocation` | With permissions | -                             |

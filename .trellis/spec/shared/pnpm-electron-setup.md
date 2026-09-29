@@ -24,42 +24,69 @@ node_modules/
 2. **electron-rebuild 找不到模块** - 需要扁平结构才能正确重建
 3. **asar 打包问题** - 符号链接不能被打包进 asar
 
-**解决方案**：使用 `shamefully-hoist` 创建类似 npm 的扁平结构。
+**解决方案**：使用 `shamefully-hoist` 创建类似 npm 的扁平结构。**注意这项设置从 pnpm 10 起不再写在 `.npmrc` 里**，见下节。
 
 ---
 
 ## 基础配置
 
-### 1. .npmrc 配置（必需）
+> **pnpm 10+ 不再从 `.npmrc` 读取认证与 registry 以外的设置。**
+> 写在 `.npmrc` 里的 `node-linker` / `shamefully-hoist` 会被**静默忽略**：不报错、不警告，
+> 装完才发现 `node_modules` 还是 `.pnpm` + 符号链接的老结构。
+> 这些设置现在写在 `pnpm-workspace.yaml`，且键名改成 camelCase（`node-linker` → `nodeLinker`）。
 
-```ini
-# .npmrc
+### 1. pnpm-workspace.yaml（必需）
 
-# 使用 hoisted 的 node_modules 结构（类似 npm）
-node-linker=hoisted
+`pnpm-workspace.yaml` 不是 monorepo 专属 —— 单包项目同样用它承载这些设置。
 
-# 将所有依赖提升到根 node_modules（Electron 必需）
-shamefully-hoist=true
+```yaml
+# pnpm-workspace.yaml
 
-# 可选：如果遇到 peer dependency 警告
-strict-peer-dependencies=false
+# 扁平化的 node_modules（类似 npm）。Electron 打包需要：
+# pnpm 默认的「符号链接 + 内容寻址」结构会让 electron-builder 解析不到依赖，
+# 也不能把符号链接打进 asar。
+nodeLinker: hoisted
 
-# 可选：加速安装
-prefer-offline=true
+# 把所有依赖提升到根 node_modules
+shamefullyHoist: true
+
+# Electron 生态的 peer 依赖版本常互相冲突，不该被它挡住安装
+strictPeerDependencies: false
 ```
 
 **配置说明**：
 
-| 配置                             | 作用                      | 为什么需要                |
-| -------------------------------- | ------------------------- | ------------------------- |
-| `node-linker=hoisted`            | 使用扁平化的 node_modules | Electron 打包需要         |
-| `shamefully-hoist=true`          | 提升所有依赖到根目录      | Native modules 路径解析   |
-| `strict-peer-dependencies=false` | 忽略 peer 依赖警告        | Electron 生态包版本常冲突 |
+| 配置                       | 作用                      | 为什么需要                |
+| -------------------------- | ------------------------- | ------------------------- |
+| `nodeLinker: hoisted`      | 使用扁平化的 node_modules | Electron 打包需要         |
+| `shamefullyHoist: true`    | 提升所有依赖到根目录      | Native modules 路径解析   |
+| `strictPeerDependencies: false` | 忽略 peer 依赖警告   | Electron 生态包版本常冲突 |
 
-### 2. pnpm-workspace.yaml（Monorepo）
+`.npmrc` 现在只放认证与 registry：
+
+```ini
+# .npmrc
+registry=https://registry.npmjs.org/
+//registry.npmjs.org/:_authToken=${NPM_TOKEN}
+```
+
+**实测对照（pnpm 11.8.0）**：
+
+| 写法                                          | 结果                                                                       |
+| --------------------------------------------- | -------------------------------------------------------------------------- |
+| 只在 `.npmrc` 写 `node-linker=hoisted`        | **被忽略**。`node_modules` 仍是 `.pnpm` + 符号链接，传递依赖 `clsx` 没提升到顶层 |
+| 在 `pnpm-workspace.yaml` 写 `nodeLinker: hoisted` | **生效**。`clsx`、`react` 直接落在顶层，且是真实目录而非符号链接           |
+
+### 2. packages 字段（Monorepo）
+
+`packages:` 与上一节的 `nodeLinker` / `shamefullyHoist` 写在**同一个 `pnpm-workspace.yaml`** 里：
 
 ```yaml
 # pnpm-workspace.yaml
+
+nodeLinker: hoisted
+shamefullyHoist: true
+strictPeerDependencies: false
 
 packages:
   - 'apps/*' # Electron 应用
@@ -475,8 +502,8 @@ jobs:
 
 新建 Electron + pnpm 项目时：
 
-- [ ] 创建 `.npmrc`，包含 `shamefully-hoist=true` 和 `node-linker=hoisted`
-- [ ] 创建 `pnpm-workspace.yaml`（如果是 monorepo）
+- [ ] 创建 `pnpm-workspace.yaml`，包含 `shamefullyHoist: true` 与 `nodeLinker: hoisted`（**不要**写进 `.npmrc`，pnpm 10+ 会静默忽略）
+- [ ] 如需 monorepo，在同一个 `pnpm-workspace.yaml` 里补 `packages:` 列表
 - [ ] 添加 `postinstall` 脚本运行 `electron-rebuild`
 - [ ] 在 `forge.config.ts` 中配置 `rebuildConfig.force = true`
 - [ ] 在 Vite 配置中将 native modules 设为 external
