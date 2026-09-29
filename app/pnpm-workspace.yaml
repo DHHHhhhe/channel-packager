@@ -1,0 +1,20 @@
+# pnpm 11 起，除认证与 registry 外的设置都从 .npmrc 迁到本文件，
+# .npmrc 里的 node-linker / shamefully-hoist 会被静默忽略。
+# 参考：https://pnpm.io/settings
+
+# Electron 打包需要扁平化的 node_modules：
+# pnpm 默认的「符号链接 + 内容寻址」结构会让 electron-builder 解析不到依赖，
+# 也不能把符号链接打进 asar。
+nodeLinker: hoisted
+shamefullyHoist: true
+
+# Electron 生态的 peer 依赖版本常互相冲突，不该被它挡住安装。
+strictPeerDependencies: false
+
+# pnpm 10+ 默认拦截依赖的构建脚本，且未表态时会直接让 install 失败。
+# 这里逐个显式表态：electron-winstaller 是 electron-builder 的 Windows 打包依赖，
+# 放行以免日后改用 Squirrel 安装包时踩空。
+allowBuilds:
+  electron: true
+  electron-winstaller: true
+  esbuild: true

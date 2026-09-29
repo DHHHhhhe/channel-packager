@@ -1,0 +1,25 @@
+# 免安装单文件 exe。portable 目标每次启动都会自解压到 %TEMP%，
+# 因此 data/ 必须落在 PORTABLE_EXECUTABLE_DIR（exe 真实所在目录），
+# 不能用 app.getPath('exe') —— 那指向临时解压目录，用户加完配置一关就丢。
+appId: com.example.channelpackager
+productName: 渠道分包工具
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/**
+  - dist-electron/**
+  - package.json
+
+# 内置运行时随包分发：目标机器不保证装有 Java 与 Android SDK
+extraResources:
+  - from: resources/bin
+    to: bin
+
+win:
+  target: portable
+
+portable:
+  artifactName: 渠道分包工具-${version}.exe

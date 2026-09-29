@@ -11,15 +11,17 @@
 
 ## 阶段 0：工程骨架与内置运行时
 
-- [ ] 建 `app/` 目录，`npm init`，安装 `electron`、`electron-builder`。
-- [ ] 装前端工具链：`vite`、`@vitejs/plugin-react`、`react`、`react-dom`、`tailwindcss`（v4）、`@tailwindcss/vite`。
-- [ ] `npx shadcn@latest init`（基色选 **Neutral**），再 `npx shadcn@latest add button card dialog table badge checkbox select input label separator`，组件源码落到 `renderer/components/ui/`。
-- [ ] 写 `app/scripts/prepare-runtime.ps1`：
+- [x] 建 `app/` 目录，用 **pnpm** 安装 `electron@44.4.5`（精确锁定）、`electron-builder`。
+  - **pnpm 11 起 `.npmrc` 不再承载这些设置**：它只读认证与 registry，`node-linker` / `shamefully-hoist` 必须写进 `app/pnpm-workspace.yaml`（键名改 camelCase：`nodeLinker` / `shamefullyHoist` / `strictPeerDependencies` / `allowBuilds`）。**已实测**：写在 `.npmrc` 里会被静默忽略，`pnpm config get node-linker` 返回 `undefined`，`node_modules` 仍是符号链接。
+  - **electron 44 已取消 `postinstall`**，二进制改由独立的 `install-electron` 命令下载。不显式调用就不会有 `node_modules/electron/dist/electron.exe`。故在 `package.json` 加 `"postinstall": "install-electron"`。
+- [x] 装前端工具链：`vite`、`@vitejs/plugin-react`、`react`、`react-dom`、`tailwindcss`（v4）、`@tailwindcss/vite`、`vite-plugin-electron`。
+- [ ] `npx shadcn@latest init`（基色选 **Neutral**），再 `npx shadcn@latest add button card dialog table badge checkbox select input label separator`，组件源码落到 `renderer/components/ui/`。**待 renderer 骨架就位后再做** —— init 需要先探测到 vite + React 工程。
+- [x] 写 `app/scripts/prepare-runtime.ps1`：
   - **JRE 自行产出**：下载 Temurin JDK 17（Windows x64 zip，182 MB，带 SHA256 校验）→ 解压 → `jlink` 裁剪 → 删除临时 JDK。**不从本机任何安装复制**（本机 Java 依附 Android Studio 的 jbr，卸载即失效）。
   - 从本机 SDK 复制 `zipalign.exe` 与 `apksigner.jar`；从工作目录复制 `walle-cli-all.jar`。
   - 幂等：目标已存在且体积匹配则跳过。
-- [ ] 执行脚本，记录各组件实际体积（预期 JRE 30.8 MB + 其余 2.6 MB）。
-- [ ] 加 `.gitignore`（`app/node_modules`、`app/resources/bin`、`app/dist`）。
+- [x] 执行脚本，实测体积：JRE **30.8 MB** + zipalign 0.86 MB + apksigner 1.13 MB + walle 0.56 MB = **33.4 MB**（与预期一致）。
+- [x] 加 `.gitignore`（`app/node_modules`、`app/resources/bin`、`app/dist`、`app/release`）。
 
 **验证**
 
@@ -32,6 +34,8 @@ $bin = "app\resources\bin"
 & "$bin\zipalign.exe"                                            # 期望: Zip alignment utility
 [math]::Round(((Get-ChildItem $bin -Recurse -Force -File | Measure-Object Length -Sum).Sum)/1MB,1)   # 期望 ≈ 33.4
 ```
+
+> **阶段 0 实测结果**：`java 17.0.20.1`、`apksigner 0.9`、`walle 1.1.6`、`zipalign` 回显 `Zip alignment utility`、`keytool` 成功读出 `sample.jks` 的 `PrivateKeyEntry`；`bin` 合计 **33.4 MB**。182 MB 的 JDK 下载耗时 11 秒，SHA256 校验通过。`electron` 二进制 234.6 MB，`spawnSync(require('electron'), ['--version'])` 读出 `v44.4.5`。
 
 > **`jlink` 模块集已实测确定**：`java.base,java.sql,java.logging,jdk.crypto.ec,jdk.jartool`。不要只信 `jdeps` 的输出 —— crypto 走反射，漏掉 `jdk.crypto.ec` 会在签名时才暴露。`jdk.jartool` 用于提供 `keytool.exe`。
 

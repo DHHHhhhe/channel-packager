@@ -1,0 +1,36 @@
+{
+  "name": "channel-packager",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Android 渠道分包工具 GUI 版（Electron + React）",
+  "main": "dist-electron/main/index.js",
+  "packageManager": "pnpm@11.8.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "prepare:runtime": "pwsh -NoProfile -File scripts/prepare-runtime.ps1",
+    "postinstall": "install-electron",
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "dist": "electron-builder --win portable"
+  },
+  "dependencies": {
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^24.9.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "electron": "44.4.5",
+    "electron-builder": "^26.15.3",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1",
+    "vite-plugin-electron": "^1.1.2"
+  }
+}
