@@ -1,5 +1,7 @@
-import { contextBridge, webUtils } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { IPC_CHANNELS } from '../shared/constants/channels'
 import type { RendererApi } from '../shared/types/api'
+import type { RuntimeCheckResult } from '../shared/types/runtime'
 
 /**
  * 渲染进程触达宿主的唯一入口。
@@ -14,6 +16,10 @@ const api: RendererApi = {
    */
   pathForFile(file: File): string {
     return webUtils.getPathForFile(file)
+  },
+
+  checkRuntime(): Promise<RuntimeCheckResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.runtimeCheck)
   },
 }
 

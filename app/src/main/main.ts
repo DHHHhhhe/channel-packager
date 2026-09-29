@@ -1,5 +1,6 @@
 import { app, BrowserWindow, session, shell } from 'electron'
 import path from 'node:path'
+import { registerRuntimeIpc } from './ipc/runtime'
 
 /** dev 时由 vite-plugin-electron 注入；打包后不存在 */
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
@@ -59,6 +60,9 @@ app.whenReady().then(() => {
   if (!DEV_SERVER_URL) {
     applyProductionCsp()
   }
+
+  // 先注册 IPC，再建窗口：渲染层挂载时就会查运行时，晚了会拿到空结果
+  registerRuntimeIpc()
 
   createWindow()
 

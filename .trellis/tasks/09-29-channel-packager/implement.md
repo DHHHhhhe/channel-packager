@@ -58,11 +58,24 @@ $bin = "app\resources\bin"
 
 ## 阶段 1：运行时解析与环境自检
 
-- [ ] `src/main/runtime.js`：解析 `BIN` 目录（区分开发期与打包后），导出 5 个可执行路径。
-- [ ] 实现 `checkRuntime()`，返回每个组件的 `{name, path, exists}`。
-- [ ] 启动时调用，缺失项在界面顶部横幅显示。
+- [x] `src/main/runtime.ts`：`resolveBinDir()` 区分开发期（`app.getAppPath()/resources/bin`）与打包后（`process.resourcesPath/bin`，由 electron-builder 的 `extraResources` 投递）。两种布局内部一致，只有根目录需要分支。
+- [x] 实现 `checkRuntime()`，返回 `{binDir, components[], ok}`，每项为 `{key, label, path, exists, sizeBytes}`。
+  - **只做文件检查，不做进程探测**：启动路径上起 5 个子进程（每个约 300 ms）不值当；组件是否真能跑，交给阶段 3 的 keytool 校验和实际出包暴露。
+  - **0 字节按缺失处理**：下载被截断时文件是存在的，只看 `exists` 会漏掉，一路拖到签名才炸。`sizeBytes` 顺带用于横幅展示。
+- [x] `src/main/ipc/runtime.ts` 注册 `runtime:check`，`preload` 暴露 `window.api.checkRuntime()`，渲染层 `components/RuntimeBanner.tsx` 挂载时拉取，缺失项在顶部横幅列出「名称 + 期望路径 + 体积」。
+  - 自检本身抛错也单独出一态，不静默吞掉 —— 否则界面看着正常，问题却没人知道。
+  - 缺组件不拦窗口、不影响启动，只是出包不可用。
 
-**验证**：临时重命名 `apksigner.jar`，启动应用应提示缺该组件且不崩溃；恢复后提示消失。
+**验证**
+
+```powershell
+# 三次启动读界面文本：基线无横幅 → 重命名后点名缺 apksigner → 恢复后横幅消失
+Rename-Item app\resources\bin\apksigner.jar apksigner.jar.bak
+# 启动应用（可加 --remote-debugging-port=9222，用 CDP 求值直接取界面文本）
+Rename-Item app\resources\bin\apksigner.jar.bak app\resources\bin\apksigner.jar
+```
+
+> **阶段 1 实测结果**：基线界面无横幅；重命名 `apksigner.jar` 后横幅显示「内置运行时缺失 1 项，出包功能不可用 / apksigner：`…\resources\bin\apksigner.jar`（文件不存在）」，进程存活未崩溃；恢复后横幅消失。
 
 ## 阶段 2：配置存储层
 
