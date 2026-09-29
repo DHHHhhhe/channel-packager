@@ -38,16 +38,16 @@
 ├── walle-cli-all.jar            # 保留
 ├── app/                         # Electron 工程（pnpm + TypeScript 严格模式）
 │   ├── package.json
-│   ├── .npmrc                   # node-linker=hoisted / shamefully-hoist=true
+│   ├── pnpm-workspace.yaml      # nodeLinker=hoisted / shamefullyHoist / allowBuilds
 │   ├── tsconfig.json            # strict，禁 any / 禁非空断言
-│   ├── vite.config.ts
+│   ├── vite.config.mts          # 必须 .mts：vite.config.ts 会被当 CJS 加载
 │   ├── components.json          # shadcn/ui 配置
 │   ├── electron-builder.yml
 │   ├── scripts/
 │   │   └── prepare-runtime.ps1  # 下载 Temurin JDK 17 + jlink 裁剪；复制 zipalign/apksigner
 │   ├── src/
 │   │   ├── main/
-│   │   │   ├── index.ts         # 应用入口、窗口创建
+│   │   │   ├── main.ts          # 应用入口、窗口创建（不可叫 index.ts，见下）
 │   │   │   ├── ipc/             # IPC handler 按域拆分（runtime/jks/channels/task/pack）
 │   │   │   ├── paths.ts         # 数据目录解析（PORTABLE_EXECUTABLE_DIR / userData）
 │   │   │   ├── store.ts         # 配置读写（jks / 渠道 / 模板）
@@ -59,10 +59,10 @@
 │   │   │   ├── pipeline.ts      # 出包任务编排
 │   │   │   └── logger.ts        # 日志落盘
 │   │   ├── preload/
-│   │   │   └── index.ts         # contextBridge 暴露 window.api
+│   │   │   └── preload.ts       # contextBridge 暴露 window.api（同上）
 │   │   ├── shared/
 │   │   │   ├── constants/channels.ts   # IPC 通道名唯一来源
-│   │   │   └── types/                  # 主/渲染共用类型
+│   │   │   └── types/api.ts            # window.api 契约（preload 实现、renderer 消费）
 │   │   └── renderer/
 │   │       ├── index.html
 │   │       └── src/
@@ -82,6 +82,10 @@
 > **技术选型依据**：`.trellis/spec/frontend/` 规定 Electron 项目用 **TypeScript 严格模式 + pnpm**，IPC 一律走 `window.api` 且通道名集中在 `shared/constants/channels.ts`，组件上限 300 行、CSS 文件上限 500 行。本设计遵循这些约定。
 >
 > **规范中已过时的一条**：`spec/frontend/electron-browser-api-restrictions.md` 说 `File.path` 不可用、应"在主进程处理拖拽"。实际是 Electron 32+ **移除了** `File.path`，官方替代正是 `webUtils.getPathForFile`（在 preload 中调用）。本实现按官方方案，并在收尾阶段更新该 spec。
+>
+> **入口文件为何不叫 `index.ts`**（阶段 0 实测）：`vite-plugin-electron` 的主进程与 preload 构建都以 `[name].js` 输出到同一个 `dist-electron/`，两边都叫 `index.ts` 会互相覆盖，最终只剩一个产物。另外它会把外层 Vite 的 `root` 继承给这两个构建（源码里的 `options.vite.root ??= userConfig.root`），而本工程外层 `root` 指向 `src/renderer`，所以两者都显式把 `vite.root` 设回 app 根目录。
+>
+> **另一处过时**：`spec/shared/pnpm-electron-setup.md` 仍写 `.npmrc` + `node-linker`/`shamefully-hoist`，pnpm 11 起只从 `.npmrc` 读认证与 registry，这些设置必须进 `pnpm-workspace.yaml`（键名 camelCase）。收尾阶段一并更新该 spec。
 
 ## 设计系统
 

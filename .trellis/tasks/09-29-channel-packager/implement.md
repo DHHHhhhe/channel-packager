@@ -15,13 +15,30 @@
   - **pnpm 11 起 `.npmrc` 不再承载这些设置**：它只读认证与 registry，`node-linker` / `shamefully-hoist` 必须写进 `app/pnpm-workspace.yaml`（键名改 camelCase：`nodeLinker` / `shamefullyHoist` / `strictPeerDependencies` / `allowBuilds`）。**已实测**：写在 `.npmrc` 里会被静默忽略，`pnpm config get node-linker` 返回 `undefined`，`node_modules` 仍是符号链接。
   - **electron 44 已取消 `postinstall`**，二进制改由独立的 `install-electron` 命令下载。不显式调用就不会有 `node_modules/electron/dist/electron.exe`。故在 `package.json` 加 `"postinstall": "install-electron"`。
 - [x] 装前端工具链：`vite`、`@vitejs/plugin-react`、`react`、`react-dom`、`tailwindcss`（v4）、`@tailwindcss/vite`、`vite-plugin-electron`。
-- [ ] `npx shadcn@latest init`（基色选 **Neutral**），再 `npx shadcn@latest add button card dialog table badge checkbox select input label separator`，组件源码落到 `renderer/components/ui/`。**待 renderer 骨架就位后再做** —— init 需要先探测到 vite + React 工程。
+- [x] 写 `app/vite.config.mts` 与 renderer 骨架（`src/renderer/index.html`、`src/main.tsx`、`App.tsx`、`styles/index.css`），再跑 shadcn init。
+  - **必须叫 `vite.config.mts`**：`package.json` 没有 `"type": "module"`，`vite.config.ts` 会被当 CJS 加载，Vite 8 已就此告警（native 配置加载器转正后会直接失败）。
+  - **TypeScript 7 移除了 `baseUrl`**：`paths` 必须写成相对路径（`"./src/renderer/src/*"`），否则 `tsc` 直接报 TS5102 / TS5090。
+  - 入口文件命名为 `main/main.ts` 与 `preload/preload.ts`，**不能叫 `index.ts`**：两个构建都以 `[name].js` 输出到同一个 `dist-electron/`，同名会互相覆盖。另外两者都要显式设 `vite.root = app 根目录`，否则会继承外层指向 `src/renderer` 的 `root`。
+- [x] `npx shadcn@latest init -t vite -b radix -p nova --css-variables -y --no-monorepo`，再 `add card dialog table badge checkbox select input label separator`，组件源码落到 `src/renderer/src/components/ui/`。
+  - **CLI 参数已与规划时不同**：`-b/--base` 现在指组件库（base/radix/aria），不再是基色；`-d` 会按 next 模板新建工程，**不能用**；不传 `-p/--preset` 会停在交互式选择上。实测 `-p nova` 生成的正是 Neutral 基色 + Geist 字体，与 R22 要求一致。
+  - **字体栈有坑**：init 会往 `styles/index.css` 追加 `@theme inline { --font-sans: 'Geist Variable', sans-serif }`。另起一个 `@theme` 块写中文回退会被它**覆盖**，必须直接改 `@theme inline` 里那一行，否则中文掉到系统默认字体。
 - [x] 写 `app/scripts/prepare-runtime.ps1`：
   - **JRE 自行产出**：下载 Temurin JDK 17（Windows x64 zip，182 MB，带 SHA256 校验）→ 解压 → `jlink` 裁剪 → 删除临时 JDK。**不从本机任何安装复制**（本机 Java 依附 Android Studio 的 jbr，卸载即失效）。
   - 从本机 SDK 复制 `zipalign.exe` 与 `apksigner.jar`；从工作目录复制 `walle-cli-all.jar`。
   - 幂等：目标已存在且体积匹配则跳过。
 - [x] 执行脚本，实测体积：JRE **30.8 MB** + zipalign 0.86 MB + apksigner 1.13 MB + walle 0.56 MB = **33.4 MB**（与预期一致）。
 - [x] 加 `.gitignore`（`app/node_modules`、`app/resources/bin`、`app/dist`、`app/release`）。
+- [x] 骨架冒烟通过：`pnpm build` 产出 `dist/`（renderer）与 `dist-electron/main.js`、`dist-electron/preload.js` 三个互不冲突的产物；用 `--remote-debugging-port=9222` 启动构建产物，CDP 求值确认 `#root` 已挂上 React（`h1` 文本正确），渲染进程无报错。
+
+**骨架验证**
+
+```powershell
+pnpm typecheck
+pnpm build
+Get-ChildItem app\dist-electron          # 期望 main.js + preload.js（不可同名）
+```
+
+> **踩过的坑（供应链策略）**：手工把 `shadcn` 从 `dependencies` 挪到 `devDependencies`，会让 `pnpm-lock.yaml` 与 `package.json` 失配；`pnpm run` 前的依赖校验随即触发重装，而本机环境对依赖有 `minimumReleaseAge`（24 小时）策略，重装被拦下（`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`，6 个刚发布的传递依赖）。**结论**：`shadcn` 是被 CSS 的 `@import "shadcn/tailwind.css"` 拉进来的构建期依赖，保持注册表写入的位置即可，别手工挪分类。本工程 `electron-builder.yml` 的 `files` 只收 `dist/**`、`dist-electron/**`、`package.json`，`node_modules` 根本不进包，分类对产物无影响。
 
 **验证**
 
