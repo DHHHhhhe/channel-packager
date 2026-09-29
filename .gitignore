@@ -1,0 +1,32 @@
+# 签名私钥：绝不入库（工作目录现有 25 个 jks）
+*.jks
+*.keystore
+
+# 测试用 APK（约 100 MB，不入库）
+*.apk
+
+# 应用运行数据：含 jks 副本、明文密码与 Chromium 缓存，整目录敏感
+data/
+
+# 真实业务配置与既有资产：含真实渠道号、硬编码密码与本机用户名路径，不入库
+# 仓库内的脱敏样例为 channelConfig.sample.json
+/channelConfig.json
+/APK拖动到此分包.bat
+
+# 构建产物与依赖
+app/node_modules/
+app/resources/bin/
+app/dist/
+app/release/
+app/out/
+app/dist-electron/
+app/*.exe
+
+# 临时工作目录与日志
+.channel_work/
+*.log
+
+# 系统与编辑器
+Thumbs.db
+desktop.ini
+.DS_Store

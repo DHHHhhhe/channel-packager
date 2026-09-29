@@ -1,0 +1,89 @@
+{
+    "defaultExtraInfo": {
+        "app": "demo"
+    },
+    "channelInfoList": [
+        {
+            "channel": "demo_jl_flow",
+            "alias": "巨量"
+        },
+        {
+            "channel": "demo_ks_flow",
+            "alias": "快手"
+        },
+        {
+            "channel": "demo_tx_flow",
+            "alias": "腾讯"
+        },
+        {
+            "channel": "demo_gf",
+            "alias": "官方"
+        },
+        {
+            "channel": "demo_hw",
+            "alias": "华为"
+        },
+        {
+            "channel": "demo_xm",
+            "alias": "小米"
+        },
+        {
+            "channel": "demo_oppo",
+            "alias": "OPPO"
+        },
+        {
+            "channel": "demo_vivo",
+            "alias": "VIVO"
+        },
+        {
+            "channel": "demo_honor",
+            "alias": "荣耀"
+        },
+        {
+            "channel": "demo_mz",
+            "alias": "魅族"
+        },
+        {
+            "channel": "demo_bd",
+            "alias": "百度"
+        },
+        {
+            "channel": "demo_yyb",
+            "alias": "应用宝"
+        },
+        {
+            "channel": "demo_uc",
+            "alias": "UC"
+        },
+        {
+            "channel": "CPS00001"
+        },
+        {
+            "channel": "CPS00002"
+        },
+        {
+            "channel": "CPS00003"
+        },
+        {
+            "channel": "CPS00004"
+        },
+        {
+            "channel": "CPS00005"
+        },
+        {
+            "channel": "CPS00006"
+        },
+        {
+            "channel": "demo_bd0001"
+        },
+        {
+            "channel": "demo_bd0002"
+        },
+        {
+            "channel": "demo_bd0003"
+        },
+        {
+            "channel": "demo_bd0004"
+        }
+    ]
+}
