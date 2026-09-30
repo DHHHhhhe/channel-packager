@@ -93,7 +93,7 @@ pnpm dist              # 出便携版 exe，产物在 release/
 | ----------------------------------- | --------------------------------------------------------------------------- |
 | `jre/`                              | 从 Adoptium 下载 Temurin JDK 17，用 `jlink` 裁剪（模块集 `java.base,java.sql,java.logging,jdk.crypto.ec,jdk.jartool`） |
 | `zipalign.exe`、`apksigner.jar`     | 本机 Android SDK build-tools 里版本号最高的正式版目录                        |
-| `walle-cli-all.jar`                 | 仓库根目录                                                                   |
+| `walle-cli-all.jar`                 | 仓库根目录（第三方构建，来源见「第三方组件」）                                                                 |
 
 脚本幂等：产物存在且体积与 `resources/bin/.manifest.json` 记录一致就跳过，加 `-Force` 强制重建。
 
@@ -136,7 +136,30 @@ pwsh -NoProfile -File scripts/make-icon.ps1
 | Temurin JRE   | 17.0.20.1                | GPLv2 + Classpath Exception |
 | apksigner     | 0.9                      | Apache-2.0                  |
 | zipalign      | Android SDK build-tools  | Apache-2.0                  |
-| Walle         | 1.1.6                    | Apache-2.0                  |
+| Walle         | 1.1.6（第三方构建，见下）              | Apache-2.0                  |
+
+### Walle CLI jar 的来源
+
+仓库根目录的 `walle-cli-all.jar` **不是上游的 release 资产，而是一份第三方构建**。来源如下，请知悉后再使用。
+
+| 项       | 值                                                                                                                       |
+| -------- | ------------------------------------------------------------------------------------------------------------------------ |
+| 上游项目 | [Meituan-Dianping/walle](https://github.com/Meituan-Dianping/walle)（Apache-2.0）                                         |
+| 本仓库这份 | 585,426 字节，SHA256 `89D0358A512B7AC0586F999B31774C6A4B76A388AC35A34B1F28169FA449368B`                                 |
+| 获取自   | [issue #264](https://github.com/Meituan-Dianping/walle/issues/264) 里用户 vclub 贴出的自编译产物：`https://github.com/vclub/vclub.github.io/raw/master/walle-cli-all.jar` |
+| 代码对应 | 上游 master 上 PR #259（提交 `be6421b`）之后的代码，manifest 标 `Walle-Version: 1.1.6`                                    |
+| 内置依赖 | jcommander 1.48、commons-io 2.5、org.json 20080701、gson 2.8.0                                                            |
+
+**为什么不直接用官方 release 资产**：官方只发布过 `v1.1.6` 的 `walle-cli-all.jar`（584,848 字节，SHA256 `E655C5284EE1FC2916CCCA2ED3217C4BE227A8284FDB9218308C9CF431EF222C`），它缺 PR #259 的签名块 verity padding 处理，会产出装不上的渠道包 —— 见 [issue #290](https://github.com/Meituan-Dianping/walle/issues/290)：
+
+```
+INSTALL_PARSE_FAILED_NO_CERTIFICATES ... using APK Signature Scheme v3:
+Size of APK Signing Block is not a multiple of 4096: 4127
+```
+
+官方 `v1.1.7` 没有发布任何资产（[issue #334](https://github.com/Meituan-Dianping/walle/issues/334) 就是在问这件事），上游的 Gradle 构建也已不可用（wrapper 2.14.1、依赖仓库 jcenter 已停服）。
+
+**风险提示**：这份 jar 来自一个个人 GitHub Pages 仓库，无法对应到确切的上游提交，该链接在 issue 里曾失效过一次。若要换成可复现的构建，可从上游固定提交自行编译 —— `walle-cli`、`payload_writer`、`payload_reader` 三个模块的源码用 `javac --release 8` 编译，再与官方 jar 内的第三方依赖合并成 fat jar 即可，不需要 Gradle。
 
 ## 许可证
 
