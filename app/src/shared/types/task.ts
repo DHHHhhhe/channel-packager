@@ -63,6 +63,8 @@ export interface TaskFailure {
   exitCode?: number
   /** 失败步骤子进程输出的末尾若干行，竖排展示 */
   outputTail?: string[]
+  /** 进程是被超时强制结束的（不是自己跑完退出） */
+  timedOut?: boolean
 }
 
 export interface TaskResult {

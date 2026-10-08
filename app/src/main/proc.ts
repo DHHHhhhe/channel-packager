@@ -11,6 +11,24 @@ export interface RunOptions {
   encoding?: 'utf8' | 'gbk'
   /** 每读到一个完整行回调一次，用于把子进程输出实时推给界面 */
   onLine?: (line: string, stream: 'stdout' | 'stderr') => void
+  /** 覆盖默认的「多久没有输出就判定卡死」，传 0 表示不设限（测试用） */
+  idleTimeoutMs?: number
+}
+
+/**
+ * 子进程多久没有任何输出就判定卡死。
+ *
+ * 卡住的是 walle 这类子进程：它不退出、也不打印，`await` 就永远不回来，界面一直转，
+ * 用户只能强杀应用。10 分钟是保守值 —— 正常出包时最安静的一步是 apksigner 签名，
+ * 100 MB 的包也就几十秒。
+ */
+export const CHILD_IDLE_TIMEOUT_MS = 10 * 60 * 1000
+
+/** 判定卡死后留给进程退出的时间；到点还没 close 就不再等它，直接按失败收尾 */
+const KILL_GRACE_MS = 5 * 1000
+
+function describeDuration(ms: number): string {
+  return ms < 60_000 ? `${Math.round(ms / 1000)} 秒` : `${Math.round(ms / 60_000)} 分钟`
 }
 
 export interface RunOutcome {
@@ -45,12 +63,20 @@ export function tailLines(text: string, max = 6): string {
 export class StepFailure extends Error {
   readonly exitCode?: number
   readonly outputTail: readonly string[]
+  /** 进程被超时强制结束 —— 和「跑完了但退出码非 0」是两回事，界面要分开说 */
+  readonly timedOut: boolean
 
-  constructor(message: string, exitCode?: number, outputTail: readonly string[] = []) {
+  constructor(
+    message: string,
+    exitCode?: number,
+    outputTail: readonly string[] = [],
+    timedOut = false,
+  ) {
     super(message)
     this.name = 'StepFailure'
     this.exitCode = exitCode
     this.outputTail = outputTail
+    this.timedOut = timedOut
   }
 }
 
@@ -80,7 +106,67 @@ export function runProcess(
     const pending: Record<'stdout' | 'stderr', string> = { stdout: '', stderr: '' }
     const decoder = new TextDecoder(options.encoding === 'gbk' ? 'gbk' : 'utf-8')
 
+    const idleMs = options.idleTimeoutMs ?? CHILD_IDLE_TIMEOUT_MS
+    let settled = false
+    let timedOut = false
+    let idleTimer: NodeJS.Timeout | undefined
+    let killTimer: NodeJS.Timeout | undefined
+
+    const clearTimers = (): void => {
+      if (idleTimer !== undefined) {
+        clearTimeout(idleTimer)
+        idleTimer = undefined
+      }
+      if (killTimer !== undefined) {
+        clearTimeout(killTimer)
+        killTimer = undefined
+      }
+    }
+
+    const timeoutError = (): StepFailure =>
+      new StepFailure(
+        `子进程超过 ${describeDuration(idleMs)}没有任何输出，已强制结束`,
+        undefined,
+        tailLineList(stdout + stderr),
+        true,
+      )
+
+    const settleReject = (error: Error): void => {
+      if (settled) {
+        return
+      }
+      settled = true
+      clearTimers()
+      reject(error)
+    }
+
+    const onIdle = (): void => {
+      timedOut = true
+      // 卡住的进程不会自己退，直接强杀；杀完等 close 事件来收尾
+      try {
+        child.kill('SIGKILL')
+      } catch {
+        // 已经退了
+      }
+      // 万一 close 迟迟不来（进程卡在内核里），也不能让任务永远转下去
+      killTimer = setTimeout(() => settleReject(timeoutError()), KILL_GRACE_MS)
+    }
+
+    /** 每次读到输出就把「多久没动静」的计时重置 */
+    const armIdle = (): void => {
+      if (idleMs <= 0) {
+        return
+      }
+      if (idleTimer !== undefined) {
+        clearTimeout(idleTimer)
+      }
+      idleTimer = setTimeout(onIdle, idleMs)
+    }
+
+    armIdle()
+
     const emit = (chunk: Buffer, stream: 'stdout' | 'stderr') => {
+      armIdle()
       const text = decoder.decode(chunk, { stream: true })
       if (stream === 'stdout') {
         stdout += text
@@ -101,7 +187,7 @@ export function runProcess(
 
     child.stdout.on('data', (chunk: Buffer) => emit(chunk, 'stdout'))
     child.stderr.on('data', (chunk: Buffer) => emit(chunk, 'stderr'))
-    child.on('error', reject)
+    child.on('error', settleReject)
     child.on('close', (code) => {
       // 冲刷解码器里可能残留的半个字符
       const tail = decoder.decode()
@@ -118,6 +204,15 @@ export function runProcess(
           }
         }
       }
+      if (timedOut) {
+        settleReject(timeoutError())
+        return
+      }
+      if (settled) {
+        return
+      }
+      settled = true
+      clearTimers()
       resolve({ code: code ?? -1, stdout, stderr })
     })
   })

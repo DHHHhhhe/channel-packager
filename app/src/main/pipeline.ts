@@ -356,6 +356,9 @@ export async function runPipeline(
       if (error.outputTail.length > 0) {
         failure.outputTail = [...error.outputTail]
       }
+      if (error.timedOut) {
+        failure.timedOut = true
+      }
     }
     log.error(`失败于「${failedStage}」阶段`)
     progress('failed', message)

@@ -85,6 +85,9 @@ function buildDiagnostic(result: TaskResult): string {
   if (failure?.exitCode !== undefined) {
     lines.push(`退出码：${failure.exitCode}`)
   }
+  if (failure?.timedOut) {
+    lines.push('该步骤没有输出后被杀掉：等满超时时间仍未结束，已强制终止进程')
+  }
   if (failure && failure.outputTail && failure.outputTail.length > 0) {
     lines.push(`该步骤输出末尾 ${failure.outputTail.length} 行：`)
     for (const line of failure.outputTail) {
@@ -570,6 +573,7 @@ export function PackScreen() {
                       退出码：<span className="font-mono">{failure.exitCode}</span>
                     </span>
                   ) : null}
+                  {failure.timedOut ? <span>卡住后已强制结束</span> : null}
                   <span className="text-muted-foreground">任务号 {result.taskId}</span>
                 </div>
 
@@ -582,6 +586,10 @@ export function PackScreen() {
                       {failure.outputTail.join('\n')}
                     </pre>
                   </>
+                ) : failure.timedOut ? (
+                  <p className="text-sm text-muted-foreground">
+                    这个进程从头到尾一个字都没输出，等到超时就被强制结束了 —— 日志里能看到它停在哪个动作上。
+                  </p>
                 ) : (
                   <p className="text-sm text-muted-foreground">
                     这一步没有子进程输出 —— 报错来自程序自己的检查，不用去日志里找。
