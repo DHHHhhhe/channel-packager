@@ -136,6 +136,16 @@ pwsh -NoProfile -File scripts/make-icon.ps1
 
 仓库的 `.gitignore` 已经排除 `*.jks`、`*.keystore`、`*.apk`、`data/`、`channelConfig.json` 与 `APK拖动到此分包.bat`。
 
+### 仓库里没有 exe，要自己构建
+
+`app/release/` 在 `.gitignore` 里，所以 clone 下来的仓库**不含便携版 exe**，必须自己跑一次构建（见「从源码构建」）。产物是 `app/release/渠道分包工具-<版本>.exe`，约 114 MB。
+
+不进版本库的原因：它是构建产物，体积上百 MB，且每次构建的字节内容都不同（时间戳、签名等），入库只会让仓库无限膨胀。
+
+**便携版把数据写在 exe 旁边的 `data/`**。如果你直接从 `app/release/` 运行 exe，配置就会落到 `app/release/data/` —— 那是构建产物目录，容易被重新构建或清理时一并删掉，里面的 `.jks` 副本与明文口令也会跟着没。
+
+建议把 exe **拷到别处再运行**（例如 `D:\工具\渠道分包工具\`），数据就跟着留在那里，跟构建目录彻底分开。
+
 ## 第三方组件
 
 | 组件          | 版本                     | 许可证                      |
