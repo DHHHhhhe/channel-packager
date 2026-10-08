@@ -111,4 +111,10 @@ export interface RendererApi {
     conflictStrategy: ConflictStrategy
     overwriteTemplate: boolean
   }): Promise<PackImportResult>
+
+  /**
+   * 写系统剪贴板。主进程会先把路径里的家目录换成 `%USERPROFILE%` 再写 ——
+   * 复制的多是失败诊断，里面全是本机绝对路径，发给别人前不必再手工改。
+   */
+  writeClipboard(text: string): Promise<void>
 }

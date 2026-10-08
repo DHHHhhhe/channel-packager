@@ -32,6 +32,9 @@ export const IPC_CHANNELS = {
   packImport: 'pack:import',
   /** 用户确认冲突策略后真正落盘 */
   packImportApply: 'pack:importApply',
+
+  /** 写系统剪贴板；主进程会把路径里的家目录换成 %USERPROFILE% 再写 */
+  clipboardWrite: 'clipboard:write',
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]

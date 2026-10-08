@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, session, shell } from 'electron'
 import path from 'node:path'
+import { registerClipboardIpc } from './ipc/clipboard'
 import { registerCredentialIpc } from './ipc/credential'
 import { registerRuntimeIpc } from './ipc/runtime'
 import { registerStoreIpc } from './ipc/store'
@@ -83,6 +84,7 @@ app.whenReady().then(() => {
   registerCredentialIpc()
   registerTaskIpc()
   registerPackIpc()
+  registerClipboardIpc()
 
   createWindow()
 

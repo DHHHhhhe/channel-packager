@@ -19,13 +19,39 @@ export interface RunOutcome {
   stderr: string
 }
 
-/** 取输出末尾若干行，用来把子进程的真实报错带给用户，而不是只说一句「失败了」 */
-export function tailLines(text: string, max = 6): string {
+/** 子进程报错时默认往回看多少行：15 行足够覆盖 walle 那种「真正的错在第 8 行」的情况 */
+export const FAILURE_TAIL_LINES = 15
+
+/** 取输出末尾若干行（竖排数组），用来把子进程的真实报错带给用户，而不是只说一句「失败了」 */
+export function tailLineList(text: string, max = FAILURE_TAIL_LINES): string[] {
   const lines = text
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line !== '')
-  return lines.slice(-max).join(' / ')
+  return lines.slice(-max)
+}
+
+/** 取输出末尾若干行，拼成一句话 —— 用在「只有一行位置」的 message 里 */
+export function tailLines(text: string, max = 6): string {
+  return tailLineList(text, max).join(' / ')
+}
+
+/**
+ * 带诊断信息的步骤失败。
+ *
+ * 消息本身只说到「哪一步、退出码多少」，子进程输出的末尾若干行单独放在
+ * `outputTail` 里：界面要竖排展示，日志里也已经逐行记过，塞进 message 会重复。
+ */
+export class StepFailure extends Error {
+  readonly exitCode?: number
+  readonly outputTail: readonly string[]
+
+  constructor(message: string, exitCode?: number, outputTail: readonly string[] = []) {
+    super(message)
+    this.name = 'StepFailure'
+    this.exitCode = exitCode
+    this.outputTail = outputTail
+  }
 }
 
 /**

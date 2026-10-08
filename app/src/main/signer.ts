@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import type { TaskLogger } from './logger'
-import { runProcess, tailLines } from './proc'
+import { runProcess, StepFailure, tailLineList } from './proc'
 import { resolveRuntimeComponentPath } from './runtime'
 
 /**
@@ -49,11 +49,20 @@ export async function zipalign(
     { encoding: 'gbk', onLine: pipe(ctx, 'zipalign') },
   )
   if (result.code !== 0) {
-    throw new Error(`zipalign 失败（退出码 ${result.code}）：${tailLines(result.stdout + result.stderr)}`)
+    throw new StepFailure(
+      `zipalign 失败（退出码 ${result.code}）`,
+      result.code,
+      tailLineList(result.stdout + result.stderr),
+    )
   }
-  // bat 也检查了产物存在：退出码 0 但没产出文件的情况确实会出现
+  // bat 也检查了产物存在：退出码 0 但没产出文件的情况确实会出现。
+  // 这条刻意不给退出码 —— 它本来就是 0，摆出来只会让人以为工具坏了，输出末尾才是线索。
   if (!fs.existsSync(outputApk)) {
-    throw new Error('zipalign 报告成功但没有产出文件，已中止')
+    throw new StepFailure(
+      'zipalign 报告成功但没有产出文件，已中止',
+      undefined,
+      tailLineList(result.stdout + result.stderr),
+    )
   }
 }
 
@@ -94,12 +103,18 @@ export async function signApk(params: SignParams, ctx: StepContext): Promise<voi
     },
   )
   if (result.code !== 0) {
-    throw new Error(
-      `apksigner 签名失败（退出码 ${result.code}）：${tailLines(result.stdout + result.stderr)}`,
+    throw new StepFailure(
+      `apksigner 签名失败（退出码 ${result.code}）`,
+      result.code,
+      tailLineList(result.stdout + result.stderr),
     )
   }
   if (!fs.existsSync(params.outputApk)) {
-    throw new Error('apksigner 报告成功但没有产出文件，已中止')
+    throw new StepFailure(
+      'apksigner 报告成功但没有产出文件，已中止',
+      undefined,
+      tailLineList(result.stdout + result.stderr),
+    )
   }
 }
 
@@ -111,6 +126,10 @@ export async function verifyApk(apkPath: string, ctx: StepContext): Promise<void
     { onLine: pipe(ctx, 'apksigner-verify') },
   )
   if (result.code !== 0) {
-    throw new Error(`apksigner 校验未通过：${tailLines(result.stdout + result.stderr)}`)
+    throw new StepFailure(
+      `apksigner 校验未通过（退出码 ${result.code}）`,
+      result.code,
+      tailLineList(result.stdout + result.stderr),
+    )
   }
 }

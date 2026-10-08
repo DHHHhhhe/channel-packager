@@ -1,5 +1,5 @@
 import { JAVA_ENCODING_ARGS, type StepContext } from './signer'
-import { runProcess, tailLines } from './proc'
+import { runProcess, StepFailure, tailLineList } from './proc'
 import { resolveRuntimeComponentPath } from './runtime'
 
 function javaArgs(args: readonly string[]): string[] {
@@ -53,7 +53,11 @@ export async function walleBatch2(
     { onLine: pipe(ctx, 'walle') },
   )
   if (result.code !== 0) {
-    throw new Error(`walle 写渠道失败（退出码 ${result.code}）：${tailLines(result.stdout + result.stderr)}`)
+    throw new StepFailure(
+      `walle 写渠道失败（退出码 ${result.code}）`,
+      result.code,
+      tailLineList(result.stdout + result.stderr),
+    )
   }
 }
 

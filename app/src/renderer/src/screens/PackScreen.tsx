@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Eye, Package, Upload } from 'lucide-react'
+import { Copy, Eye, Package, Upload } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 import { ProgressPanel } from '@/components/ProgressPanel'
 import { Badge } from '@/components/ui/badge'
@@ -65,6 +65,48 @@ function baseNameOf(filePath: string): string {
   return normalized.slice(normalized.lastIndexOf('/') + 1)
 }
 
+/**
+ * 拼出「复制诊断信息」的内容。
+ *
+ * 只放定位问题用得上的东西，不塞组件版本 —— 收件人真正要看的是卡在哪一步、
+ * 退出码多少、那一步说了什么。家目录的脱敏不在这里做：主进程写剪贴板时按
+ * `os.homedir()` 精确替换（见 app/src/main/ipc/clipboard.ts），
+ * 比在这儿拿正则猜路径长什么样可靠（用户名带空格时会猜错）。
+ */
+function buildDiagnostic(result: TaskResult): string {
+  const failure = result.failure
+  const lines: string[] = [
+    '渠道分包工具 · 出包失败',
+    `任务号：${result.taskId}`,
+    `失败步骤：${failure ? STAGE_LABELS[failure.stage] : '未知'}`,
+    `原因：${result.message}`,
+  ]
+  if (failure?.exitCode !== undefined) {
+    lines.push(`退出码：${failure.exitCode}`)
+  }
+  if (failure && failure.outputTail && failure.outputTail.length > 0) {
+    lines.push(`该步骤输出末尾 ${failure.outputTail.length} 行：`)
+    for (const line of failure.outputTail) {
+      lines.push(`    ${line}`)
+    }
+  }
+  if (result.outputDir !== '') {
+    lines.push(`输出目录：${result.outputDir}`)
+  }
+  if (result.workDir !== '') {
+    lines.push(`工作目录：${result.workDir}`)
+  }
+  lines.push(`日志：${result.logFile}`)
+  if (result.warnings.length > 0) {
+    lines.push('过程中的提醒：')
+    for (const warning of result.warnings) {
+      lines.push(`    ${warning}`)
+    }
+  }
+  // 记事本也能正常换行，别只给 \n
+  return lines.join('\r\n')
+}
+
 export function PackScreen() {
   const { jksItems, getChannels } = useAppStore()
   const [apkPath, setApkPath] = useState('')
@@ -84,6 +126,8 @@ export function PackScreen() {
   const [stage, setStage] = useState<string | null>(null)
   const [lines, setLines] = useState<string[]>([])
   const [result, setResult] = useState<TaskResult | null>(null)
+  /** 「复制诊断信息」点过了，用来把按钮旁的提示换掉 */
+  const [copied, setCopied] = useState(false)
   // null 表示「本界面还没启动过任务」；此时到达的进度一定属于本次启动
   const taskIdRef = useRef<string | null>(null)
 
@@ -101,6 +145,7 @@ export function PackScreen() {
       }
       if (event.result) {
         setResult(event.result)
+        setCopied(false)
         setRunning(false)
       }
     })
@@ -200,6 +245,7 @@ export function PackScreen() {
   const handleStart = async () => {
     setLines([])
     setResult(null)
+    setCopied(false)
     setStatus(null)
     setStage('启动中')
     taskIdRef.current = null
@@ -217,6 +263,18 @@ export function PackScreen() {
       setRunning(false)
       setStage('失败')
       setLines([ipcErrorMessage(error)])
+    }
+  }
+
+  const handleCopyDiagnostic = async (): Promise<void> => {
+    if (!result) {
+      return
+    }
+    try {
+      await window.api.writeClipboard(buildDiagnostic(result))
+      setCopied(true)
+    } catch (error) {
+      setStatus({ kind: 'error', text: ipcErrorMessage(error) })
     }
   }
 
@@ -241,6 +299,9 @@ export function PackScreen() {
   }, [apkPath, selectedJks, channels.length, picked.size, outputDir])
 
   const canStart = blockers.length === 0 && !running
+
+  // 失败诊断只在失败时存在；提到这里是为了在 JSX 里拿到窄化后的类型
+  const failure = result && !result.ok ? result.failure : undefined
 
   return (
     <div className="flex flex-col gap-4">
@@ -495,6 +556,55 @@ export function PackScreen() {
                   <li key={warning}>{warning}</li>
                 ))}
               </ul>
+            ) : null}
+
+            {failure ? (
+              <div className="flex flex-col gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-3">
+                <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
+                  <span>
+                    卡在：<span className="font-medium">{STAGE_LABELS[failure.stage]}</span>
+                  </span>
+                  {failure.exitCode !== undefined ? (
+                    <span>
+                      退出码：<span className="font-mono">{failure.exitCode}</span>
+                    </span>
+                  ) : null}
+                  <span className="text-muted-foreground">任务号 {result.taskId}</span>
+                </div>
+
+                {failure.outputTail && failure.outputTail.length > 0 ? (
+                  <>
+                    <p className="text-sm text-muted-foreground">
+                      这个步骤的输出末尾 {failure.outputTail.length} 行：
+                    </p>
+                    <pre className="max-h-64 overflow-auto rounded-md bg-muted p-3 font-mono text-xs whitespace-pre-wrap">
+                      {failure.outputTail.join('\n')}
+                    </pre>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    这一步没有子进程输出 —— 报错来自程序自己的检查，不用去日志里找。
+                  </p>
+                )}
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={handleCopyDiagnostic}>
+                    <Copy />
+                    复制诊断信息
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    {copied
+                      ? '已复制，路径里的家目录已换成 %USERPROFILE%'
+                      : '复制的内容里，路径的家目录会换成 %USERPROFILE%'}
+                  </span>
+                </div>
+
+                {result.workDir !== '' ? (
+                  <p className="text-xs text-muted-foreground">
+                    工作目录（失败时保留，可对着中间产物排查）：{result.workDir}
+                  </p>
+                ) : null}
+              </div>
             ) : null}
 
             <p className="text-xs text-muted-foreground">日志：{result.logFile}</p>

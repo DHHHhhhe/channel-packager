@@ -49,6 +49,21 @@ export interface TaskArtifact {
   note?: string
 }
 
+/**
+ * 失败诊断：让人不必去翻日志就能看出卡在哪一步。
+ *
+ * `stage` 是失败前最后进入的阶段（不是 `'failed'` 本身）；`exitCode` 与
+ * `outputTail` 只有子进程失败时才有 —— 我们自己的输入校验失败既没有退出码，
+ * 也没有子进程输出，那两个字段就是空的。
+ */
+export interface TaskFailure {
+  stage: TaskStage
+  /** 子进程退出码；自查失败（例如「尚未勾选任何渠道」）时为 undefined */
+  exitCode?: number
+  /** 失败步骤子进程输出的末尾若干行，竖排展示 */
+  outputTail?: string[]
+}
+
 export interface TaskResult {
   taskId: string
   ok: boolean
@@ -59,6 +74,8 @@ export interface TaskResult {
   artifacts: TaskArtifact[]
   /** 不中止流程但需要让人知道的问题 */
   warnings: string[]
+  /** 只有 ok === false 时存在 */
+  failure?: TaskFailure
 }
 
 export interface TaskStartResult {

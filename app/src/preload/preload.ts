@@ -131,6 +131,10 @@ const api: RendererApi = {
   }): Promise<PackImportResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.packImportApply, input)
   },
+
+  writeClipboard(text: string): Promise<void> {
+    return ipcRenderer.invoke(IPC_CHANNELS.clipboardWrite, text)
+  },
 }
 
 contextBridge.exposeInMainWorld('api', api)

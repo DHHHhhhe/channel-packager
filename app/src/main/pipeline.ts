@@ -1,9 +1,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { ChannelConfig, ChannelEntry, JksItem } from '../shared/types/store'
-import type { TaskArtifact, TaskInput, TaskResult, TaskStage } from '../shared/types/task'
+import type { TaskArtifact, TaskFailure, TaskInput, TaskResult, TaskStage } from '../shared/types/task'
 import { createTaskLogger } from './logger'
 import { resolveInData } from './paths'
+import { StepFailure } from './proc'
 import { readChannels, readJksFile } from './store'
 import { signApk, verifyApk, zipalign, type StepContext } from './signer'
 import { walleBatch2, walleShowChannel } from './walle'
@@ -119,11 +120,22 @@ export async function runPipeline(
     hooks.onProgress(stage, message, line)
   }
 
-  const finish = (ok: boolean, message: string): TaskResult => {
+  const finish = (ok: boolean, message: string, failure?: TaskFailure): TaskResult => {
     if (!ok) {
       log.error(message)
     }
-    return { taskId, ok, message, outputDir, workDir, logFile: log.file, artifacts, warnings }
+    return {
+      taskId,
+      ok,
+      message,
+      outputDir,
+      workDir,
+      logFile: log.file,
+      artifacts,
+      warnings,
+      // 成功时不写这个键，避免结果里多一个恒为 undefined 的字段
+      ...(failure ? { failure } : {}),
+    }
   }
 
   try {
@@ -280,8 +292,23 @@ export async function runPipeline(
     log.section('完成')
     return finish(true, message)
   } catch (error) {
+    /*
+     * 先记下失败时所在的阶段，再报 failed —— progress 会把 currentStage 改成 'failed'，
+     * 而界面要的是「卡在 apksigner 签名」这种信息，光说一句「失败」等于没说。
+     */
+    const failedStage = currentStage
     const message = error instanceof Error ? error.message : String(error)
+    const failure: TaskFailure = { stage: failedStage }
+    if (error instanceof StepFailure) {
+      if (error.exitCode !== undefined) {
+        failure.exitCode = error.exitCode
+      }
+      if (error.outputTail.length > 0) {
+        failure.outputTail = [...error.outputTail]
+      }
+    }
+    log.error(`失败于「${failedStage}」阶段`)
     progress('failed', message)
-    return finish(false, message)
+    return finish(false, message, failure)
   }
 }
