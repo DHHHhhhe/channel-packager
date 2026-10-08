@@ -386,21 +386,36 @@ export function PackScreen() {
               </p>
             ) : (
               <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
-                {channels.map((entry) => (
-                  <label
-                    key={entry.channel}
-                    className="flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm"
-                  >
-                    <Checkbox
-                      checked={picked.has(entry.channel)}
-                      onCheckedChange={(value) => toggleChannel(entry.channel, value === true)}
-                      aria-label={entry.channel}
-                    />
-                    <span className="truncate" title={entry.channel}>
-                      {entry.alias ?? entry.channel}
-                    </span>
-                  </label>
-                ))}
+                {channels.map((entry) => {
+                  const alias = entry.alias?.trim()
+                  // 别名是给人看的，渠道号是实际写进包里的，两个都要能看见：
+                  // 只显示别名时，两条别名相近的渠道分不出哪条是哪条。
+                  return (
+                    <label
+                      key={entry.channel}
+                      className="flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm"
+                    >
+                      <Checkbox
+                        checked={picked.has(entry.channel)}
+                        onCheckedChange={(value) => toggleChannel(entry.channel, value === true)}
+                        aria-label={entry.channel}
+                      />
+                      <span className="flex min-w-0 flex-col leading-tight">
+                        <span className="truncate" title={alias ? `${alias}（${entry.channel}）` : entry.channel}>
+                          {alias || entry.channel}
+                        </span>
+                        {alias ? (
+                          <span
+                            className="truncate font-mono text-xs text-muted-foreground"
+                            title={entry.channel}
+                          >
+                            {entry.channel}
+                          </span>
+                        ) : null}
+                      </span>
+                    </label>
+                  )
+                })}
               </div>
             )}
           </div>
