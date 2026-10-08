@@ -32,11 +32,12 @@ import { useAppStore } from '@/store/app-store'
 const STAGE_LABELS: Record<TaskStage, string> = {
   validate: '校验输入',
   prepare: '准备工作目录',
+  'check-source': '核对输入包签名',
   align: 'zipalign 对齐',
   sign: 'apksigner 重签名',
   'verify-sign': '校验签名',
   rename: '还原为原包名',
-  'resigned-copy': '另存 _resigned',
+  'resigned-copy': '另存已签名未写渠道的包',
   'channel-json': '写渠道配置',
   walle: 'walle 写渠道',
   check: '校验产物渠道号',
@@ -409,7 +410,7 @@ export function PackScreen() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="sign">重签名（zipalign + apksigner）</SelectItem>
-                  <SelectItem value="skip">跳过签名（直接用原包）</SelectItem>
+                  <SelectItem value="skip">跳过签名（用已签好的包，会先核对证书）</SelectItem>
                 </SelectContent>
               </Select>
             </div>

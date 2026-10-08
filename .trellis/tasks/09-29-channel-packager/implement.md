@@ -478,6 +478,44 @@ pnpm 那条是实测确认的（pnpm 11.8.0）：
 | 追加时 app 不一致 | 状态栏追加一句「文件里的 defaultExtraInfo.app 是「别的应用」，与本 jks 的「测试应用」不同；按 jks 的值为准，文件里的未采用。」，落盘仍是「测试应用」 |
 | 打包版冒烟 | 便携版 exe 启动后四个页面都能进：`查看渠道` 按钮在、未选 jks 时 `渠道数据来源` 禁用、模板 JSON 两个按钮已消失、`导出示例 JSON` 存在且因列表非空而禁用，页面错误 `[]` |
 
+## 后续增强：出包产物整理与跳过签名校验（2026-10-08 三续）
+
+起因是问「一次出包到底往磁盘上扔了哪些东西」。核下来是：原包、重签名时另存的 `_resigned.apk`（99.5 MB）、`渠道包\<原包名>_<别名>.apk`、失败时的 `渠道包\.work\<taskId>\`。用户对四个问题逐一拍板：
+
+| 问题 | 决定 |
+|---|---|
+| `_resigned.apk` 还要不要 | 要，而且**要能当输入包用** —— 下次出包直接喂它就能跳过重签名 |
+| 输出要不要按批次分目录 | 不要，保持平铺 |
+| 失败残留的 `.work\` 怎么办 | 留着（排查要用），但**每次重新生成时自动清掉** |
+| 跳过签名时要不要校验这个包是不是当前 jks 签的 | 做；配套的 `manifest.json` 不做 |
+
+### 改动
+
+| 位置 | 改动 | 理由 |
+|---|---|---|
+| `app/src/main/pipeline.ts` | 另存的文件改名 `<原包名>_已签名_未写渠道.apk`，并补上一直没发出的 `resigned-copy` 阶段 | 原名里的 `_resigned` 与正式产物太像，容易被误当成品发出去 |
+| `app/src/main/pipeline.ts` | 新增 `SIGNED_STEM_SUFFIX` 与 `stripSignedStemSuffix()`，`prepare()` 里 `apkBase` 先剥掉这段标记 | 那份包本身是合法输入，再次出包时产物名会一段段往上叠（`..._已签名_未写渠道_官方.apk`） |
+| `app/src/main/pipeline.ts` | 跳过签名时，若输入包名带标记，先复制成干净名字再交给 walle | walle 按**输入包名 + 别名**命名产物，只剥 `apkBase` 不够 —— 这是实测才发现的一处 |
+| `app/src/main/pipeline.ts` | `prepare` 阶段先 `rmSync(outputDir/.work)` 再建本次 workDir | 上一轮的中间产物对下一次没用，留着只会越堆越多 |
+| `app/src/main/signer.ts` | 新增 `probeApkCertificate` / `probeKeystoreCertificate` / `assertSignedByKeystore` | 跳过签名 = 输出包的签名完全由输入包决定，喂错包要到安装或覆盖更新时才暴露 |
+| `app/src/shared/types/task.ts`、`PackScreen.tsx` | `TaskStage` 加 `check-source`，`STAGE_LABELS` 补「核对输入包签名」、`resigned-copy` 改「另存已签名未写渠道的包」 | 否则失败卡片会把签名核对失败说成「卡在 apksigner 重签名」 |
+
+取证书指纹的手法（都已实测）：
+
+- APK 侧：`apksigner verify --print-certs <apk>`，从输出里按行匹配 `certificate SHA-256 digest:`。它会在几十上百行 `META-INF/... not protected by signature` 警告里夹这几行证书信息，所以不能整段解析。
+- jks 侧：`keytool -exportcert -alias <alias> -keystore <ks> -storepass:env <ENV> -rfc`，PEM 里的 base64 解回 DER 再算 SHA-256。**语法是 `-storepass:env NAME`（空格分隔）**，写成 `-storepass:env:NAME` 会报「未知选项」；`-J-Dfile.encoding=UTF-8` 这类 `-J` 参数可以正常转给 JVM，不加的话中文提示是 GBK 乱码。
+- 两侧算出来的值同一个，所以直接比字符串。
+
+### 实测结果（开发构建 + CDP 驱动，页面错误 `[]`）
+
+| 场景 | 结果 |
+|---|---|
+| 重签名一次 | `出包完成 2 个包`，产物 `示例应用_V1.4.6_20260916_1727_官方.apk` / `_华为.apk`；原包旁出现 `示例应用_V1.4.6_20260916_1727_已签名_未写渠道.apk`（99.46 MB） |
+| 跳过签名 + 这份包 | 核对通过；产物名仍是 `<原包名>_官方.apk`（标记已剥掉）；日志里两侧指纹都是 `f39fd21e7a3bec9c2841a097394937d130520bbb7459a85ee4873b7554bd3683`，并有一行「输入包名带「已签名未写渠道」标记，已复制为：…」 |
+| 跳过签名 + 别的 jks 签的包 | `出包失败` / `卡在：核对输入包签名` / **没有退出码行** / 文案「这个包不是用 jks「t11」签的（包里证书 53c1f20f264a5218…，jks 里证书 f39fd21e7a3bec9c…）…」，显示「这一步没有子进程输出 —— 报错来自程序自己的检查，不用去日志里找。」 |
+| 跳过签名 + 损坏的 .apk | 文案「这个包读不出签名证书（没签名或文件损坏），跳过签名会得到装不上的包，已中止」，并附 `--print-certs` 输出的末尾 10 行（`Malformed APK: not a ZIP archive`） |
+| `.work` 自动清理 | 一次失败留下 `.work\20261008-182202-gxgn`；下一次出包后该目录消失，只剩本次的 `.work\20261008-182257-l9wn` |
+
 ## 风险与回滚点
 
 | 风险 | 触发点 | 回滚/对策 |

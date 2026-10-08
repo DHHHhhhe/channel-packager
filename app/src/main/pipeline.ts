@@ -6,8 +6,21 @@ import { createTaskLogger } from './logger'
 import { resolveInData } from './paths'
 import { StepFailure } from './proc'
 import { readChannels, readJksFile } from './store'
-import { signApk, verifyApk, zipalign, type StepContext } from './signer'
+import { assertSignedByKeystore, signApk, verifyApk, zipalign, type StepContext } from './signer'
 import { walleBatch2, walleShowChannel } from './walle'
+
+/**
+ * 重签名后另存的那份「已签名但还没写渠道」的包，文件名里带的标记。
+ * 它本身也是一个可以继续用的输入包（跳过签名时就用它），所以再次出包时
+ * 要先把这段标记从包名里剥掉，否则产物名会一段段往上叠。
+ */
+export const SIGNED_STEM_SUFFIX = '_已签名_未写渠道'
+
+function stripSignedStemSuffix(base: string): string {
+  return base.endsWith(SIGNED_STEM_SUFFIX)
+    ? base.slice(0, base.length - SIGNED_STEM_SUFFIX.length)
+    : base
+}
 
 export interface PipelineHooks {
   onProgress: (stage: TaskStage, message: string, line?: string) => void
@@ -89,7 +102,7 @@ function prepare(input: TaskInput): Prepared {
 
   return {
     apkPath,
-    apkBase: path.basename(apkPath, path.extname(apkPath)),
+    apkBase: stripSignedStemSuffix(path.basename(apkPath, path.extname(apkPath))),
     apkDir: path.dirname(apkPath),
     item,
     keystorePath,
@@ -149,7 +162,14 @@ export async function runPipeline(
 
     progress('prepare', '准备工作目录')
     fs.mkdirSync(outputDir, { recursive: true })
-    workDir = path.join(outputDir, '.work', taskId)
+    /*
+     * 每次开始出包先把上一轮的 .work 整个清掉。
+     * 失败时刻意保留中间产物便于排查，但那些目录对下一次没有任何用处，
+     * 留着只会越堆越多，还会让「这次的中间产物」混进上一次的残留里。
+     */
+    const workRoot = path.join(outputDir, '.work')
+    fs.rmSync(workRoot, { recursive: true, force: true })
+    workDir = path.join(workRoot, taskId)
     fs.mkdirSync(workDir, { recursive: true })
     log.info(`工作目录：${workDir}`)
 
@@ -162,8 +182,34 @@ export async function runPipeline(
     let sourceApk = p.apkPath
 
     if (input.signMode === 'skip') {
-      progress('sign', '已按设置跳过签名')
+      /*
+       * 跳过签名 = 直接拿输入包去写渠道，输出包的签名完全由输入包决定。
+       * 所以先核对它是不是所选的 jks 签的，别到安装或覆盖更新时才发现签名对不上。
+       */
+      progress('check-source', '核对输入包的签名证书')
       log.info('signMode = skip，跳过 3a–3e')
+      await assertSignedByKeystore(
+        p.apkPath,
+        {
+          keystorePath: p.keystorePath,
+          alias: p.item.alias,
+          storePassword: p.item.storePassword,
+          jksId: p.item.id,
+        },
+        ctx,
+      )
+
+      /*
+       * walle 按「输入包名 + 别名」命名产物，而输入包名里可能还带着上一轮留下的
+       * 「已签名未写渠道」标记。复制到工作目录时顺手把名字还原，产物名才不会
+       * 一段段往上叠（名字本来就干净时不做这次复制）。
+       */
+      if (path.basename(p.apkPath, path.extname(p.apkPath)) !== p.apkBase) {
+        const restored = path.join(workDir, `${p.apkBase}.apk`)
+        fs.copyFileSync(p.apkPath, restored)
+        sourceApk = restored
+        log.info(`输入包名带「已签名未写渠道」标记，已复制为：${restored}`)
+      }
     } else {
       const aligned = path.join(workDir, 'aligned.apk')
       const signed = path.join(workDir, 'signed.apk')
@@ -197,13 +243,17 @@ export async function runPipeline(
       fs.copyFileSync(signed, restored)
       sourceApk = restored
 
-      // 3e：另存一份 _resigned.apk 供人工核对，按设计只告警不中止
+      /*
+       * 3e：另存一份「已签名未写渠道」的包，供人工核对；它本身也是一个可用的输入包，
+       * 下次出包选「跳过签名」直接喂它就行。按设计只告警不中止。
+       */
+      progress('resigned-copy', '另存已签名未写渠道的包')
       try {
-        const resigned = path.join(p.apkDir, `${p.apkBase}_resigned.apk`)
+        const resigned = path.join(p.apkDir, `${p.apkBase}${SIGNED_STEM_SUFFIX}.apk`)
         fs.copyFileSync(signed, resigned)
         log.info(`已另存：${resigned}`)
       } catch (error) {
-        const note = `另存 _resigned.apk 失败（不影响出包）：${error instanceof Error ? error.message : String(error)}`
+        const note = `另存「已签名未写渠道」包失败（不影响出包）：${error instanceof Error ? error.message : String(error)}`
         warnings.push(note)
         log.error(note)
       }

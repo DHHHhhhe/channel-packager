@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import type { TaskLogger } from './logger'
 import { runProcess, StepFailure, tailLineList } from './proc'
@@ -132,4 +133,135 @@ export async function verifyApk(apkPath: string, ctx: StepContext): Promise<void
       tailLineList(result.stdout + result.stderr),
     )
   }
+}
+
+interface CertProbe {
+  /** 小写十六进制、不带冒号；空串表示读不出签名证书 */
+  digest: string
+  /** 子进程输出末尾，读不出时给使用者一点线索 */
+  tail: string[]
+}
+
+/**
+ * 从 apksigner 的输出里挑证书 SHA-256 指纹。
+ * 必须按行匹配而不是整个输出 —— `--print-certs` 会在几十上百行
+ * `META-INF/... not protected by signature` 警告里夹几行证书信息。
+ */
+function pickCertificateDigest(output: string): string {
+  for (const line of output.split(/\r?\n/)) {
+    const matched = /certificate SHA-256 digest:\s*([0-9a-fA-F]{64})/.exec(line)
+    if (matched) {
+      return matched[1].toLowerCase()
+    }
+  }
+  return ''
+}
+
+/**
+ * 读 APK 里签名证书的 SHA-256 指纹。
+ * 刻意不把输出推给界面：那些 WARNING 对使用者是纯噪音，核对结果一句话就够。
+ */
+async function probeApkCertificate(apkPath: string, ctx: StepContext): Promise<CertProbe> {
+  const result = await runProcess(
+    resolveRuntimeComponentPath('java'),
+    [
+      ...JAVA_ENCODING_ARGS,
+      '-jar',
+      resolveRuntimeComponentPath('apksigner'),
+      'verify',
+      '--print-certs',
+      apkPath,
+    ],
+    {},
+  )
+  const output = result.stdout + result.stderr
+  const digest = pickCertificateDigest(output)
+  ctx.log.info(`读输入包证书指纹：${digest || '(读不出)'}（退出码 ${result.code}）`)
+  return { digest, tail: tailLineList(output) }
+}
+
+/**
+ * 读 keystore 里某个条目证书的 SHA-256 指纹。
+ * 口令用 `-storepass:env <名字>` 从环境变量取，不落在进程命令行上；
+ * `-rfc` 直接给 PEM，把 base64 解回 DER 再算 SHA-256 —— 实测与 apksigner 报的
+ * `certificate SHA-256 digest` 是同一个值，所以两边可以直接比字符串。
+ */
+async function probeKeystoreCertificate(
+  keystorePath: string,
+  alias: string,
+  storePassword: string,
+  ctx: StepContext,
+): Promise<CertProbe> {
+  const result = await runProcess(
+    resolveRuntimeComponentPath('keytool'),
+    [
+      // keytool.exe 是原生启动器，`-J` 把参数转给 JVM；不指定的话中文提示按 GBK 输出会乱码
+      '-J-Dfile.encoding=UTF-8',
+      '-J-Dsun.stdout.encoding=UTF-8',
+      '-J-Dsun.stderr.encoding=UTF-8',
+      '-exportcert',
+      '-alias',
+      alias,
+      '-keystore',
+      keystorePath,
+      '-storepass:env',
+      STOREPASS_ENV,
+      '-rfc',
+    ],
+    { env: { ...process.env, [STOREPASS_ENV]: storePassword } },
+  )
+  const output = result.stdout + result.stderr
+  const pem = /-----BEGIN CERTIFICATE-----([\s\S]*?)-----END CERTIFICATE-----/.exec(output)
+  if (result.code !== 0 || !pem) {
+    throw new StepFailure(
+      result.code === 0
+        ? 'keytool 没有输出证书，已中止'
+        : `读 jks 里的证书失败（退出码 ${result.code}）`,
+      result.code === 0 ? undefined : result.code,
+      tailLineList(output),
+    )
+  }
+  const der = Buffer.from(pem[1].replace(/\s+/g, ''), 'base64')
+  const digest = createHash('sha256').update(der).digest('hex')
+  ctx.log.info(`读 jks 证书指纹：${digest}`)
+  return { digest, tail: tailLineList(output) }
+}
+
+/**
+ * 跳过签名前确认输入包就是所选的 jks 签出来的。
+ *
+ * 跳过签名 = 直接拿输入包去写渠道，输出包的签名完全由输入包决定。
+ * 万一喂进来的是别的包（另一个应用、或换了 jks 之后留下的旧包），
+ * 会签出一批签名对不上的渠道包，而且要到安装或覆盖更新时才暴露，所以这里直接中止。
+ */
+export async function assertSignedByKeystore(
+  apkPath: string,
+  params: { keystorePath: string; alias: string; storePassword: string; jksId: string },
+  ctx: StepContext,
+): Promise<void> {
+  ctx.log.section('跳过签名前核对签名证书')
+  const apk = await probeApkCertificate(apkPath, ctx)
+  if (apk.digest === '') {
+    throw new StepFailure(
+      '这个包读不出签名证书（没签名或文件损坏），跳过签名会得到装不上的包，已中止',
+      undefined,
+      apk.tail,
+    )
+  }
+  const keystore = await probeKeystoreCertificate(
+    params.keystorePath,
+    params.alias,
+    params.storePassword,
+    ctx,
+  )
+  if (apk.digest !== keystore.digest) {
+    // 完整指纹进日志，界面上只给前 16 位 —— 足够区分证书，又不至于把卡片撑满
+    ctx.log.error(`证书不一致：输入包 ${apk.digest} ≠ jks ${keystore.digest}`)
+    throw new Error(
+      `这个包不是用 jks「${params.jksId}」签的（包里证书 ${apk.digest.slice(0, 16)}…，` +
+        `jks 里证书 ${keystore.digest.slice(0, 16)}…），跳过签名会签出签名对不上的包，已中止。` +
+        '跳过签名只适用于同一个 jks 签出来的包，也就是上次出包时另存的那份「已签名未写渠道」包。',
+    )
+  }
+  ctx.log.info('证书一致，可以跳过签名')
 }

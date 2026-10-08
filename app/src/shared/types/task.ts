@@ -14,6 +14,7 @@ export interface TaskInput {
 export type TaskStage =
   | 'validate'
   | 'prepare'
+  | 'check-source'
   | 'align'
   | 'sign'
   | 'verify-sign'
