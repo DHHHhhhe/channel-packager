@@ -244,10 +244,7 @@ export function PackScreen() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
-        title="出包"
-        description="一个 APK 配一个 jks，勾选渠道后生成渠道包。产物名为 <原包名>_<别名>.apk。"
-      />
+      <PageHeader description="一个 APK 配一个 jks，勾选渠道后生成渠道包。产物名为 <原包名>_<别名>.apk。" />
 
       <Card>
         <CardHeader>

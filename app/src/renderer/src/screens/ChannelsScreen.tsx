@@ -235,7 +235,7 @@ export function ChannelsScreen() {
   if (jksItems.length === 0) {
     return (
       <div className="flex flex-col gap-4">
-        <PageHeader title="渠道配置" description="每个 jks 各自维护一份渠道列表。" />
+        <PageHeader description="每个 jks 各自维护一份渠道列表。" />
         <Card>
           <CardHeader>
             <CardTitle>还没有 jks</CardTitle>
@@ -249,7 +249,6 @@ export function ChannelsScreen() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
-        title="渠道配置"
         description="每个 jks 各自维护一份渠道列表，导出后可直接给 walle 的 batch2 -f 使用。"
         actions={
           <>

@@ -113,7 +113,6 @@ export function TemplateScreen() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
-        title="渠道模板"
         description="新增 jks 时套用的渠道后缀表。模板独立于任何 jks，改它不会动到已有副本。"
         actions={
           <>

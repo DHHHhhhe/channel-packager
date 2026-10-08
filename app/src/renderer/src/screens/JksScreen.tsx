@@ -77,7 +77,6 @@ export function JksScreen() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
-        title="签名配置"
         description="每个 jks 保存自己的别名、口令与应用名。签名与校验一律只用 data/keystores/ 下的副本。"
         actions={
           <Button onClick={openAdd}>
