@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { TEMPLATE_SEED } from '../shared/constants/templateSeed'
-import type { JksItem } from '../shared/types/store'
+import type { JksItem, TemplateSuffix } from '../shared/types/store'
 import {
   PACK_FORMAT,
   PACK_VERSION,
@@ -13,8 +13,9 @@ import {
   type PackImportResult,
   type PackManifest,
   type PackPreviewResult,
+  type TemplateImportResult,
 } from '../shared/types/pack'
-import { parseChannelConfig } from '../shared/utils/channels'
+import { buildChannelsFromTemplate, parseChannelConfig } from '../shared/utils/channels'
 import { allocateId, keystoreRelativePath, sha256File } from './keystore'
 import { getChannelsDir, getKeystoresDir } from './paths'
 import { runProcess, tailLines } from './proc'
@@ -473,6 +474,83 @@ export function importChannels(id: string, app: string, sourcePath: string): Cha
     )
   }
   const config = { defaultExtraInfo: { app }, channelInfoList: parsed.channelInfoList }
+  writeChannels(id, config)
+  return { config, count: config.channelInfoList.length, notes }
+}
+
+/**
+ * 导出模板后缀表为 JSON，结构与 `data/template.json` 完全一致，
+ * 用户改完可以用 `importTemplateJson` 套用成某个 jks 的渠道列表。
+ */
+export function exportTemplateJson(targetPath: string): { count: number; isDefault: boolean } {
+  const template = readTemplate()
+  fs.mkdirSync(path.dirname(targetPath), { recursive: true })
+  fs.writeFileSync(targetPath, `${JSON.stringify(template, null, 2)}\n`, 'utf8')
+  return { count: template.suffixes.length, isDefault: !localTemplateDiffers() }
+}
+
+/**
+ * 解析模板 JSON 成后缀表。
+ *
+ * 与 `parseChannelConfig` 一样刻意严格：结构不符就抛带原因的错。
+ * 单独认出「这是渠道列表不是模板」这一种情况 —— 用户很容易拿错文件，
+ * 直接告诉他该用哪个按钮，比抛一句「缺少 suffixes 数组」有用。
+ */
+function parseTemplateFile(text: string, sourceLabel = '文件'): TemplateSuffix[] {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    throw new Error(`${sourceLabel}不是合法的 JSON`)
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error(`${sourceLabel}的顶层必须是一个对象`)
+  }
+
+  const record = parsed as Record<string, unknown>
+  if (!Array.isArray(record.suffixes)) {
+    if (Array.isArray(record.channelInfoList)) {
+      throw new Error(`${sourceLabel}是渠道列表而不是模板，请用「导入 JSON」。`)
+    }
+    throw new Error(`${sourceLabel}缺少 suffixes 数组`)
+  }
+
+  return record.suffixes.map((raw, index) => {
+    const position = `suffixes[${index}]`
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+      throw new Error(`${position} 必须是对象`)
+    }
+    const entry = raw as Record<string, unknown>
+    if (typeof entry.suffix !== 'string' || entry.suffix.trim() === '') {
+      throw new Error(`${position} 缺少非空的 suffix`)
+    }
+    if (entry.alias !== undefined && typeof entry.alias !== 'string') {
+      throw new Error(`${position} 的 alias 必须是字符串`)
+    }
+    const alias = typeof entry.alias === 'string' ? entry.alias.trim() : ''
+    return { suffix: entry.suffix.trim(), alias }
+  })
+}
+
+/**
+ * 导入模板 JSON：把后缀表按前缀展开成渠道名，写进指定 jks 的渠道列表。
+ *
+ * **只动渠道列表，不回写模板本体** —— 这份 JSON 是给当前 jks 用的起点，
+ * 不是「以后所有 jks 都套用」的新模板。要改模板本体请到「渠道模板」页。
+ */
+export function importTemplateJson(
+  id: string,
+  app: string,
+  prefix: string,
+  sourcePath: string,
+): TemplateImportResult {
+  const suffixes = parseTemplateFile(fs.readFileSync(sourcePath, 'utf8'), '选择的文件')
+  const notes: string[] = []
+  if (suffixes.length === 0) {
+    notes.push('文件里的 suffixes 是空的，渠道列表会被清空。')
+  }
+  // 展开规则与「按模板生成」共用一份实现，避免两处算出不同的渠道名
+  const config = buildChannelsFromTemplate(suffixes, prefix, app)
   writeChannels(id, config)
   return { config, count: config.channelInfoList.length, notes }
 }

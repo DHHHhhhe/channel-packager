@@ -6,12 +6,16 @@ import type {
   PackExportResult,
   PackImportResult,
   PackPreviewResult,
+  TemplateExportResult,
+  TemplateImportResult,
 } from '../../shared/types/pack'
 import {
   exportChannels,
   exportConfigPack,
+  exportTemplateJson,
   importChannels,
   importConfigPack,
+  importTemplateJson,
   previewConfigPack,
   type PackImportInput,
 } from '../configpack'
@@ -109,6 +113,32 @@ export function registerPackIpc(): void {
       const result = importChannels(id, app, sourcePath)
       // 渠道列表要写进 walle 的 defaultExtraInfo.app，app 取自 jks 条目而非文件
       return result
+    },
+  )
+
+  ipcMain.handle(IPC_CHANNELS.templateExport, async (): Promise<TemplateExportResult> => {
+    const targetPath = await pickSavePath(
+      '导出模板 JSON',
+      `渠道模板_${today()}.json`,
+      [{ name: 'JSON', extensions: ['json'] }],
+    )
+    if (targetPath === null) {
+      return { canceled: true }
+    }
+    const { count, isDefault } = exportTemplateJson(targetPath)
+    return { canceled: false, path: targetPath, count, isDefault }
+  })
+
+  ipcMain.handle(
+    IPC_CHANNELS.templateImport,
+    async (_event, id: string, app: string, prefix: string): Promise<TemplateImportResult | null> => {
+      const sourcePath = await pickOpenPath('导入模板 JSON', [
+        { name: 'JSON', extensions: ['json'] },
+      ])
+      if (sourcePath === null) {
+        return null
+      }
+      return importTemplateJson(id, app, prefix, sourcePath)
     },
   )
 }

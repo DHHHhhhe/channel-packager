@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { FileUp, KeyRound } from 'lucide-react'
+import { Eye, EyeOff, FileUp, KeyRound } from 'lucide-react'
+import { PairListEditor, newPairRow, type PairRow } from '@/components/PairListEditor'
 import { PlaintextPasswordNotice } from '@/components/PlaintextPasswordNotice'
 import { Button } from '@/components/ui/button'
 import {
@@ -19,9 +20,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { ChannelEntry, ChannelConfig, JksItem } from '@shared/types/store'
+import type { ChannelConfig, JksItem } from '@shared/types/store'
 import { buildChannelsFromTemplate } from '@shared/utils/channels'
 import { deriveAlias, derivePassword } from '@shared/utils/credentials'
+import { findDuplicates } from '@/lib/duplicates'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { useAppStore } from '@/store/app-store'
 
@@ -50,7 +52,9 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
   const [app, setApp] = useState('')
   const [channelMode, setChannelMode] = useState<ChannelMode>('empty')
   const [prefix, setPrefix] = useState('')
-  const [importedChannels, setImportedChannels] = useState<ChannelEntry[] | null>(null)
+  /** 最终要保存的渠道列表。三种来源都只是「怎么填这份列表」，列表本身才是真相 */
+  const [draftChannels, setDraftChannels] = useState<PairRow[]>([])
+  const [showPassword, setShowPassword] = useState(false)
   const [feedback, setFeedback] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -68,12 +72,19 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
     setApp(item?.app ?? '')
     setChannelMode('empty')
     setPrefix(item?.id ?? '')
-    setImportedChannels(null)
+    setDraftChannels([])
+    setShowPassword(false)
     setFeedback(null)
     setBusy(false)
   }, [open, item])
 
   const isEdit = Boolean(item)
+
+  /** 按模板 + 前缀算出一份新的草稿行 */
+  const templateDraft = (value: string): PairRow[] =>
+    buildChannelsFromTemplate(template.suffixes, value, app.trim()).channelInfoList.map((entry) =>
+      newPairRow(entry.channel, entry.alias ?? ''),
+    )
 
   const handlePickSource = (file: File | undefined) => {
     if (!file) {
@@ -112,14 +123,32 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
         return
       }
       // K3：原样导入，不做任何前缀替换
-      setImportedChannels(parsed.channelInfoList)
+      setDraftChannels(
+        parsed.channelInfoList.map((entry) => newPairRow(entry.channel, entry.alias ?? '')),
+      )
       setChannelMode('json')
-      setFeedback({ kind: 'ok', text: `已读取 ${parsed.channelInfoList.length} 条渠道。` })
+      setFeedback({ kind: 'ok', text: `已读取 ${parsed.channelInfoList.length} 条渠道，可在下方直接改。` })
     } catch (error) {
       setFeedback({
         kind: 'error',
         text: `这份 JSON 解析失败：${error instanceof Error ? error.message : String(error)}`,
       })
+    }
+  }
+
+  /**
+   * 切换来源只是「用什么填这份列表」。
+   * 换到模板就按当前前缀生成一份；换到不套用模板就清空，让用户手工加行；
+   * 换到 JSON 先清空，等选文件 —— 否则会显示上一次的来源留下的内容，容易误以为已经读到文件。
+   */
+  const handleModeChange = (value: string) => {
+    const next = value as ChannelMode
+    setChannelMode(next)
+    setFeedback(null)
+    if (next === 'template') {
+      setDraftChannels(templateDraft(prefix))
+    } else {
+      setDraftChannels([])
     }
   }
 
@@ -187,15 +216,19 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
       await saveJks({ action: 'update', item: { ...created, alias: finalAlias } })
     }
 
-    if (channelMode === 'template') {
-      await saveChannels(
-        created.id,
-        buildChannelsFromTemplate(template.suffixes, prefix, created.app),
-      )
-    } else if (channelMode === 'json' && importedChannels) {
+    /*
+     * 草稿列表才是最终内容，不再按来源分支 ——
+     * 用户可能选「不套用模板」后手工加了几行，那几行同样要落库。
+     * 一条都没有时不写渠道文件，与之前的行为一致（读的时候给空配置）。
+     */
+    const channelInfoList = draftChannels
+      .map((row) => ({ channel: row.key.trim(), alias: row.alias.trim() }))
+      .filter((row) => row.channel !== '')
+      .map((row) => (row.alias !== '' ? row : { channel: row.channel }))
+    if (channelInfoList.length > 0) {
       await saveChannels(created.id, {
         defaultExtraInfo: { app: created.app },
-        channelInfoList: importedChannels,
+        channelInfoList,
       })
     }
 
@@ -222,6 +255,15 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
       setFeedback({ kind: 'error', text: 'jks 列表为空，无法保存。' })
       return
     }
+    if (draftChannels.some((row) => row.key.trim() === '')) {
+      setFeedback({ kind: 'error', text: '渠道名不能为空，请补全或删掉空行。' })
+      return
+    }
+    const duplicated = findDuplicates(draftChannels.map((row) => row.key))
+    if (duplicated.length > 0) {
+      setFeedback({ kind: 'error', text: `渠道名重复：${duplicated.join('、')}` })
+      return
+    }
 
     setBusy(true)
     setFeedback(null)
@@ -239,7 +281,7 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{isEdit ? `编辑 ${item?.displayName}` : '新增 jks'}</DialogTitle>
           <DialogDescription>
@@ -313,13 +355,27 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="jks-password">口令</Label>
-              <Input
-                id="jks-password"
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="sample@123"
-              />
+              <div className="relative">
+                <Input
+                  id="jks-password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="sample@123"
+                  className="pr-11"
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  type="button"
+                  className="absolute top-1/2 right-0.5 -translate-y-1/2"
+                  onClick={() => setShowPassword((value) => !value)}
+                  aria-label={showPassword ? '隐藏口令' : '查看口令明文'}
+                  title={showPassword ? '隐藏口令' : '查看口令明文'}
+                >
+                  {showPassword ? <EyeOff /> : <Eye />}
+                </Button>
+              </div>
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="jks-app">应用名</Label>
@@ -339,8 +395,11 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
               <div className="flex items-center gap-2">
                 <KeyRound className="size-4 shrink-0" />
                 <span className="text-sm font-medium">渠道数据</span>
+                <span className="text-xs text-muted-foreground">
+                  共 {draftChannels.length} 条，下面就是最终保存的内容，可直接改
+                </span>
               </div>
-              <Select value={channelMode} onValueChange={(value) => setChannelMode(value as ChannelMode)}>
+              <Select value={channelMode} onValueChange={handleModeChange}>
                 <SelectTrigger aria-label="渠道数据来源">
                   <SelectValue />
                 </SelectTrigger>
@@ -357,11 +416,18 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
                   <Input
                     id="jks-prefix"
                     value={prefix}
-                    onChange={(event) => setPrefix(event.target.value)}
+                    onChange={(event) => {
+                      const next = event.target.value
+                      setPrefix(next)
+                      // 前缀只影响生成结果，改了就把草稿重算一遍（手工改过的行会被覆盖）
+                      if (channelMode === 'template') {
+                        setDraftChannels(templateDraft(next))
+                      }
+                    }}
                     placeholder="默认等于 jks 文件名"
                   />
                   <p className="text-xs text-muted-foreground">
-                    将生成 {template.suffixes.length} 条：渠道名 = 前缀 + &quot;_&quot; + 后缀。
+                    渠道名 = 前缀 + &quot;_&quot; + 后缀。改前缀会按模板重新生成下面的列表。
                   </p>
                 </div>
               ) : null}
@@ -378,9 +444,7 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
                       选择 JSON
                     </Button>
                     <span className="text-sm text-muted-foreground">
-                      {importedChannels
-                        ? `已读取 ${importedChannels.length} 条`
-                        : '尚未选择文件'}
+                      {draftChannels.length > 0 ? `已读取 ${draftChannels.length} 条` : '尚未选择文件'}
                     </span>
                   </div>
                   <input
@@ -398,6 +462,21 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
                   </p>
                 </div>
               ) : null}
+
+              <PairListEditor
+                rows={draftChannels}
+                onChange={setDraftChannels}
+                keyLabel="渠道名"
+                keyPlaceholder="例如 sample_gf"
+                aliasPlaceholder="例如 官方"
+                emptyHint={
+                  channelMode === 'empty'
+                    ? '还没有渠道条目。点下面的「添加一行」就能直接给这个 jks 加渠道。'
+                    : channelMode === 'template'
+                      ? '模板为空，生成不出条目。可改用「不套用模板」手工添加。'
+                      : '还没读到渠道。选一份 channelConfig.json 就会出现在这里。'
+                }
+              />
             </div>
           ) : null}
 

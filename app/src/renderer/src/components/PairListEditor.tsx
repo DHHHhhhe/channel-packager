@@ -1,5 +1,7 @@
+import { useMemo, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
@@ -21,6 +23,8 @@ interface PairListEditorProps {
   keyPlaceholder: string
   aliasPlaceholder: string
   emptyHint: string
+  /** 打开多选：表头出现全选框，选中若干行后可一次删掉 */
+  selectable?: boolean
 }
 
 /**
@@ -34,7 +38,20 @@ export function PairListEditor({
   keyPlaceholder,
   aliasPlaceholder,
   emptyHint,
+  selectable = false,
 }: PairListEditorProps) {
+  const [picked, setPicked] = useState<string[]>([])
+
+  /*
+   * 外部整批换行时（切 jks、按模板生成、导入 JSON）旧 rowId 已经不在了。
+   * 这里按当前 rows 过滤，而不是用 effect 去清 —— 省掉一次多余渲染，
+   * 也不会出现「先渲染出已失效的选中数、下一帧才归零」的闪烁。
+   */
+  const pickedIds = useMemo(
+    () => picked.filter((rowId) => rows.some((row) => row.rowId === rowId)),
+    [picked, rows],
+  )
+
   const update = (rowId: string, patch: Partial<PairRow>) => {
     onChange(rows.map((row) => (row.rowId === rowId ? { ...row, ...patch } : row)))
   }
@@ -43,12 +60,57 @@ export function PairListEditor({
     onChange(rows.filter((row) => row.rowId !== rowId))
   }
 
+  const toggle = (rowId: string, checked: boolean) => {
+    setPicked(
+      checked ? [...pickedIds, rowId] : pickedIds.filter((entry) => entry !== rowId),
+    )
+  }
+
+  const removePicked = () => {
+    onChange(rows.filter((row) => !pickedIds.includes(row.rowId)))
+    setPicked([])
+  }
+
+  const allPicked = rows.length > 0 && pickedIds.length === rows.length
+  const somePicked = pickedIds.length > 0 && !allPicked
+  const columnCount = selectable ? 4 : 3
+
   return (
     <div className="flex flex-col gap-3">
+      {selectable ? (
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">
+            {pickedIds.length > 0 ? `已选 ${pickedIds.length} 项` : `共 ${rows.length} 项`}
+          </span>
+          <Button variant="outline" onClick={removePicked} disabled={pickedIds.length === 0}>
+            <Trash2 />
+            删除选中
+          </Button>
+          {pickedIds.length > 0 ? (
+            <Button variant="ghost" onClick={() => setPicked([])}>
+              取消选择
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="overflow-hidden rounded-lg border">
         <Table>
           <TableHeader>
             <TableRow>
+              {selectable ? (
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={somePicked ? 'indeterminate' : allPicked}
+                    onCheckedChange={(value) => {
+                      setPicked(value === true ? rows.map((row) => row.rowId) : [])
+                    }}
+                    disabled={rows.length === 0}
+                    aria-label="全选"
+                    title="全选"
+                  />
+                </TableHead>
+              ) : null}
               <TableHead className="w-[45%]">{keyLabel}</TableHead>
               <TableHead className="w-[45%]">别名（选填）</TableHead>
               <TableHead className="w-[10%] text-right">操作</TableHead>
@@ -57,13 +119,22 @@ export function PairListEditor({
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={3} className="text-muted-foreground">
+                <TableCell colSpan={columnCount} className="text-muted-foreground">
                   {emptyHint}
                 </TableCell>
               </TableRow>
             ) : (
               rows.map((row) => (
                 <TableRow key={row.rowId}>
+                  {selectable ? (
+                    <TableCell>
+                      <Checkbox
+                        checked={pickedIds.includes(row.rowId)}
+                        onCheckedChange={(value) => toggle(row.rowId, value === true)}
+                        aria-label={`选中 ${row.key.trim() || '这一行'}`}
+                      />
+                    </TableCell>
+                  ) : null}
                   <TableCell>
                     <Input
                       value={row.key}

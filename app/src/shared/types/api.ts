@@ -16,6 +16,8 @@ import type {
   PackExportResult,
   PackImportResult,
   PackPreviewResult,
+  TemplateExportResult,
+  TemplateImportResult,
 } from './pack'
 
 /**
@@ -75,6 +77,22 @@ export interface RendererApi {
 
   /** 导入渠道 JSON（原样复制渠道名与别名）。用户取消时返回 null */
   importChannels(id: string, app: string): Promise<ChannelImportResult | null>
+
+  /**
+   * 导出模板后缀表为 JSON（结构与 data/template.json 一致）。
+   * 用来给用户一份可编辑的起点，改完走 importTemplateJson 变成某个 jks 的渠道列表。
+   */
+  exportTemplateJson(): Promise<TemplateExportResult>
+
+  /**
+   * 读模板 JSON，按 `前缀 + "_" + 后缀` 展开成渠道名，写进指定 jks 的渠道列表。
+   * 只动渠道列表，不回写模板本体。用户取消时返回 null
+   */
+  importTemplateJson(
+    id: string,
+    app: string,
+    prefix: string,
+  ): Promise<TemplateImportResult | null>
 
   /** 导出配置包 zip。导出前界面必须提示包内含明文密码与私钥 */
   exportConfigPack(): Promise<PackExportResult>

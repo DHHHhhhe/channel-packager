@@ -69,3 +69,19 @@ export interface ChannelExportResult {
   path?: string
   count?: number
 }
+
+export interface TemplateExportResult {
+  canceled: boolean
+  path?: string
+  count?: number
+  /** 导出的就是内置默认模板（本机模板没被改过） */
+  isDefault?: boolean
+}
+
+export interface TemplateImportResult {
+  /** 展开后写进 jks 的渠道配置 */
+  config: ChannelConfig
+  count: number
+  /** 需要让用户知道的副作用或忽略项 */
+  notes: string[]
+}

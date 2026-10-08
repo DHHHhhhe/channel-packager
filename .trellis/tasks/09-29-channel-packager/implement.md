@@ -384,6 +384,40 @@ pnpm 那条是实测确认的（pnpm 11.8.0）：
 | 只在 `.npmrc` 写 `node-linker=hoisted` | 被忽略。`node_modules` 仍是 `.pnpm` + 符号链接，传递依赖 `clsx` 没提升到顶层 |
 | 在 `pnpm-workspace.yaml` 写 `nodeLinker: hoisted` | 生效。`clsx`、`react` 直接落在顶层，且是真实目录而非符号链接 |
 
+## 后续增强：可用性四项（2026-10-08）
+
+阶段 7 收尾后按使用反馈补的四项。两处口径先问过用户：
+
+| 问题 | 选择 | 含义 |
+|---|---|---|
+| 「导出模板 JSON」导的是什么 | A | 导 `data/template.json` 的**后缀表本体**，改完导入后**只展开成当前 jks 的渠道列表**，不回写模板页的模板 |
+| 多选删除加到哪几页 | B | 「渠道配置」与「渠道模板」两页都加 |
+
+| # | 需求 | 实现 |
+|---|---|---|
+| 1 | 新增 jks 时口令可看明文 | 口令框右侧加眼睛按钮，切换 `type` 在 `password`/`text` 之间。`aria-label` 随之在「查看口令明文」「隐藏口令」间切换，便于读屏与自动化定位 |
+| 2 | 新增 jks 时渠道数据无论选哪项都有预览列表，且能同时新增渠道 | 对话框内引入 `draftChannels: PairRow[]` 作为**唯一真相**：三个来源（不套用模板 / 套用模板 / 导入 JSON）都只负责「怎么填这份列表」，`PairListEditor` 始终渲染在下方可增删改。保存时直接落这份草稿，不再按来源分支 |
+| 3 | 渠道列表可多选删除 | `PairListEditor` 新增 `selectable`：表头全选框（支持 `indeterminate`）+ 每行复选框 + 「已选 N 项 / 删除选中 / 取消选择」工具条。`picked` 用 `useMemo` 按当前 `rows` 过滤失效 rowId，不用 effect 清 |
+| 4 | 可导出默认模板 JSON，改完再导入 | 主进程新增 `template:export` / `template:import` 两个通道：前者原样写 `readTemplate()` 并回 `isDefault`（是否仍是内置种子），后者严格解析 `suffixes` 后经 `buildChannelsFromTemplate` 展开写入当前 jks |
+
+### 实测结果（开发构建 + CDP 驱动，页面错误 `[]`）
+
+| 验证项 | 结果 |
+|---|---|
+| 口令明文按钮 | 点一下 `type=text` / `aria-label=隐藏口令`，再点回 `password` |
+| 预览列表：不套用模板 | 空列表 + 提示「还没有渠道条目…」，点两次「添加一行」得 2 行 |
+| 预览列表：套用模板 | 4 条后缀 → 4 行 `gf/官方`…`bd/百度`；前缀改 `gamma` 后整列变为 `gamma_gf`… |
+| 预览列表：导入 JSON | 切换时清空（避免残留旧内容），提示「尚未选择文件」 |
+| 校验 | 空渠道名 → 「渠道名不能为空，请补全或删掉空行。」；两条同名 → 「渠道名重复：gamma_gf」 |
+| 新增 jks 同时建渠道 | 填 `gamma.jks`/`gammakey`/`g@1234`，套模板 + 前缀 `gamma`，提交后提示「已新增 gamma 并校验通过。」，`data/channels/gamma.json` 落 4 条 `gamma_gf…gamma_bd` |
+| 多选删除（渠道配置） | 4 行中勾选 `gamma_gf`、`gamma_uc` → 工具条「已选 2 项」→ 删除后剩 2 行且归零为「共 2 项」，保存后文件同步为 2 条 |
+| 多选删除（渠道模板） | 4 条中勾选 `yyb`、`uc` → 删除后剩 `gf`、`bd` |
+| 导出模板 JSON | 原生保存对话框回车确认 → 写出 `{version:1, suffixes:[…4 条…]}`，提示「已导出模板 4 条后缀」 |
+| 导入模板 JSON | 手改成 `hw/华为、xm/小米、oppo/OPPO` 后导入 → 渠道列表变为 `gamma_hw`、`gamma_xm`、`gamma_oppo`，落盘一致 |
+| 拿错文件 | 导入 `channelInfoList` 结构 → 「选择的文件是渠道列表而不是模板，请用「导入 JSON」。」，列表不动 |
+
+驱动原生「打开」对话框这次换了更稳的做法（比上次的剪贴板 + `SendKeys` 可靠）：给**最靠下的那个 `Edit`**（文件名框）直接发 `WM_PASTE(0x0302)`，再给对话框发 `WM_KEYDOWN/WM_KEYUP VK_RETURN`。`SendKeys` 会因为对话框被摆到负坐标的副屏而不生效。
+
 ## 风险与回滚点
 
 | 风险 | 触发点 | 回滚/对策 |

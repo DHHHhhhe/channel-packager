@@ -16,6 +16,11 @@ export const IPC_CHANNELS = {
   channelsImport: 'channels:import',
   channelsExport: 'channels:export',
 
+  /** 导出模板后缀表为 JSON，供用户改完再导回渠道列表 */
+  templateExport: 'template:export',
+  /** 读模板后缀表，按前缀展开成渠道名，写进指定 jks 的渠道列表 */
+  templateImport: 'template:import',
+
   credVerify: 'cred:verify',
 
   taskRun: 'task:run',

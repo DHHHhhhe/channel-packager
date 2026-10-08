@@ -19,6 +19,8 @@ import type {
   PackExportResult,
   PackImportResult,
   PackPreviewResult,
+  TemplateExportResult,
+  TemplateImportResult,
 } from '../shared/types/pack'
 
 /**
@@ -100,6 +102,18 @@ const api: RendererApi = {
 
   importChannels(id: string, app: string): Promise<ChannelImportResult | null> {
     return ipcRenderer.invoke(IPC_CHANNELS.channelsImport, id, app)
+  },
+
+  exportTemplateJson(): Promise<TemplateExportResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.templateExport)
+  },
+
+  importTemplateJson(
+    id: string,
+    app: string,
+    prefix: string,
+  ): Promise<TemplateImportResult | null> {
+    return ipcRenderer.invoke(IPC_CHANNELS.templateImport, id, app, prefix)
   },
 
   exportConfigPack(): Promise<PackExportResult> {

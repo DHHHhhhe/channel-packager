@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Wand2 } from 'lucide-react'
+import { FileDown, FileUp, Wand2 } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 import { PairListEditor, newPairRow, type PairRow } from '@/components/PairListEditor'
 import { Button } from '@/components/ui/button'
@@ -144,6 +144,56 @@ export function ChannelsScreen() {
     }
   }
 
+  /*
+   * 导出的是「模板后缀表」本身，不是当前渠道列表 ——
+   * 给用户一份短小、好改的起点，改完由 handleImportTemplateJson 展开成渠道名。
+   */
+  const handleExportTemplateJson = async () => {
+    if (!selected) {
+      return
+    }
+    setStatus(null)
+    try {
+      const result = await window.api.exportTemplateJson()
+      if (result.canceled) {
+        return
+      }
+      setStatus({
+        kind: 'ok',
+        text: `已导出模板 ${result.count ?? 0} 条后缀：${result.path}（改完用「导入模板 JSON」套用到当前 jks）${
+          result.isDefault ? '；当前就是内置默认模板' : ''
+        }`,
+      })
+    } catch (error) {
+      setStatus({ kind: 'error', text: ipcErrorMessage(error) })
+    }
+  }
+
+  const handleImportTemplateJson = async () => {
+    if (!selected) {
+      return
+    }
+    if (dirty && !window.confirm('导入会覆盖当前未保存的修改，继续？')) {
+      return
+    }
+    setStatus(null)
+    try {
+      const result = await window.api.importTemplateJson(selected.id, selected.app, prefix)
+      if (result === null) {
+        return
+      }
+      setRows(result.config.channelInfoList.map((entry) => newPairRow(entry.channel, entry.alias ?? '')))
+      setDirty(false)
+      const shown = prefix.trim() === '' ? '（空，渠道名等于后缀）' : prefix.trim()
+      setStatus({
+        kind: 'ok',
+        text: `已按前缀「${shown}」套用模板 ${result.count} 条并保存。${result.notes.join(' ')}`,
+      })
+    } catch (error) {
+      setStatus({ kind: 'error', text: ipcErrorMessage(error) })
+    }
+  }
+
   const handleSave = async () => {
     if (!selected) {
       return
@@ -247,9 +297,21 @@ export function ChannelsScreen() {
               <Wand2 />
               按模板生成
             </Button>
+            <Button variant="outline" onClick={handleExportTemplateJson} disabled={saving || loading}>
+              <FileDown />
+              导出模板 JSON
+            </Button>
+            <Button variant="outline" onClick={handleImportTemplateJson} disabled={saving || loading}>
+              <FileUp />
+              导入模板 JSON
+            </Button>
           </div>
           <p className="text-xs text-muted-foreground">
             生成规则：渠道名 = 前缀 + &quot;_&quot; + 后缀。生成的是独立副本，之后再改模板也不会影响这里。
+          </p>
+          <p className="text-xs text-muted-foreground">
+            「导出模板 JSON」导的是模板后缀表，改完用「导入模板 JSON」按上面的前缀展开成当前 jks
+            的渠道列表；它不会改动「渠道模板」页里的模板本体。
           </p>
         </CardContent>
       </Card>
@@ -279,6 +341,7 @@ export function ChannelsScreen() {
             keyPlaceholder="例如 sample_gf"
             aliasPlaceholder="例如 官方"
             emptyHint="还没有渠道条目。可手工添加，或用上面的「按模板生成」。"
+            selectable
           />
         </CardContent>
       </Card>
