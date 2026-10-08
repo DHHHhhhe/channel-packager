@@ -3,6 +3,7 @@ import { IPC_CHANNELS } from '../../shared/constants/channels'
 import type {
   ChannelExportResult,
   ChannelImportResult,
+  ChannelListPreview,
   PackExportResult,
   PackImportResult,
   PackPreviewResult,
@@ -10,13 +11,15 @@ import type {
   TemplateImportResult,
 } from '../../shared/types/pack'
 import {
+  applyChannels,
+  applyTemplateJson,
   exportChannels,
   exportConfigPack,
   exportTemplateJson,
-  importChannels,
   importConfigPack,
-  importTemplateJson,
+  previewChannels,
   previewConfigPack,
+  previewTemplateJson,
   type PackImportInput,
 } from '../configpack'
 
@@ -103,17 +106,24 @@ export function registerPackIpc(): void {
     },
   )
 
+  // 导入分两步：先只读解析给渲染层弹确认框，用户点了「确认导入」再落盘。
+  // 渠道列表是整表替换，先看一眼比事后补救便宜。
   ipcMain.handle(
     IPC_CHANNELS.channelsImport,
-    async (_event, id: string, app: string): Promise<ChannelImportResult | null> => {
+    async (_event, app: string): Promise<ChannelListPreview | null> => {
       const sourcePath = await pickOpenPath('导入渠道 JSON', [{ name: 'JSON', extensions: ['json'] }])
       if (sourcePath === null) {
         return null
       }
-      const result = importChannels(id, app, sourcePath)
-      // 渠道列表要写进 walle 的 defaultExtraInfo.app，app 取自 jks 条目而非文件
-      return result
+      return previewChannels(app, sourcePath)
     },
+  )
+
+  ipcMain.handle(
+    IPC_CHANNELS.channelsImportApply,
+    (_event, id: string, app: string, sourcePath: string): ChannelImportResult =>
+      // 渠道列表要写进 walle 的 defaultExtraInfo.app，app 取自 jks 条目而非文件
+      applyChannels(id, app, sourcePath),
   )
 
   ipcMain.handle(IPC_CHANNELS.templateExport, async (): Promise<TemplateExportResult> => {
@@ -131,14 +141,20 @@ export function registerPackIpc(): void {
 
   ipcMain.handle(
     IPC_CHANNELS.templateImport,
-    async (_event, id: string, app: string, prefix: string): Promise<TemplateImportResult | null> => {
+    async (_event, app: string, prefix: string): Promise<ChannelListPreview | null> => {
       const sourcePath = await pickOpenPath('导入模板 JSON', [
         { name: 'JSON', extensions: ['json'] },
       ])
       if (sourcePath === null) {
         return null
       }
-      return importTemplateJson(id, app, prefix, sourcePath)
+      return previewTemplateJson(app, prefix, sourcePath)
     },
+  )
+
+  ipcMain.handle(
+    IPC_CHANNELS.templateImportApply,
+    (_event, id: string, app: string, prefix: string, sourcePath: string): TemplateImportResult =>
+      applyTemplateJson(id, app, prefix, sourcePath),
   )
 }

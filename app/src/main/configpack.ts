@@ -7,6 +7,7 @@ import {
   PACK_FORMAT,
   PACK_VERSION,
   type ChannelImportResult,
+  type ChannelListPreview,
   type ConflictStrategy,
   type PackConflict,
   type PackExportResult,
@@ -462,10 +463,12 @@ export function exportChannels(id: string, app: string, targetPath: string): num
 }
 
 /**
- * 导入渠道 JSON。
+ * 只读预览：解析渠道 JSON，把**将要写入**的条目算出来，不落盘。
+ * 用户看过列表再决定是否 apply —— 导入是整表替换，先看一眼比事后补救便宜。
+ *
  * **原样复制** channelInfoList —— 渠道名与别名逐字保留，不做前缀替换（K1/R14）。
  */
-export function importChannels(id: string, app: string, sourcePath: string): ChannelImportResult {
+export function previewChannels(app: string, sourcePath: string): ChannelListPreview {
   const parsed = parseChannelConfig(fs.readFileSync(sourcePath, 'utf8'), '选择的文件')
   const notes: string[] = []
   if (parsed.app !== undefined && parsed.app !== app) {
@@ -473,14 +476,30 @@ export function importChannels(id: string, app: string, sourcePath: string): Cha
       `文件里的 defaultExtraInfo.app 是「${parsed.app}」，与本 jks 的「${app}」不同；按 jks 的值为准，文件里的未采用。`,
     )
   }
-  const config = { defaultExtraInfo: { app }, channelInfoList: parsed.channelInfoList }
+  return {
+    path: sourcePath,
+    fileName: path.basename(sourcePath),
+    channels: parsed.channelInfoList,
+    count: parsed.channelInfoList.length,
+    notes,
+  }
+}
+
+/**
+ * 确认后真正落盘。
+ * 重新读一次文件而不是信任渲染层回传的内容 —— 中间用户可能改了文件，
+ * 以「点确认那一刻磁盘上的内容」为准，预览与落盘不一致的风险最小。
+ */
+export function applyChannels(id: string, app: string, sourcePath: string): ChannelImportResult {
+  const preview = previewChannels(app, sourcePath)
+  const config = { defaultExtraInfo: { app }, channelInfoList: preview.channels }
   writeChannels(id, config)
-  return { config, count: config.channelInfoList.length, notes }
+  return { config, count: config.channelInfoList.length, notes: preview.notes }
 }
 
 /**
  * 导出模板后缀表为 JSON，结构与 `data/template.json` 完全一致，
- * 用户改完可以用 `importTemplateJson` 套用成某个 jks 的渠道列表。
+ * 用户改完可以用 `previewTemplateJson` + `applyTemplateJson` 套用成某个 jks 的渠道列表。
  */
 export function exportTemplateJson(targetPath: string): { count: number; isDefault: boolean } {
   const template = readTemplate()
@@ -533,17 +552,12 @@ function parseTemplateFile(text: string, sourceLabel = '文件'): TemplateSuffix
 }
 
 /**
- * 导入模板 JSON：把后缀表按前缀展开成渠道名，写进指定 jks 的渠道列表。
+ * 只读预览：把后缀表按前缀展开成渠道名，算出来给用户看，不落盘。
  *
  * **只动渠道列表，不回写模板本体** —— 这份 JSON 是给当前 jks 用的起点，
  * 不是「以后所有 jks 都套用」的新模板。要改模板本体请到「渠道模板」页。
  */
-export function importTemplateJson(
-  id: string,
-  app: string,
-  prefix: string,
-  sourcePath: string,
-): TemplateImportResult {
+export function previewTemplateJson(app: string, prefix: string, sourcePath: string): ChannelListPreview {
   const suffixes = parseTemplateFile(fs.readFileSync(sourcePath, 'utf8'), '选择的文件')
   const notes: string[] = []
   if (suffixes.length === 0) {
@@ -551,6 +565,24 @@ export function importTemplateJson(
   }
   // 展开规则与「按模板生成」共用一份实现，避免两处算出不同的渠道名
   const config = buildChannelsFromTemplate(suffixes, prefix, app)
+  return {
+    path: sourcePath,
+    fileName: path.basename(sourcePath),
+    channels: config.channelInfoList,
+    count: config.channelInfoList.length,
+    notes,
+  }
+}
+
+/** 确认后真正落盘，同样重新读一次文件 */
+export function applyTemplateJson(
+  id: string,
+  app: string,
+  prefix: string,
+  sourcePath: string,
+): TemplateImportResult {
+  const preview = previewTemplateJson(app, prefix, sourcePath)
+  const config = { defaultExtraInfo: { app }, channelInfoList: preview.channels }
   writeChannels(id, config)
-  return { config, count: config.channelInfoList.length, notes }
+  return { config, count: config.channelInfoList.length, notes: preview.notes }
 }

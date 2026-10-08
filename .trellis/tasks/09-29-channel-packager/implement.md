@@ -187,7 +187,9 @@ node -e "const c=require('./channelConfig.sample.json');const t=c.channelInfoLis
 >
 > **新增时的凭据校验顺序**：R21 要求校验只读副本，而新增时副本还不存在。实现取「先建副本与条目 → 按副本校验 → 不通过就把条目与副本一起删掉」，净效果等同于没保存，既不绕过副本约束，也不会留下半条脏数据。
 >
-> **「导入 JSON」落在渲染层**：用 `<input type="file">` + `file.text()` 读内容，不走 `channels:import` IPC（那是阶段 6 配置包导入用的）。K3「原样导入」照办，只取 `channelInfoList`，`defaultExtraInfo.app` 仍取该 jks 的 `app`。
+> **「导入 JSON」落在渲染层**：用 `<input type="file">` + `file.text()` 读内容，不走 IPC。K3「原样导入」照办，只取 `channelInfoList`，`defaultExtraInfo.app` 仍取该 jks 的 `app`。
+>
+> 这里的「导入 JSON」指**新增 jks 对话框内**的那个（只填草稿，不落盘）。「渠道配置」页另有一个同名按钮，走 `channels:import` IPC 直接写文件；后者在 2026-10-08 已改为先预览再落盘，见文末「后续增强：可用性六项」。
 
 ## 阶段 5：出包流水线
 
@@ -417,6 +419,31 @@ pnpm 那条是实测确认的（pnpm 11.8.0）：
 | 拿错文件 | 导入 `channelInfoList` 结构 → 「选择的文件是渠道列表而不是模板，请用「导入 JSON」。」，列表不动 |
 
 驱动原生「打开」对话框这次换了更稳的做法（比上次的剪贴板 + `SendKeys` 可靠）：给**最靠下的那个 `Edit`**（文件名框）直接发 `WM_PASTE(0x0302)`，再给对话框发 `WM_KEYDOWN/WM_KEYUP VK_RETURN`。`SendKeys` 会因为对话框被摆到负坐标的副屏而不生效。
+
+## 后续增强：可用性两项（2026-10-08 续）
+
+接使用反馈补的两项。
+
+| # | 反馈 | 根因 | 实现 |
+|---|---|---|---|
+| 1 | 新增 jks 弹窗拖入 jks 文件不生效 | 输入框 placeholder 写着「拖入或点击右侧按钮选择 .jks 文件」，但 `JksFormDialog` **完全没有 `drop` 处理** —— 界面在承诺一个不存在的功能 | 对话框 body 挂 `onDragEnter/onDragOver/onDragLeave/onDrop`；`dragDepth` 计数避免子元素间高亮闪烁；`dragover` 必须 `preventDefault()`，否则 `drop` 事件根本不来。投放区改成常驻虚线框（拖拽中 `border-primary bg-primary/5`），避免布局跳动。拖进来的文件不受 `accept` 过滤，所以自己判扩展名：`.json` 给「这是 JSON 渠道文件，不是 jks」的针对性提示。编辑模式不接收拖入 |
+| 2 | 渠道配置中导入 JSON 需要先弹窗预览确认导入 | 主进程 `importChannels` 选完文件**直接 `writeChannels` 落盘**，没有任何确认；渠道列表是整表替换，选错文件代价大 | 仿照既有「配置包导入」的两步式拆通道：`channels:import` / `template:import` 改为**只读**预览（返回 `ChannelListPreview`），新增 `channels:importApply` / `template:importApply` 才落盘。渲染层新增 `ChannelListPreviewDialog`，列出将写入的渠道、条数变化、清空与未保存修改的警告 |
+
+**「导入模板 JSON」一并加确认框**：用户只提了「导入 JSON」，但它是相邻的同类按钮、同样静默覆盖，所以按同一套处理。
+
+**apply 时重新读一次文件**，不信任渲染层回传的内容 —— 以「点确认那一刻磁盘上的内容」为准，避免预览与落盘之间文件被改。
+
+| 验证项 | 结果 |
+|---|---|
+| 拖拽高亮 | 投放区 `border-dashed border-border` → dragEnter 后 `border-primary bg-primary/5` → drop 后复原 |
+| 拖拽落值 | `#jks-source` 填上路径、`#jks-alias`/`#jks-app` 由文件名推导、口令自动带出 |
+| 拖错文件 | 拖 `.json` → 「这是 JSON 渠道文件，不是 jks；请用下面「渠道数据」里的「选择文件」。」 |
+| 导入渠道 JSON | 确认框「从「channels-in.json」读到 3 条渠道…当前 2 条 → 导入后 3 条」+ 明细表；**确认前磁盘仍是 `alpha_gf, alpha_yyb`**；取消 → 界面与磁盘都不变；确认 → 磁盘变 `imported_one, imported_two, imported_three` |
+| 导入模板 JSON | 「当前 3 条 → 导入后 2 条」+ `alpha_hw/华为`、`alpha_xm/小米`（前缀已展开）；确认前不落盘，确认后落盘 |
+| 未保存修改 | 确认框出现「当前列表有未保存的修改，导入会丢弃它们…」 |
+| 空列表 | 「文件里一条渠道都没有，确认导入会把当前 3 条全部清空。」 |
+| 坏 JSON | **不弹确认框**（`[data-slot=dialog-content]` 计数为 0），状态栏报「选择的文件不是合法的 JSON」，磁盘不变 |
+| 打包版回归 | 便携版 exe 上重跑拖拽与导入确认，结果与开发构建一致，页面错误 `[]` |
 
 ## 风险与回滚点
 

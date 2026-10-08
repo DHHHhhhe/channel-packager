@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { FileDown, FileUp, Wand2 } from 'lucide-react'
+import { ChannelListPreviewDialog } from '@/components/ChannelListPreviewDialog'
 import { PageHeader } from '@/components/PageHeader'
 import { PairListEditor, newPairRow, type PairRow } from '@/components/PairListEditor'
 import { Button } from '@/components/ui/button'
@@ -13,10 +14,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import type { ChannelListPreview } from '@shared/types/pack'
 import { buildChannelsFromTemplate } from '@shared/utils/channels'
 import { findDuplicates } from '@/lib/duplicates'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { useAppStore } from '@/store/app-store'
+
+/** 待确认的导入：渠道 JSON 与模板 JSON 走同一个确认框，只是落盘那一步不同 */
+type PendingImport = { kind: 'channels' | 'template'; preview: ChannelListPreview }
 
 export function ChannelsScreen() {
   const { jksItems, template, getChannels, saveChannels } = useAppStore()
@@ -27,6 +32,8 @@ export function ChannelsScreen() {
   const [saving, setSaving] = useState(false)
   const [prefix, setPrefix] = useState('')
   const [status, setStatus] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
+  const [pending, setPending] = useState<PendingImport | null>(null)
+  const [importing, setImporting] = useState(false)
 
   const selected = jksItems.find((item) => item.id === selectedId)
 
@@ -119,26 +126,21 @@ export function ChannelsScreen() {
     }
   }
 
+  /*
+   * 导入分两步：先让主进程只读解析、把将要写入的条目拿回来，
+   * 用户看过确认框点「确认导入」才落盘 —— 渠道列表是整表替换，选错文件代价大。
+   */
   const handleImportJson = async () => {
     if (!selected) {
       return
     }
-    if (dirty && !window.confirm('导入会覆盖当前未保存的修改，继续？')) {
-      return
-    }
     setStatus(null)
     try {
-      const result = await window.api.importChannels(selected.id, selected.app)
+      const result = await window.api.previewChannels(selected.app)
       if (result === null) {
         return
       }
-      // 导入是原样复制渠道名与别名，不做前缀替换，所以直接替换整份列表
-      setRows(result.config.channelInfoList.map((entry) => newPairRow(entry.channel, entry.alias ?? '')))
-      setDirty(false)
-      setStatus({
-        kind: 'ok',
-        text: `已导入 ${result.count} 条渠道并保存。${result.notes.join(' ')}`,
-      })
+      setPending({ kind: 'channels', preview: result })
     } catch (error) {
       setStatus({ kind: 'error', text: ipcErrorMessage(error) })
     }
@@ -173,24 +175,49 @@ export function ChannelsScreen() {
     if (!selected) {
       return
     }
-    if (dirty && !window.confirm('导入会覆盖当前未保存的修改，继续？')) {
-      return
-    }
     setStatus(null)
     try {
-      const result = await window.api.importTemplateJson(selected.id, selected.app, prefix)
+      const result = await window.api.previewTemplateJson(selected.app, prefix)
       if (result === null) {
         return
       }
-      setRows(result.config.channelInfoList.map((entry) => newPairRow(entry.channel, entry.alias ?? '')))
+      setPending({ kind: 'template', preview: result })
+    } catch (error) {
+      setStatus({ kind: 'error', text: ipcErrorMessage(error) })
+    }
+  }
+
+  /** 确认框里点「确认导入」：这时才真正写文件 */
+  const handleConfirmImport = async () => {
+    if (!selected || pending === null) {
+      return
+    }
+    const { kind, preview } = pending
+    setImporting(true)
+    try {
+      const result =
+        kind === 'channels'
+          ? await window.api.applyChannels(selected.id, selected.app, preview.path)
+          : await window.api.applyTemplateJson(selected.id, selected.app, prefix, preview.path)
+      // 渠道 JSON 是原样复制，模板 JSON 是按前缀展开，两者都已经在 result 里算好了
+      setRows(
+        result.config.channelInfoList.map((entry) => newPairRow(entry.channel, entry.alias ?? '')),
+      )
       setDirty(false)
+      setPending(null)
       const shown = prefix.trim() === '' ? '（空，渠道名等于后缀）' : prefix.trim()
       setStatus({
         kind: 'ok',
-        text: `已按前缀「${shown}」套用模板 ${result.count} 条并保存。${result.notes.join(' ')}`,
+        text:
+          kind === 'channels'
+            ? `已导入 ${result.count} 条渠道并保存。${result.notes.join(' ')}`
+            : `已按前缀「${shown}」套用模板 ${result.count} 条并保存。${result.notes.join(' ')}`,
       })
     } catch (error) {
+      setPending(null)
       setStatus({ kind: 'error', text: ipcErrorMessage(error) })
+    } finally {
+      setImporting(false)
     }
   }
 
@@ -313,6 +340,9 @@ export function ChannelsScreen() {
             「导出模板 JSON」导的是模板后缀表，改完用「导入模板 JSON」按上面的前缀展开成当前 jks
             的渠道列表；它不会改动「渠道模板」页里的模板本体。
           </p>
+          <p className="text-xs text-muted-foreground">
+            两个「导入」都会先弹一个确认框，列出将要写入的条目，点「确认导入」才真正落盘。
+          </p>
         </CardContent>
       </Card>
 
@@ -345,6 +375,17 @@ export function ChannelsScreen() {
           />
         </CardContent>
       </Card>
+
+      <ChannelListPreviewDialog
+        open={pending !== null}
+        onOpenChange={(open) => (open ? undefined : setPending(null))}
+        title={pending?.kind === 'template' ? '导入模板 JSON' : '导入渠道 JSON'}
+        preview={pending?.preview ?? null}
+        currentCount={rows.length}
+        dirty={dirty}
+        busy={importing}
+        onConfirm={handleConfirmImport}
+      />
     </div>
   )
 }

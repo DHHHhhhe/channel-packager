@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type DragEvent } from 'react'
 import { Eye, EyeOff, FileUp, KeyRound } from 'lucide-react'
 import { PairListEditor, newPairRow, type PairRow } from '@/components/PairListEditor'
 import { PlaintextPasswordNotice } from '@/components/PlaintextPasswordNotice'
@@ -29,6 +29,9 @@ import { useAppStore } from '@/store/app-store'
 
 type ChannelMode = 'empty' | 'template' | 'json'
 
+/** 与文件选择框的 accept 保持一致：拖进来的文件不走 accept，得自己判 */
+const JKS_EXTENSIONS = ['.jks', '.keystore']
+
 interface JksFormDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -57,8 +60,15 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
   const [showPassword, setShowPassword] = useState(false)
   const [feedback, setFeedback] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
+  /** 正有文件被拖在对话框上方，用来高亮投放区 */
+  const [dragging, setDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const jsonInputRef = useRef<HTMLInputElement>(null)
+  /*
+   * dragenter/dragleave 会在子元素之间来回触发，
+   * 用深度计数判断「真正离开了对话框」，否则高亮会一闪一闪。
+   */
+  const dragDepth = useRef(0)
 
   // 每次打开都从当前条目重置，避免上一次的残留
   useEffect(() => {
@@ -76,6 +86,8 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
     setShowPassword(false)
     setFeedback(null)
     setBusy(false)
+    setDragging(false)
+    dragDepth.current = 0
   }, [open, item])
 
   const isEdit = Boolean(item)
@@ -88,6 +100,17 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
 
   const handlePickSource = (file: File | undefined) => {
     if (!file) {
+      return
+    }
+    // 拖进来的文件不受 accept 过滤，这里自己挡一道，免得后面 keytool 报一句难懂的话
+    const lower = file.name.toLowerCase()
+    if (!JKS_EXTENSIONS.some((ext) => lower.endsWith(ext))) {
+      setFeedback({
+        kind: 'error',
+        text: lower.endsWith('.json')
+          ? '这是 JSON 渠道文件，不是 jks；请用下面「渠道数据」里的「选择文件」。'
+          : `只认 .jks / .keystore 文件，这个是「${file.name}」。`,
+      })
       return
     }
     const picked = window.api.pathForFile(file)
@@ -103,6 +126,53 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
     setApp(base)
     setPrefix(base)
     setFeedback(null)
+  }
+
+  /*
+   * 把 .jks 拖进对话框。
+   * 只在新增模式生效 —— 编辑模式没有「选文件」这一步，接受拖入反而会让人以为换了文件。
+   */
+  const acceptsDrop = (event: DragEvent<HTMLDivElement>): boolean =>
+    !isEdit && event.dataTransfer.types.includes('Files')
+
+  const handleDragEnter = (event: DragEvent<HTMLDivElement>) => {
+    if (!acceptsDrop(event)) {
+      return
+    }
+    event.preventDefault()
+    dragDepth.current += 1
+    setDragging(true)
+  }
+
+  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+    if (!acceptsDrop(event)) {
+      return
+    }
+    // 不 preventDefault 的话浏览器认为这里不接受拖放，drop 事件根本不会来
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+  }
+
+  const handleDragLeave = (event: DragEvent<HTMLDivElement>) => {
+    if (!acceptsDrop(event)) {
+      return
+    }
+    event.preventDefault()
+    dragDepth.current -= 1
+    if (dragDepth.current <= 0) {
+      dragDepth.current = 0
+      setDragging(false)
+    }
+  }
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    if (!acceptsDrop(event)) {
+      return
+    }
+    event.preventDefault()
+    dragDepth.current = 0
+    setDragging(false)
+    handlePickSource(event.dataTransfer.files[0])
   }
 
   const handlePickJson = async (file: File | undefined) => {
@@ -291,16 +361,28 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-4">
+        <div
+          className="flex flex-col gap-4"
+          onDragEnter={handleDragEnter}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
           {!isEdit ? (
-            <div className="flex flex-col gap-1.5">
+            <div
+              className={
+                dragging
+                  ? 'flex flex-col gap-1.5 rounded-lg border border-dashed border-primary bg-primary/5 p-3'
+                  : 'flex flex-col gap-1.5 rounded-lg border border-dashed border-border p-3'
+              }
+            >
               <Label htmlFor="jks-source">jks 文件</Label>
               <div className="flex items-center gap-2">
                 <Input
                   id="jks-source"
                   value={sourcePath}
                   onChange={(event) => setSourcePath(event.target.value)}
-                  placeholder="拖入或点击右侧按钮选择 .jks 文件"
+                  placeholder="把 .jks 拖到这里，或点右侧按钮选择"
                 />
                 <Button
                   variant="outline"
@@ -321,6 +403,9 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
                   event.target.value = ''
                 }}
               />
+              <p className="text-xs text-muted-foreground">
+                也可以把文件直接拖到本对话框的任意位置。
+              </p>
               <p className="text-xs text-muted-foreground">
                 副本会复制到 data/keystores/，之后签名只用副本；原文件移走也不影响出包。
               </p>
