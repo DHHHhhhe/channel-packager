@@ -6,6 +6,7 @@ import type { JksItem, TemplateSuffix } from '../shared/types/store'
 import {
   PACK_FORMAT,
   PACK_VERSION,
+  type ChannelImportMode,
   type ChannelImportResult,
   type ChannelListPreview,
   type ConflictStrategy,
@@ -14,7 +15,6 @@ import {
   type PackImportResult,
   type PackManifest,
   type PackPreviewResult,
-  type TemplateImportResult,
 } from '../shared/types/pack'
 import { buildChannelsFromTemplate, parseChannelConfig } from '../shared/utils/channels'
 import { allocateId, keystoreRelativePath, sha256File } from './keystore'
@@ -489,100 +489,74 @@ export function previewChannels(app: string, sourcePath: string): ChannelListPre
  * 确认后真正落盘。
  * 重新读一次文件而不是信任渲染层回传的内容 —— 中间用户可能改了文件，
  * 以「点确认那一刻磁盘上的内容」为准，预览与落盘不一致的风险最小。
- */
-export function applyChannels(id: string, app: string, sourcePath: string): ChannelImportResult {
-  const preview = previewChannels(app, sourcePath)
-  const config = { defaultExtraInfo: { app }, channelInfoList: preview.channels }
-  writeChannels(id, config)
-  return { config, count: config.channelInfoList.length, notes: preview.notes }
-}
-
-/**
- * 导出模板后缀表为 JSON，结构与 `data/template.json` 完全一致，
- * 用户改完可以用 `previewTemplateJson` + `applyTemplateJson` 套用成某个 jks 的渠道列表。
- */
-export function exportTemplateJson(targetPath: string): { count: number; isDefault: boolean } {
-  const template = readTemplate()
-  fs.mkdirSync(path.dirname(targetPath), { recursive: true })
-  fs.writeFileSync(targetPath, `${JSON.stringify(template, null, 2)}\n`, 'utf8')
-  return { count: template.suffixes.length, isDefault: !localTemplateDiffers() }
-}
-
-/**
- * 解析模板 JSON 成后缀表。
  *
- * 与 `parseChannelConfig` 一样刻意严格：结构不符就抛带原因的错。
- * 单独认出「这是渠道列表不是模板」这一种情况 —— 用户很容易拿错文件，
- * 直接告诉他该用哪个按钮，比抛一句「缺少 suffixes 数组」有用。
+ * `mode` 决定怎么处理现有列表：
+ * - `overwrite`（默认）整表替换；
+ * - `append` 接到现有列表末尾，**渠道名已存在的跳过** —— 同名条目会互相覆盖，不能放进去。
  */
-function parseTemplateFile(text: string, sourceLabel = '文件'): TemplateSuffix[] {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(text)
-  } catch {
-    throw new Error(`${sourceLabel}不是合法的 JSON`)
-  }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new Error(`${sourceLabel}的顶层必须是一个对象`)
-  }
-
-  const record = parsed as Record<string, unknown>
-  if (!Array.isArray(record.suffixes)) {
-    if (Array.isArray(record.channelInfoList)) {
-      throw new Error(`${sourceLabel}是渠道列表而不是模板，请用「导入 JSON」。`)
-    }
-    throw new Error(`${sourceLabel}缺少 suffixes 数组`)
-  }
-
-  return record.suffixes.map((raw, index) => {
-    const position = `suffixes[${index}]`
-    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-      throw new Error(`${position} 必须是对象`)
-    }
-    const entry = raw as Record<string, unknown>
-    if (typeof entry.suffix !== 'string' || entry.suffix.trim() === '') {
-      throw new Error(`${position} 缺少非空的 suffix`)
-    }
-    if (entry.alias !== undefined && typeof entry.alias !== 'string') {
-      throw new Error(`${position} 的 alias 必须是字符串`)
-    }
-    const alias = typeof entry.alias === 'string' ? entry.alias.trim() : ''
-    return { suffix: entry.suffix.trim(), alias }
-  })
-}
-
-/**
- * 只读预览：把后缀表按前缀展开成渠道名，算出来给用户看，不落盘。
- *
- * **只动渠道列表，不回写模板本体** —— 这份 JSON 是给当前 jks 用的起点，
- * 不是「以后所有 jks 都套用」的新模板。要改模板本体请到「渠道模板」页。
- */
-export function previewTemplateJson(app: string, prefix: string, sourcePath: string): ChannelListPreview {
-  const suffixes = parseTemplateFile(fs.readFileSync(sourcePath, 'utf8'), '选择的文件')
-  const notes: string[] = []
-  if (suffixes.length === 0) {
-    notes.push('文件里的 suffixes 是空的，渠道列表会被清空。')
-  }
-  // 展开规则与「按模板生成」共用一份实现，避免两处算出不同的渠道名
-  const config = buildChannelsFromTemplate(suffixes, prefix, app)
-  return {
-    path: sourcePath,
-    fileName: path.basename(sourcePath),
-    channels: config.channelInfoList,
-    count: config.channelInfoList.length,
-    notes,
-  }
-}
-
-/** 确认后真正落盘，同样重新读一次文件 */
-export function applyTemplateJson(
+export function applyChannels(
   id: string,
   app: string,
-  prefix: string,
   sourcePath: string,
-): TemplateImportResult {
-  const preview = previewTemplateJson(app, prefix, sourcePath)
+  mode: ChannelImportMode = 'overwrite',
+): ChannelImportResult {
+  const preview = previewChannels(app, sourcePath)
+
+  if (mode === 'append') {
+    const existing = readChannels(id, app).channelInfoList
+    const merged = [...existing]
+    const seen = new Set(existing.map((entry) => entry.channel.trim().toLowerCase()))
+    let added = 0
+    let skipped = 0
+    for (const entry of preview.channels) {
+      const key = entry.channel.trim().toLowerCase()
+      if (seen.has(key)) {
+        skipped += 1
+        continue
+      }
+      seen.add(key)
+      merged.push(entry)
+      added += 1
+    }
+    const config = { defaultExtraInfo: { app }, channelInfoList: merged }
+    writeChannels(id, config)
+    return { config, count: merged.length, added, skipped, notes: preview.notes }
+  }
+
   const config = { defaultExtraInfo: { app }, channelInfoList: preview.channels }
   writeChannels(id, config)
   return { config, count: config.channelInfoList.length, notes: preview.notes }
+}
+
+/** 模板为空时「导出示例 JSON」用的兜底后缀，保证导出的文件永远是可用的结构 */
+const SAMPLE_SUFFIXES: TemplateSuffix[] = [
+  { suffix: 'gf', alias: '官方' },
+  { suffix: 'yyb', alias: '应用宝' },
+]
+
+/**
+ * 导出「示例渠道 JSON」—— 给还没有渠道列表的用户一份可以直接改的起点。
+ *
+ * 条目按「渠道模板」页的模板 + 前缀展开（与「按模板生成」共用
+ * `buildChannelsFromTemplate`，避免两处算出不同的渠道名）；模板为空时退回两条兜底示例。
+ *
+ * 顶层多一个 `_说明` 字段：`parseChannelConfig` 只读 `channelInfoList` 与
+ * `defaultExtraInfo`，多余字段会被忽略，所以它纯粹是写给用户看的注释。
+ */
+export function exportSampleChannels(
+  app: string,
+  prefix: string,
+  targetPath: string,
+): { count: number; fromTemplate: boolean } {
+  const suffixes = readTemplate().suffixes
+  const fromTemplate = suffixes.length > 0
+  const config = buildChannelsFromTemplate(fromTemplate ? suffixes : SAMPLE_SUFFIXES, prefix, app)
+  const payload = {
+    _说明:
+      '这是示例文件。改好 channelInfoList 后用「导入 JSON」读回来；defaultExtraInfo.app 会按当前 jks 的值覆盖。',
+    ...config,
+  }
+  fs.mkdirSync(path.dirname(targetPath), { recursive: true })
+  fs.writeFileSync(targetPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
+  return { count: config.channelInfoList.length, fromTemplate }
 }

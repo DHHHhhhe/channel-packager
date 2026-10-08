@@ -15,7 +15,11 @@ function pipe(ctx: StepContext, tag: string) {
 
 /**
  * `walle show` 的输出格式实测为 `<绝对路径> : <值>`（一行）。
- * 只按 ` : ` 切，不要按最后一个冒号切 —— 路径里的 `C:\` 也是冒号。
+ * 只按 ` :` 切，不要按最后一个冒号切 —— 路径里的 `C:\` 也是冒号。
+ *
+ * 包没写过渠道时 walle 退出码仍是 0，输出只有 `<路径> : `（冒号后为空）。
+ * 这种情况必须返回空串：早先版本没有分隔符就退回整行，于是把文件路径当成了渠道号
+ * 显示在界面上。没有分隔符一律视为「读不到值」，真正的报错由调用方用 raw 兜底。
  */
 function valueAfterPath(raw: string): string {
   const line =
@@ -24,8 +28,11 @@ function valueAfterPath(raw: string): string {
       .map((entry) => entry.trim())
       .filter((entry) => entry !== '')
       .pop() ?? ''
-  const separator = line.lastIndexOf(' : ')
-  return separator >= 0 ? line.slice(separator + 3).trim() : line
+  const separator = line.lastIndexOf(' :')
+  if (separator < 0) {
+    return ''
+  }
+  return line.slice(separator + 2).trim()
 }
 
 /**

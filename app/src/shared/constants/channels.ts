@@ -15,16 +15,11 @@ export const IPC_CHANNELS = {
 
   /** 选文件 + 解析，只读；返回将要写入的条目供用户确认 */
   channelsImport: 'channels:import',
-  /** 用户确认后真正写进渠道列表 */
+  /** 用户确认后真正写进渠道列表（覆盖或追加） */
   channelsImportApply: 'channels:importApply',
   channelsExport: 'channels:export',
-
-  /** 导出模板后缀表为 JSON，供用户改完再导回渠道列表 */
-  templateExport: 'template:export',
-  /** 选文件 + 解析 + 按前缀展开，只读；返回将要写入的条目供用户确认 */
-  templateImport: 'template:import',
-  /** 用户确认后真正写进渠道列表 */
-  templateImportApply: 'template:importApply',
+  /** 渠道列表为空时导出一份示例 JSON，给用户可编辑的起点 */
+  channelsExportSample: 'channels:exportSample',
 
   credVerify: 'cred:verify',
 

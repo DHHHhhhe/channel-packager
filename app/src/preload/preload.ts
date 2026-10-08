@@ -14,14 +14,14 @@ import type {
 import type { TaskInput, TaskProgressEvent, TaskStartResult, WalleShowResult } from '../shared/types/task'
 import type {
   ChannelExportResult,
+  ChannelImportMode,
   ChannelImportResult,
   ChannelListPreview,
+  ChannelSampleExportResult,
   ConflictStrategy,
   PackExportResult,
   PackImportResult,
   PackPreviewResult,
-  TemplateExportResult,
-  TemplateImportResult,
 } from '../shared/types/pack'
 
 /**
@@ -105,25 +105,21 @@ const api: RendererApi = {
     return ipcRenderer.invoke(IPC_CHANNELS.channelsImport, app)
   },
 
-  applyChannels(id: string, app: string, sourcePath: string): Promise<ChannelImportResult> {
-    return ipcRenderer.invoke(IPC_CHANNELS.channelsImportApply, id, app, sourcePath)
+  applyChannels(
+    id: string,
+    app: string,
+    sourcePath: string,
+    mode: ChannelImportMode,
+  ): Promise<ChannelImportResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.channelsImportApply, id, app, sourcePath, mode)
   },
 
-  exportTemplateJson(): Promise<TemplateExportResult> {
-    return ipcRenderer.invoke(IPC_CHANNELS.templateExport)
-  },
-
-  previewTemplateJson(app: string, prefix: string): Promise<ChannelListPreview | null> {
-    return ipcRenderer.invoke(IPC_CHANNELS.templateImport, app, prefix)
-  },
-
-  applyTemplateJson(
+  exportSampleChannels(
     id: string,
     app: string,
     prefix: string,
-    sourcePath: string,
-  ): Promise<TemplateImportResult> {
-    return ipcRenderer.invoke(IPC_CHANNELS.templateImportApply, id, app, prefix, sourcePath)
+  ): Promise<ChannelSampleExportResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.channelsExportSample, id, app, prefix)
   },
 
   exportConfigPack(): Promise<PackExportResult> {

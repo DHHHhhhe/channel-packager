@@ -2,24 +2,22 @@ import { BrowserWindow, dialog, ipcMain } from 'electron'
 import { IPC_CHANNELS } from '../../shared/constants/channels'
 import type {
   ChannelExportResult,
+  ChannelImportMode,
   ChannelImportResult,
   ChannelListPreview,
+  ChannelSampleExportResult,
   PackExportResult,
   PackImportResult,
   PackPreviewResult,
-  TemplateExportResult,
-  TemplateImportResult,
 } from '../../shared/types/pack'
 import {
   applyChannels,
-  applyTemplateJson,
   exportChannels,
   exportConfigPack,
-  exportTemplateJson,
+  exportSampleChannels,
   importConfigPack,
   previewChannels,
   previewConfigPack,
-  previewTemplateJson,
   type PackImportInput,
 } from '../configpack'
 
@@ -119,42 +117,31 @@ export function registerPackIpc(): void {
     },
   )
 
+  // 渠道列表为空时给一份可编辑的起点：导出示例 JSON，改完走「导入 JSON」读回来
   ipcMain.handle(
-    IPC_CHANNELS.channelsImportApply,
-    (_event, id: string, app: string, sourcePath: string): ChannelImportResult =>
-      // 渠道列表要写进 walle 的 defaultExtraInfo.app，app 取自 jks 条目而非文件
-      applyChannels(id, app, sourcePath),
-  )
-
-  ipcMain.handle(IPC_CHANNELS.templateExport, async (): Promise<TemplateExportResult> => {
-    const targetPath = await pickSavePath(
-      '导出模板 JSON',
-      `渠道模板_${today()}.json`,
-      [{ name: 'JSON', extensions: ['json'] }],
-    )
-    if (targetPath === null) {
-      return { canceled: true }
-    }
-    const { count, isDefault } = exportTemplateJson(targetPath)
-    return { canceled: false, path: targetPath, count, isDefault }
-  })
-
-  ipcMain.handle(
-    IPC_CHANNELS.templateImport,
-    async (_event, app: string, prefix: string): Promise<ChannelListPreview | null> => {
-      const sourcePath = await pickOpenPath('导入模板 JSON', [
+    IPC_CHANNELS.channelsExportSample,
+    async (_event, id: string, app: string, prefix: string): Promise<ChannelSampleExportResult> => {
+      const targetPath = await pickSavePath('导出示例渠道 JSON', `${id}_channels_sample.json`, [
         { name: 'JSON', extensions: ['json'] },
       ])
-      if (sourcePath === null) {
-        return null
+      if (targetPath === null) {
+        return { canceled: true }
       }
-      return previewTemplateJson(app, prefix, sourcePath)
+      const { count, fromTemplate } = exportSampleChannels(app, prefix, targetPath)
+      return { canceled: false, path: targetPath, count, fromTemplate }
     },
   )
 
   ipcMain.handle(
-    IPC_CHANNELS.templateImportApply,
-    (_event, id: string, app: string, prefix: string, sourcePath: string): TemplateImportResult =>
-      applyTemplateJson(id, app, prefix, sourcePath),
+    IPC_CHANNELS.channelsImportApply,
+    (
+      _event,
+      id: string,
+      app: string,
+      sourcePath: string,
+      mode: ChannelImportMode,
+    ): ChannelImportResult =>
+      // 渠道列表要写进 walle 的 defaultExtraInfo.app，app 取自 jks 条目而非文件
+      applyChannels(id, app, sourcePath, mode),
   )
 }

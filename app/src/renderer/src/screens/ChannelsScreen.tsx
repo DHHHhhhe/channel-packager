@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { FileDown, FileUp, Wand2 } from 'lucide-react'
+import { FileDown, Wand2 } from 'lucide-react'
 import { ChannelListPreviewDialog } from '@/components/ChannelListPreviewDialog'
 import { PageHeader } from '@/components/PageHeader'
 import { PairListEditor, newPairRow, type PairRow } from '@/components/PairListEditor'
@@ -14,14 +14,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { ChannelListPreview } from '@shared/types/pack'
+import type { ChannelImportMode, ChannelListPreview } from '@shared/types/pack'
 import { buildChannelsFromTemplate } from '@shared/utils/channels'
 import { findDuplicates } from '@/lib/duplicates'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { useAppStore } from '@/store/app-store'
-
-/** 待确认的导入：渠道 JSON 与模板 JSON 走同一个确认框，只是落盘那一步不同 */
-type PendingImport = { kind: 'channels' | 'template'; preview: ChannelListPreview }
 
 export function ChannelsScreen() {
   const { jksItems, template, getChannels, saveChannels } = useAppStore()
@@ -32,7 +29,10 @@ export function ChannelsScreen() {
   const [saving, setSaving] = useState(false)
   const [prefix, setPrefix] = useState('')
   const [status, setStatus] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
-  const [pending, setPending] = useState<PendingImport | null>(null)
+  /** 已解析待确认的导入；null 表示没有待确认的导入 */
+  const [pending, setPending] = useState<ChannelListPreview | null>(null)
+  /** 确认框里选的覆盖/追加，默认覆盖 */
+  const [importMode, setImportMode] = useState<ChannelImportMode>('overwrite')
   const [importing, setImporting] = useState(false)
 
   const selected = jksItems.find((item) => item.id === selectedId)
@@ -55,6 +55,8 @@ export function ChannelsScreen() {
     let cancelled = false
     setLoading(true)
     setStatus(null)
+    // 换 jks 后旧的导入确认框已经没意义了
+    setPending(null)
     getChannels(selectedId)
       .then((config) => {
         if (cancelled) {
@@ -128,7 +130,7 @@ export function ChannelsScreen() {
 
   /*
    * 导入分两步：先让主进程只读解析、把将要写入的条目拿回来，
-   * 用户看过确认框点「确认导入」才落盘 —— 渠道列表是整表替换，选错文件代价大。
+   * 用户看过确认框、选好覆盖还是追加、点「确认导入」才落盘。
    */
   const handleImportJson = async () => {
     if (!selected) {
@@ -140,48 +142,33 @@ export function ChannelsScreen() {
       if (result === null) {
         return
       }
-      setPending({ kind: 'channels', preview: result })
+      setImportMode('overwrite')
+      setPending(result)
     } catch (error) {
       setStatus({ kind: 'error', text: ipcErrorMessage(error) })
     }
   }
 
   /*
-   * 导出的是「模板后缀表」本身，不是当前渠道列表 ——
-   * 给用户一份短小、好改的起点，改完由 handleImportTemplateJson 展开成渠道名。
+   * 导出一份示例渠道 JSON。只在列表为空时可用 ——
+   * 有内容时用户该做的是「导出 JSON」把现有数据拿走，示例文件只会添乱。
    */
-  const handleExportTemplateJson = async () => {
+  const handleExportSampleJson = async () => {
     if (!selected) {
       return
     }
     setStatus(null)
     try {
-      const result = await window.api.exportTemplateJson()
+      const result = await window.api.exportSampleChannels(selected.id, selected.app, prefix)
       if (result.canceled) {
         return
       }
       setStatus({
         kind: 'ok',
-        text: `已导出模板 ${result.count ?? 0} 条后缀：${result.path}（改完用「导入模板 JSON」套用到当前 jks）${
-          result.isDefault ? '；当前就是内置默认模板' : ''
-        }`,
+        text: `已导出示例 ${result.count ?? 0} 条：${result.path}${
+          result.fromTemplate ? '（条目取自「渠道模板」页的模板）' : '（模板为空，用的是内置兜底示例）'
+        }。改好后用「导入 JSON」读回来。`,
       })
-    } catch (error) {
-      setStatus({ kind: 'error', text: ipcErrorMessage(error) })
-    }
-  }
-
-  const handleImportTemplateJson = async () => {
-    if (!selected) {
-      return
-    }
-    setStatus(null)
-    try {
-      const result = await window.api.previewTemplateJson(selected.app, prefix)
-      if (result === null) {
-        return
-      }
-      setPending({ kind: 'template', preview: result })
     } catch (error) {
       setStatus({ kind: 'error', text: ipcErrorMessage(error) })
     }
@@ -192,27 +179,24 @@ export function ChannelsScreen() {
     if (!selected || pending === null) {
       return
     }
-    const { kind, preview } = pending
+    const overwrite = importMode === 'overwrite'
     setImporting(true)
     try {
-      const result =
-        kind === 'channels'
-          ? await window.api.applyChannels(selected.id, selected.app, preview.path)
-          : await window.api.applyTemplateJson(selected.id, selected.app, prefix, preview.path)
-      // 渠道 JSON 是原样复制，模板 JSON 是按前缀展开，两者都已经在 result 里算好了
+      const result = await window.api.applyChannels(
+        selected.id,
+        selected.app,
+        pending.path,
+        importMode,
+      )
       setRows(
         result.config.channelInfoList.map((entry) => newPairRow(entry.channel, entry.alias ?? '')),
       )
       setDirty(false)
       setPending(null)
-      const shown = prefix.trim() === '' ? '（空，渠道名等于后缀）' : prefix.trim()
-      setStatus({
-        kind: 'ok',
-        text:
-          kind === 'channels'
-            ? `已导入 ${result.count} 条渠道并保存。${result.notes.join(' ')}`
-            : `已按前缀「${shown}」套用模板 ${result.count} 条并保存。${result.notes.join(' ')}`,
-      })
+      const detail = overwrite
+        ? `已覆盖为 ${result.count} 条并保存。`
+        : `已追加 ${result.added ?? 0} 条（跳过重名 ${result.skipped ?? 0} 条），现共 ${result.count} 条并保存。`
+      setStatus({ kind: 'ok', text: `${detail}${result.notes.join(' ')}` })
     } catch (error) {
       setPending(null)
       setStatus({ kind: 'error', text: ipcErrorMessage(error) })
@@ -276,7 +260,12 @@ export function ChannelsScreen() {
             <Button variant="outline" onClick={handleImportJson} disabled={saving || loading}>
               导入 JSON
             </Button>
-            <Button variant="outline" onClick={handleExportJson} disabled={saving || loading}>
+            <Button
+              variant="outline"
+              onClick={handleExportJson}
+              disabled={saving || loading || rows.length === 0}
+              title={rows.length === 0 ? '渠道列表为空，没有可导出的内容' : '导出当前渠道列表'}
+            >
               导出 JSON
             </Button>
             <Button onClick={handleSave} disabled={saving || loading || !dirty}>
@@ -324,24 +313,30 @@ export function ChannelsScreen() {
               <Wand2 />
               按模板生成
             </Button>
-            <Button variant="outline" onClick={handleExportTemplateJson} disabled={saving || loading}>
+            <Button
+              variant="outline"
+              onClick={handleExportSampleJson}
+              disabled={saving || loading || rows.length > 0}
+              title={
+                rows.length > 0
+                  ? '列表里已经有渠道了，要拿走现有内容请用右上角的「导出 JSON」'
+                  : '导出一份可编辑的示例 JSON'
+              }
+            >
               <FileDown />
-              导出模板 JSON
-            </Button>
-            <Button variant="outline" onClick={handleImportTemplateJson} disabled={saving || loading}>
-              <FileUp />
-              导入模板 JSON
+              导出示例 JSON
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
             生成规则：渠道名 = 前缀 + &quot;_&quot; + 后缀。生成的是独立副本，之后再改模板也不会影响这里。
           </p>
           <p className="text-xs text-muted-foreground">
-            「导出模板 JSON」导的是模板后缀表，改完用「导入模板 JSON」按上面的前缀展开成当前 jks
-            的渠道列表；它不会改动「渠道模板」页里的模板本体。
+            「导出示例 JSON」只在渠道列表为空时可用，导出的是一份可编辑的起点（条目取自「渠道模板」页的模板）；
+            改好后用右上角的「导入 JSON」读回来。
           </p>
           <p className="text-xs text-muted-foreground">
-            两个「导入」都会先弹一个确认框，列出将要写入的条目，点「确认导入」才真正落盘。
+            「导入 JSON」会先弹确认框，列出将要写入的条目，并让你选是覆盖现有列表还是追加到后面；
+            点「确认导入」才真正落盘。
           </p>
         </CardContent>
       </Card>
@@ -379,11 +374,13 @@ export function ChannelsScreen() {
       <ChannelListPreviewDialog
         open={pending !== null}
         onOpenChange={(open) => (open ? undefined : setPending(null))}
-        title={pending?.kind === 'template' ? '导入模板 JSON' : '导入渠道 JSON'}
-        preview={pending?.preview ?? null}
+        title="导入渠道 JSON"
+        preview={pending}
         currentCount={rows.length}
         dirty={dirty}
         busy={importing}
+        mode={importMode}
+        onModeChange={setImportMode}
         onConfirm={handleConfirmImport}
       />
     </div>

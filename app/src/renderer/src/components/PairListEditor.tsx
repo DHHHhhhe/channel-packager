@@ -25,6 +25,8 @@ interface PairListEditorProps {
   emptyHint: string
   /** 打开多选：表头出现全选框，选中若干行后可一次删掉 */
   selectable?: boolean
+  /** 整块只读：新增、编辑、删除与多选全部禁用（如「新增 jks」还没选 jks 文件时） */
+  disabled?: boolean
 }
 
 /**
@@ -39,6 +41,7 @@ export function PairListEditor({
   aliasPlaceholder,
   emptyHint,
   selectable = false,
+  disabled = false,
 }: PairListEditorProps) {
   const [picked, setPicked] = useState<string[]>([])
 
@@ -82,12 +85,16 @@ export function PairListEditor({
           <span className="text-sm text-muted-foreground">
             {pickedIds.length > 0 ? `已选 ${pickedIds.length} 项` : `共 ${rows.length} 项`}
           </span>
-          <Button variant="outline" onClick={removePicked} disabled={pickedIds.length === 0}>
+          <Button
+            variant="outline"
+            onClick={removePicked}
+            disabled={disabled || pickedIds.length === 0}
+          >
             <Trash2 />
             删除选中
           </Button>
           {pickedIds.length > 0 ? (
-            <Button variant="ghost" onClick={() => setPicked([])}>
+            <Button variant="ghost" onClick={() => setPicked([])} disabled={disabled}>
               取消选择
             </Button>
           ) : null}
@@ -105,7 +112,7 @@ export function PairListEditor({
                     onCheckedChange={(value) => {
                       setPicked(value === true ? rows.map((row) => row.rowId) : [])
                     }}
-                    disabled={rows.length === 0}
+                    disabled={disabled || rows.length === 0}
                     aria-label="全选"
                     title="全选"
                   />
@@ -131,6 +138,7 @@ export function PairListEditor({
                       <Checkbox
                         checked={pickedIds.includes(row.rowId)}
                         onCheckedChange={(value) => toggle(row.rowId, value === true)}
+                        disabled={disabled}
                         aria-label={`选中 ${row.key.trim() || '这一行'}`}
                       />
                     </TableCell>
@@ -142,6 +150,7 @@ export function PairListEditor({
                       placeholder={keyPlaceholder}
                       aria-label={keyLabel}
                       aria-invalid={row.key.trim() === ''}
+                      disabled={disabled}
                     />
                   </TableCell>
                   <TableCell>
@@ -150,6 +159,7 @@ export function PairListEditor({
                       onChange={(event) => update(row.rowId, { alias: event.target.value })}
                       placeholder={aliasPlaceholder}
                       aria-label="别名"
+                      disabled={disabled}
                     />
                   </TableCell>
                   <TableCell className="text-right">
@@ -157,6 +167,7 @@ export function PairListEditor({
                       variant="ghost"
                       size="icon"
                       onClick={() => remove(row.rowId)}
+                      disabled={disabled}
                       aria-label="删除这一行"
                       title="删除这一行"
                     >
@@ -171,7 +182,7 @@ export function PairListEditor({
       </div>
 
       <div>
-        <Button variant="outline" onClick={() => onChange([...rows, newPairRow()])}>
+        <Button variant="outline" onClick={() => onChange([...rows, newPairRow()])} disabled={disabled}>
           <Plus />
           添加一行
         </Button>

@@ -57,9 +57,17 @@ export interface PackImportResult {
   notes: string[]
 }
 
+/** 导入渠道 JSON 时，对现有列表的处理方式 */
+export type ChannelImportMode = 'overwrite' | 'append'
+
 export interface ChannelImportResult {
   config: ChannelConfig
+  /** 落盘后列表的总条数 */
   count: number
+  /** 追加模式下真正新增的条数 */
+  added?: number
+  /** 追加模式下因为渠道名已存在而跳过的条数 */
+  skipped?: number
   /** 被忽略或与 jks 不一致的字段说明 */
   notes: string[]
 }
@@ -87,18 +95,14 @@ export interface ChannelExportResult {
   count?: number
 }
 
-export interface TemplateExportResult {
+/**
+ * 「导出示例 JSON」的结果。
+ * 只在渠道列表为空时提供 —— 给用户一份可直接改的起点，改完用「导入 JSON」读回来。
+ */
+export interface ChannelSampleExportResult {
   canceled: boolean
   path?: string
   count?: number
-  /** 导出的就是内置默认模板（本机模板没被改过） */
-  isDefault?: boolean
-}
-
-export interface TemplateImportResult {
-  /** 展开后写进 jks 的渠道配置 */
-  config: ChannelConfig
-  count: number
-  /** 需要让用户知道的副作用或忽略项 */
-  notes: string[]
+  /** 示例条目来自「渠道模板」页的模板（否则是内置的两条兜底示例） */
+  fromTemplate?: boolean
 }

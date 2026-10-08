@@ -68,7 +68,8 @@ export function registerTaskIpc(): void {
         ok: channel.ok,
         message: channel.ok ? '' : channel.raw || 'walle 没能读出渠道信息',
         channel: channel.channel,
-        extraInfo: extra.ok ? extra.raw : undefined,
+        // 空串表示包里没写额外信息，跟「读到但为空」不是一回事，这里统一成 undefined
+        extraInfo: extra.ok ? extra.raw || undefined : undefined,
       }
     },
   )

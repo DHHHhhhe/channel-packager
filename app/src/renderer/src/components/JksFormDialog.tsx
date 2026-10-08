@@ -92,6 +92,13 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
 
   const isEdit = Boolean(item)
 
+  /*
+   * 新增模式下还没选 jks 文件时，渠道数据整块不可操作。
+   * 渠道列表是挂在 jks 上的（data/channels/<id>.json），id 又由文件名推导而来，
+   * 文件都没选就先让人编渠道，编完也无处可落，只能白填。
+   */
+  const noJks = !isEdit && sourcePath.trim() === ''
+
   /** 按模板 + 前缀算出一份新的草稿行 */
   const templateDraft = (value: string): PairRow[] =>
     buildChannelsFromTemplate(template.suffixes, value, app.trim()).channelInfoList.map((entry) =>
@@ -481,10 +488,12 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
                 <KeyRound className="size-4 shrink-0" />
                 <span className="text-sm font-medium">渠道数据</span>
                 <span className="text-xs text-muted-foreground">
-                  共 {draftChannels.length} 条，下面就是最终保存的内容，可直接改
+                  {noJks
+                    ? '先在上面选择 jks 文件'
+                    : `共 ${draftChannels.length} 条，下面就是最终保存的内容，可直接改`}
                 </span>
               </div>
-              <Select value={channelMode} onValueChange={handleModeChange}>
+              <Select value={channelMode} onValueChange={handleModeChange} disabled={noJks}>
                 <SelectTrigger aria-label="渠道数据来源">
                   <SelectValue />
                 </SelectTrigger>
@@ -510,6 +519,7 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
                       }
                     }}
                     placeholder="默认等于 jks 文件名"
+                    disabled={noJks}
                   />
                   <p className="text-xs text-muted-foreground">
                     渠道名 = 前缀 + &quot;_&quot; + 后缀。改前缀会按模板重新生成下面的列表。
@@ -524,6 +534,7 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
                       variant="outline"
                       type="button"
                       onClick={() => jsonInputRef.current?.click()}
+                      disabled={noJks}
                     >
                       <FileUp />
                       选择 JSON
@@ -554,12 +565,16 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
                 keyLabel="渠道名"
                 keyPlaceholder="例如 sample_gf"
                 aliasPlaceholder="例如 官方"
+                selectable
+                disabled={noJks}
                 emptyHint={
-                  channelMode === 'empty'
-                    ? '还没有渠道条目。点下面的「添加一行」就能直接给这个 jks 加渠道。'
-                    : channelMode === 'template'
-                      ? '模板为空，生成不出条目。可改用「不套用模板」手工添加。'
-                      : '还没读到渠道。选一份 channelConfig.json 就会出现在这里。'
+                  noJks
+                    ? '选择 jks 文件后，这里就能编辑渠道了。'
+                    : channelMode === 'empty'
+                      ? '还没有渠道条目。点下面的「添加一行」就能直接给这个 jks 加渠道。'
+                      : channelMode === 'template'
+                        ? '模板为空，生成不出条目。可改用「不套用模板」手工添加。'
+                        : '还没读到渠道。选一份 channelConfig.json 就会出现在这里。'
                 }
               />
             </div>

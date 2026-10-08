@@ -11,14 +11,14 @@ import type {
 import type { TaskInput, TaskProgressEvent, TaskStartResult, WalleShowResult } from './task'
 import type {
   ChannelExportResult,
+  ChannelImportMode,
   ChannelImportResult,
   ChannelListPreview,
+  ChannelSampleExportResult,
   ConflictStrategy,
   PackExportResult,
   PackImportResult,
   PackPreviewResult,
-  TemplateExportResult,
-  TemplateImportResult,
 } from './pack'
 
 /**
@@ -82,31 +82,26 @@ export interface RendererApi {
    */
   previewChannels(app: string): Promise<ChannelListPreview | null>
 
-  /** 第二步：用户确认后原样复制渠道名与别名，写进指定 jks 的渠道列表 */
-  applyChannels(id: string, app: string, sourcePath: string): Promise<ChannelImportResult>
-
-  /**
-   * 导出模板后缀表为 JSON（结构与 data/template.json 一致）。
-   * 用来给用户一份可编辑的起点，改完走 previewTemplateJson 变成某个 jks 的渠道列表。
-   */
-  exportTemplateJson(): Promise<TemplateExportResult>
-
-  /**
-   * 第一步：选模板 JSON，按 `前缀 + "_" + 后缀` 展开成渠道名，**只读不落盘**。
-   * 用户取消时返回 null。
-   */
-  previewTemplateJson(app: string, prefix: string): Promise<ChannelListPreview | null>
-
   /**
    * 第二步：用户确认后写进指定 jks 的渠道列表。
-   * 只动渠道列表，不回写模板本体。
+   * `mode` 决定是整表替换（overwrite）还是与现有列表合并（append，按渠道名去重）。
    */
-  applyTemplateJson(
+  applyChannels(
+    id: string,
+    app: string,
+    sourcePath: string,
+    mode: ChannelImportMode,
+  ): Promise<ChannelImportResult>
+
+  /**
+   * 导出示例渠道 JSON。只在渠道列表为空时提供 ——
+   * 条目来自「渠道模板」页的模板，模板为空时退回内置的两条兜底示例。
+   */
+  exportSampleChannels(
     id: string,
     app: string,
     prefix: string,
-    sourcePath: string,
-  ): Promise<TemplateImportResult>
+  ): Promise<ChannelSampleExportResult>
 
   /** 导出配置包 zip。导出前界面必须提示包内含明文密码与私钥 */
   exportConfigPack(): Promise<PackExportResult>

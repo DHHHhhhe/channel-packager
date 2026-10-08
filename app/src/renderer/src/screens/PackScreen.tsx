@@ -16,8 +16,16 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import type { ChannelEntry } from '@shared/types/store'
-import type { SignMode, TaskResult, TaskStage } from '@shared/types/task'
+import type { SignMode, TaskResult, TaskStage, WalleShowResult } from '@shared/types/task'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { useAppStore } from '@/store/app-store'
 
@@ -47,6 +55,16 @@ function defaultOutputDir(apkPath: string): string {
   return cut < 0 ? '渠道包' : `${normalized.slice(0, cut)}\\渠道包`
 }
 
+/**
+ * 只取文件名。
+ * 「查看渠道」的结果里不放完整路径：包没写过渠道时 walle 只会回一行 `<路径> : `，
+ * 早先把整行当成渠道号显示，界面上就冒出一串没人要的目录。
+ */
+function baseNameOf(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, '/')
+  return normalized.slice(normalized.lastIndexOf('/') + 1)
+}
+
 export function PackScreen() {
   const { jksItems, getChannels } = useAppStore()
   const [apkPath, setApkPath] = useState('')
@@ -57,6 +75,10 @@ export function PackScreen() {
   const [outputDir, setOutputDir] = useState('')
   const [signMode, setSignMode] = useState<SignMode>('sign')
   const [status, setStatus] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
+  /** 「查看渠道」的结果，非 null 时弹窗展示 */
+  const [showResult, setShowResult] = useState<WalleShowResult | null>(null)
+  const [showTarget, setShowTarget] = useState('')
+  const [showing, setShowing] = useState(false)
 
   const [running, setRunning] = useState(false)
   const [stage, setStage] = useState<string | null>(null)
@@ -152,24 +174,26 @@ export function PackScreen() {
     })
   }
 
+  /*
+   * 结果走弹窗而不是页面底部那一行状态文字：
+   * 渠道号与额外信息都要完整显示，塞进一行很容易被截断，也分不清哪段是哪段。
+   */
   const handleShowChannel = async () => {
-    if (!apkPath.trim()) {
+    const target = apkPath.trim()
+    if (!target) {
       setStatus({ kind: 'error', text: '请先选择 APK。' })
       return
     }
     setStatus(null)
+    setShowTarget(target)
+    setShowResult(null)
+    setShowing(true)
     try {
-      const shown = await window.api.showChannel(apkPath.trim())
-      if (shown.ok) {
-        setStatus({
-          kind: 'ok',
-          text: `渠道号：${shown.channel || '(空)'}${shown.extraInfo ? ` ｜ 额外信息：${shown.extraInfo}` : ''}`,
-        })
-      } else {
-        setStatus({ kind: 'error', text: `没能读出渠道信息：${shown.message}` })
-      }
+      setShowResult(await window.api.showChannel(target))
     } catch (error) {
       setStatus({ kind: 'error', text: ipcErrorMessage(error) })
+    } finally {
+      setShowing(false)
     }
   }
 
@@ -279,7 +303,12 @@ export function PackScreen() {
                 }}
                 placeholder="拖入或选择后自动填入"
               />
-              <Button variant="outline" onClick={handleShowChannel} title="用 walle show 读这个包的渠道号">
+              <Button
+                variant="outline"
+                onClick={handleShowChannel}
+                disabled={showing}
+                title="用 walle show 读这个包的渠道号"
+              >
                 <Eye />
                 查看渠道
               </Button>
@@ -460,6 +489,57 @@ export function PackScreen() {
           </CardContent>
         </Card>
       ) : null}
+
+      <Dialog
+        open={showing || showResult !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setShowResult(null)
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>查看渠道</DialogTitle>
+            <DialogDescription>
+              {showTarget ? `读取 ${baseNameOf(showTarget)} 的渠道信息` : '读取包的渠道信息'}
+            </DialogDescription>
+          </DialogHeader>
+
+          {showing ? (
+            <p className="text-sm text-muted-foreground">读取中…</p>
+          ) : showResult === null ? null : !showResult.ok ? (
+            <p className="text-sm text-destructive">
+              没能读出渠道信息：{showResult.message}
+            </p>
+          ) : (showResult.channel ?? '') === '' && !showResult.extraInfo ? (
+            <p className="text-sm text-muted-foreground">
+              这个包里没有渠道信息，说明它还没被写过渠道。
+            </p>
+          ) : (
+            <div className="flex flex-col gap-3 text-sm">
+              <div className="flex flex-col gap-1">
+                <span className="text-muted-foreground">渠道号</span>
+                <span className="break-all font-mono">
+                  {showResult.channel && showResult.channel !== '' ? showResult.channel : '(空)'}
+                </span>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-muted-foreground">额外信息</span>
+                <span className="break-all font-mono">
+                  {showResult.extraInfo ? showResult.extraInfo : '(无)'}
+                </span>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowResult(null)} disabled={showing}>
+              关闭
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
