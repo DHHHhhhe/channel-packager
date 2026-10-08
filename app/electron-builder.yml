@@ -8,6 +8,11 @@ directories:
   output: release
   buildResources: build
 
+# 构建前先拦一道：release/ 是构建产物目录，不该出现 data/ ——
+# 那里面的 jks 副本与明文口令会被重建、清理或打包分享一起带走。
+# 钩子实现在 scripts/before-pack.cjs，检测到就中止构建并提示先挪走。
+beforePack: ./scripts/before-pack.cjs
+
 files:
   - dist/**
   - dist-electron/**
