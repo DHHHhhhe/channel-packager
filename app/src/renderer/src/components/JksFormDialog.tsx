@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react'
 import { Eye, EyeOff, FileUp, KeyRound } from 'lucide-react'
+import { ChannelListPreviewDialog } from '@/components/ChannelListPreviewDialog'
 import { PairListEditor, newPairRow, type PairRow } from '@/components/PairListEditor'
 import { PlaintextPasswordNotice } from '@/components/PlaintextPasswordNotice'
 import { Button } from '@/components/ui/button'
@@ -20,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import type { ChannelListPreview } from '@shared/types/pack'
 import type { ChannelConfig, JksItem } from '@shared/types/store'
 import { buildChannelsFromTemplate } from '@shared/utils/channels'
 import { deriveAlias, derivePassword } from '@shared/utils/credentials'
@@ -57,6 +59,8 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
   const [prefix, setPrefix] = useState('')
   /** 最终要保存的渠道列表。三种来源都只是「怎么填这份列表」，列表本身才是真相 */
   const [draftChannels, setDraftChannels] = useState<PairRow[]>([])
+  /** 导入 JSON 的待确认内容；null 表示没有待确认的导入 */
+  const [jsonPreview, setJsonPreview] = useState<ChannelListPreview | null>(null)
   const [showPassword, setShowPassword] = useState(false)
   const [feedback, setFeedback] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
@@ -83,6 +87,7 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
     setChannelMode('empty')
     setPrefix(item?.id ?? '')
     setDraftChannels([])
+    setJsonPreview(null)
     setShowPassword(false)
     setFeedback(null)
     setBusy(false)
@@ -199,18 +204,41 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
         setFeedback({ kind: 'error', text: 'channelInfoList 里有条目缺少 channel 字段。' })
         return
       }
-      // K3：原样导入，不做任何前缀替换
-      setDraftChannels(
-        parsed.channelInfoList.map((entry) => newPairRow(entry.channel, entry.alias ?? '')),
-      )
+      /*
+       * K3：原样导入，不做任何前缀替换。
+       * 这里先不填列表，只给一份可编辑的预览 —— 选错文件时不会把已经编好的渠道冲掉。
+       */
+      const notes: string[] = []
+      const fileApp = parsed.defaultExtraInfo?.app?.trim()
+      if (fileApp && fileApp !== app.trim()) {
+        notes.push(
+          `文件里的 defaultExtraInfo.app 是「${fileApp}」，保存时按表单里的「${app.trim() || '空'}」写。`,
+        )
+      }
+      setJsonPreview({
+        fileName: file.name,
+        channels: parsed.channelInfoList.map((entry) => ({
+          channel: entry.channel,
+          alias: entry.alias,
+        })),
+        count: parsed.channelInfoList.length,
+        notes,
+      })
       setChannelMode('json')
-      setFeedback({ kind: 'ok', text: `已读取 ${parsed.channelInfoList.length} 条渠道，可在下方直接改。` })
+      setFeedback(null)
     } catch (error) {
       setFeedback({
         kind: 'error',
         text: `这份 JSON 解析失败：${error instanceof Error ? error.message : String(error)}`,
       })
     }
+  }
+
+  /** 预览框里点确认：这时才把改过的条目填进草稿列表 */
+  const handleConfirmJson = (imported: PairRow[]) => {
+    setDraftChannels(imported)
+    setJsonPreview(null)
+    setFeedback({ kind: 'ok', text: `已导入 ${imported.length} 条渠道，可在下方直接改。` })
   }
 
   /**
@@ -540,7 +568,7 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
                       选择 JSON
                     </Button>
                     <span className="text-sm text-muted-foreground">
-                      {draftChannels.length > 0 ? `已读取 ${draftChannels.length} 条` : '尚未选择文件'}
+                      {draftChannels.length > 0 ? `已导入 ${draftChannels.length} 条` : '尚未导入'}
                     </span>
                   </div>
                   <input
@@ -600,6 +628,18 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      {/*
+        导入 JSON 的预览框。放在外层 Dialog 的根里而不是外面 —— 它自己会 portal 到 body，
+        嵌套只是为了让 Radix 的层级栈把它排在新增 jks 之上；不用 Fragment 是为了避免整段重排缩进。
+      */}
+      <ChannelListPreviewDialog
+        open={jsonPreview !== null}
+        onOpenChange={(next) => (next ? undefined : setJsonPreview(null))}
+        title="导入渠道 JSON"
+        preview={jsonPreview}
+        onConfirm={handleConfirmJson}
+      />
     </Dialog>
   )
 }

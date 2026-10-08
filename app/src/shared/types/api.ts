@@ -1,6 +1,7 @@
 import type { RuntimeCheckResult } from './runtime'
 import type {
   ChannelConfig,
+  ChannelEntry,
   CredentialVerifyResult,
   JksMutation,
   JksMutationResult,
@@ -11,8 +12,6 @@ import type {
 import type { TaskInput, TaskProgressEvent, TaskStartResult, WalleShowResult } from './task'
 import type {
   ChannelExportResult,
-  ChannelImportMode,
-  ChannelImportResult,
   ChannelListPreview,
   ChannelSampleExportResult,
   ConflictStrategy,
@@ -73,25 +72,22 @@ export interface RendererApi {
   /** 用 walle show 查看某个 APK 的渠道信息 */
   showChannel(apkPath: string): Promise<WalleShowResult>
 
-  /** 导出某个 jks 的渠道为 JSON；取消时 canceled 为 true */
-  exportChannels(id: string, app: string): Promise<ChannelExportResult>
+  /**
+   * 导出渠道 JSON。导出的是**界面上**的列表（含尚未保存的修改），
+   * 不是磁盘上那份 —— 导入只填界面，两者必须以界面为准才自洽。
+   * 取消时 canceled 为 true。
+   */
+  exportChannels(
+    id: string,
+    app: string,
+    channelInfoList: ChannelEntry[],
+  ): Promise<ChannelExportResult>
 
   /**
-   * 第一步：选渠道 JSON 并解析，**只读不落盘**，返回将要写入的条目供用户确认。
+   * 选渠道 JSON 并解析，**只读不落盘**，返回文件里的条目供用户预览与编辑。
    * 用户取消时返回 null。
    */
   previewChannels(app: string): Promise<ChannelListPreview | null>
-
-  /**
-   * 第二步：用户确认后写进指定 jks 的渠道列表。
-   * `mode` 决定是整表替换（overwrite）还是与现有列表合并（append，按渠道名去重）。
-   */
-  applyChannels(
-    id: string,
-    app: string,
-    sourcePath: string,
-    mode: ChannelImportMode,
-  ): Promise<ChannelImportResult>
 
   /**
    * 导出示例渠道 JSON。只在渠道列表为空时提供 ——

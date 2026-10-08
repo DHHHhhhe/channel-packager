@@ -2,12 +2,10 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { TEMPLATE_SEED } from '../shared/constants/templateSeed'
-import type { JksItem, TemplateSuffix } from '../shared/types/store'
+import type { ChannelEntry, JksItem, TemplateSuffix } from '../shared/types/store'
 import {
   PACK_FORMAT,
   PACK_VERSION,
-  type ChannelImportMode,
-  type ChannelImportResult,
   type ChannelListPreview,
   type ConflictStrategy,
   type PackConflict,
@@ -24,7 +22,6 @@ import { resolveRuntimeComponentPath } from './runtime'
 import {
   JKS_FILE_VERSION,
   jksFilePath,
-  readChannels,
   readJksFile,
   readTemplate,
   templateFilePath,
@@ -454,17 +451,28 @@ export async function importConfigPack(input: PackImportInput): Promise<PackImpo
   }
 }
 
-/** 导出某个 jks 的渠道为 JSON，结构与 channelConfig.sample.json 一致 */
-export function exportChannels(id: string, app: string, targetPath: string): number {
-  const config = readChannels(id, app)
+/**
+ * 导出渠道 JSON。
+ *
+ * 写的是**渲染层传进来的列表**，不是磁盘上那份 ——
+ * 「导入 JSON」只把条目填进界面、由用户点「保存渠道列表」才落盘，
+ * 若这里仍旧读文件，用户刚导入还没保存时导出的会是旧内容，两边对不上。
+ */
+export function exportChannels(
+  app: string,
+  targetPath: string,
+  channelInfoList: ChannelEntry[],
+): number {
+  const config = { defaultExtraInfo: { app }, channelInfoList }
   fs.mkdirSync(path.dirname(targetPath), { recursive: true })
   fs.writeFileSync(targetPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8')
-  return config.channelInfoList.length
+  return channelInfoList.length
 }
 
 /**
- * 只读预览：解析渠道 JSON，把**将要写入**的条目算出来，不落盘。
- * 用户看过列表再决定是否 apply —— 导入是整表替换，先看一眼比事后补救便宜。
+ * 只读解析：把文件里的渠道条目读出来，不落盘。
+ * 用户看过、改过、确认之后，条目由渲染层合并进界面列表，
+ * 落盘统一走「保存渠道列表」。
  *
  * **原样复制** channelInfoList —— 渠道名与别名逐字保留，不做前缀替换（K1/R14）。
  */
@@ -477,55 +485,11 @@ export function previewChannels(app: string, sourcePath: string): ChannelListPre
     )
   }
   return {
-    path: sourcePath,
     fileName: path.basename(sourcePath),
     channels: parsed.channelInfoList,
     count: parsed.channelInfoList.length,
     notes,
   }
-}
-
-/**
- * 确认后真正落盘。
- * 重新读一次文件而不是信任渲染层回传的内容 —— 中间用户可能改了文件，
- * 以「点确认那一刻磁盘上的内容」为准，预览与落盘不一致的风险最小。
- *
- * `mode` 决定怎么处理现有列表：
- * - `overwrite`（默认）整表替换；
- * - `append` 接到现有列表末尾，**渠道名已存在的跳过** —— 同名条目会互相覆盖，不能放进去。
- */
-export function applyChannels(
-  id: string,
-  app: string,
-  sourcePath: string,
-  mode: ChannelImportMode = 'overwrite',
-): ChannelImportResult {
-  const preview = previewChannels(app, sourcePath)
-
-  if (mode === 'append') {
-    const existing = readChannels(id, app).channelInfoList
-    const merged = [...existing]
-    const seen = new Set(existing.map((entry) => entry.channel.trim().toLowerCase()))
-    let added = 0
-    let skipped = 0
-    for (const entry of preview.channels) {
-      const key = entry.channel.trim().toLowerCase()
-      if (seen.has(key)) {
-        skipped += 1
-        continue
-      }
-      seen.add(key)
-      merged.push(entry)
-      added += 1
-    }
-    const config = { defaultExtraInfo: { app }, channelInfoList: merged }
-    writeChannels(id, config)
-    return { config, count: merged.length, added, skipped, notes: preview.notes }
-  }
-
-  const config = { defaultExtraInfo: { app }, channelInfoList: preview.channels }
-  writeChannels(id, config)
-  return { config, count: config.channelInfoList.length, notes: preview.notes }
 }
 
 /** 模板为空时「导出示例 JSON」用的兜底后缀，保证导出的文件永远是可用的结构 */

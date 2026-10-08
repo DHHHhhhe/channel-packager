@@ -1,4 +1,4 @@
-import type { ChannelConfig, ChannelEntry } from './store'
+import type { ChannelEntry } from './store'
 
 /** 配置包里 `manifest.json` 的 format 标识，用来一眼分辨「是不是本工具导出的包」 */
 export const PACK_FORMAT = 'channel-packager-config'
@@ -57,35 +57,24 @@ export interface PackImportResult {
   notes: string[]
 }
 
-/** 导入渠道 JSON 时，对现有列表的处理方式 */
+/** 导入渠道 JSON 时，对界面现有列表的处理方式 */
 export type ChannelImportMode = 'overwrite' | 'append'
 
-export interface ChannelImportResult {
-  config: ChannelConfig
-  /** 落盘后列表的总条数 */
-  count: number
-  /** 追加模式下真正新增的条数 */
-  added?: number
-  /** 追加模式下因为渠道名已存在而跳过的条数 */
-  skipped?: number
-  /** 被忽略或与 jks 不一致的字段说明 */
-  notes: string[]
-}
-
 /**
- * 「导入前先看一眼」的预览结果。
- * 主进程只读文件、把将要写入的条目算出来，**不落盘**；
- * 用户确认后把 `path` 原样回传，由 apply 那一步真正写文件。
+ * 「导入前先看一眼」的解析结果。
+ *
+ * 主进程只读文件、把文件里的条目原样算出来，**不落盘**。
+ * 确认后由渲染层把（用户在预览框里改过的）条目合并进界面上的列表，
+ * 真正的落盘发生在「保存渠道列表」那一步 —— 所以这里没有路径：
+ * 文件只在解析时读一次，之后磁盘上再变也影响不到已经读进界面的内容。
  */
 export interface ChannelListPreview {
-  /** 用户选中的文件绝对路径，确认时原样回传，避免再弹一次对话框 */
-  path: string
   /** 只取文件名，用于在对话框里显示「导入的是哪个文件」 */
   fileName: string
-  /** 将要写入的条目，顺序与文件里一致 */
+  /** 文件里的条目，顺序与文件里一致 */
   channels: ChannelEntry[]
   count: number
-  /** 需要让用户知道的忽略项或副作用（如 app 不一致、suffixes 为空） */
+  /** 需要让用户知道的忽略项或副作用（如 app 不一致） */
   notes: string[]
 }
 

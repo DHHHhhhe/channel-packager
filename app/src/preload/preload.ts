@@ -4,6 +4,7 @@ import type { RendererApi } from '../shared/types/api'
 import type { RuntimeCheckResult } from '../shared/types/runtime'
 import type {
   ChannelConfig,
+  ChannelEntry,
   CredentialVerifyResult,
   JksMutation,
   JksMutationResult,
@@ -14,8 +15,6 @@ import type {
 import type { TaskInput, TaskProgressEvent, TaskStartResult, WalleShowResult } from '../shared/types/task'
 import type {
   ChannelExportResult,
-  ChannelImportMode,
-  ChannelImportResult,
   ChannelListPreview,
   ChannelSampleExportResult,
   ConflictStrategy,
@@ -97,21 +96,16 @@ const api: RendererApi = {
     return ipcRenderer.invoke(IPC_CHANNELS.walleShow, apkPath)
   },
 
-  exportChannels(id: string, app: string): Promise<ChannelExportResult> {
-    return ipcRenderer.invoke(IPC_CHANNELS.channelsExport, id, app)
+  exportChannels(
+    id: string,
+    app: string,
+    channelInfoList: ChannelEntry[],
+  ): Promise<ChannelExportResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.channelsExport, id, app, channelInfoList)
   },
 
   previewChannels(app: string): Promise<ChannelListPreview | null> {
     return ipcRenderer.invoke(IPC_CHANNELS.channelsImport, app)
-  },
-
-  applyChannels(
-    id: string,
-    app: string,
-    sourcePath: string,
-    mode: ChannelImportMode,
-  ): Promise<ChannelImportResult> {
-    return ipcRenderer.invoke(IPC_CHANNELS.channelsImportApply, id, app, sourcePath, mode)
   },
 
   exportSampleChannels(

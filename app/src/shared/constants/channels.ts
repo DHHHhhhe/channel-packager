@@ -13,10 +13,9 @@ export const IPC_CHANNELS = {
   storeSaveChannels: 'store:saveChannels',
   storeSaveTemplate: 'store:saveTemplate',
 
-  /** 选文件 + 解析，只读；返回将要写入的条目供用户确认 */
+  /** 选文件 + 解析，只读；返回文件里的条目供用户预览与编辑 */
   channelsImport: 'channels:import',
-  /** 用户确认后真正写进渠道列表（覆盖或追加） */
-  channelsImportApply: 'channels:importApply',
+  /** 导出渠道 JSON：导的是**界面上**的列表，含尚未保存的修改 */
   channelsExport: 'channels:export',
   /** 渠道列表为空时导出一份示例 JSON，给用户可编辑的起点 */
   channelsExportSample: 'channels:exportSample',

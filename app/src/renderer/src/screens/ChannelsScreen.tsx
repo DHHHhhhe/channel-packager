@@ -14,11 +14,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import type { ChannelEntry } from '@shared/types/store'
 import type { ChannelImportMode, ChannelListPreview } from '@shared/types/pack'
 import { buildChannelsFromTemplate } from '@shared/utils/channels'
+import { mergeImportedRows } from '@/lib/channels-import'
 import { findDuplicates } from '@/lib/duplicates'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { useAppStore } from '@/store/app-store'
+
+/** 编辑器里的行 → 落盘/导出用的条目；别名为空时不写这个字段 */
+function toChannelEntries(rows: PairRow[]): ChannelEntry[] {
+  return rows.map((row) => {
+    const alias = row.alias.trim()
+    return alias ? { channel: row.key.trim(), alias } : { channel: row.key.trim() }
+  })
+}
 
 export function ChannelsScreen() {
   const { jksItems, template, getChannels, saveChannels } = useAppStore()
@@ -31,9 +41,8 @@ export function ChannelsScreen() {
   const [status, setStatus] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   /** 已解析待确认的导入；null 表示没有待确认的导入 */
   const [pending, setPending] = useState<ChannelListPreview | null>(null)
-  /** 确认框里选的覆盖/追加，默认覆盖 */
+  /** 预览框里选的覆盖/追加，默认覆盖 */
   const [importMode, setImportMode] = useState<ChannelImportMode>('overwrite')
-  const [importing, setImporting] = useState(false)
 
   const selected = jksItems.find((item) => item.id === selectedId)
 
@@ -115,13 +124,20 @@ export function ChannelsScreen() {
     }
     setStatus(null)
     try {
-      const result = await window.api.exportChannels(selected.id, selected.app)
+      // 导的是界面上的列表，不是磁盘上那份 —— 刚导入还没保存时也能拿到看到的内容
+      const result = await window.api.exportChannels(
+        selected.id,
+        selected.app,
+        toChannelEntries(rows),
+      )
       if (result.canceled) {
         return
       }
       setStatus({
         kind: 'ok',
-        text: `已导出 ${result.count ?? 0} 条渠道：${result.path}（可直接给 walle 的 batch2 -f 用）`,
+        text: `已导出 ${result.count ?? 0} 条渠道：${result.path}${
+          dirty ? '（含尚未保存的修改）' : ''
+        }，可直接给 walle 的 batch2 -f 用。`,
       })
     } catch (error) {
       setStatus({ kind: 'error', text: ipcErrorMessage(error) })
@@ -129,8 +145,9 @@ export function ChannelsScreen() {
   }
 
   /*
-   * 导入分两步：先让主进程只读解析、把将要写入的条目拿回来，
-   * 用户看过确认框、选好覆盖还是追加、点「确认导入」才落盘。
+   * 导入只做「选文件 + 解析」：把文件里的条目拿回来，用户改完、选好覆盖还是追加、
+   * 点确认后填进界面列表。**不写文件** —— 导入结果和手工敲进去的没区别，
+   * 都要再点「保存渠道列表」才落盘，所以也不需要为「有未保存的修改」报警告。
    */
   const handleImportJson = async () => {
     if (!selected) {
@@ -174,35 +191,18 @@ export function ChannelsScreen() {
     }
   }
 
-  /** 确认框里点「确认导入」：这时才真正写文件 */
-  const handleConfirmImport = async () => {
-    if (!selected || pending === null) {
-      return
-    }
-    const overwrite = importMode === 'overwrite'
-    setImporting(true)
-    try {
-      const result = await window.api.applyChannels(
-        selected.id,
-        selected.app,
-        pending.path,
-        importMode,
-      )
-      setRows(
-        result.config.channelInfoList.map((entry) => newPairRow(entry.channel, entry.alias ?? '')),
-      )
-      setDirty(false)
-      setPending(null)
-      const detail = overwrite
-        ? `已覆盖为 ${result.count} 条并保存。`
-        : `已追加 ${result.added ?? 0} 条（跳过重名 ${result.skipped ?? 0} 条），现共 ${result.count} 条并保存。`
-      setStatus({ kind: 'ok', text: `${detail}${result.notes.join(' ')}` })
-    } catch (error) {
-      setPending(null)
-      setStatus({ kind: 'error', text: ipcErrorMessage(error) })
-    } finally {
-      setImporting(false)
-    }
+  /** 预览框里点确认：把改过的条目合并进界面列表，等用户点保存才落盘 */
+  const handleConfirmImport = (imported: PairRow[]) => {
+    const before = rows.length
+    const merged = mergeImportedRows(rows, imported, importMode)
+    setRows(merged.rows)
+    setDirty(true)
+    setPending(null)
+    const detail =
+      importMode === 'overwrite'
+        ? `已按文件填入 ${merged.rows.length} 条，替换掉原来的 ${before} 条。`
+        : `已追加 ${merged.added} 条（跳过重名 ${merged.skipped} 条），现共 ${merged.rows.length} 条。`
+    setStatus({ kind: 'ok', text: `${detail}尚未保存，确认无误后点「保存渠道列表」。` })
   }
 
   const handleSave = async () => {
@@ -221,10 +221,7 @@ export function ChannelsScreen() {
     try {
       await saveChannels(selected.id, {
         defaultExtraInfo: { app: selected.app },
-        channelInfoList: rows.map((row) => {
-          const alias = row.alias.trim()
-          return alias ? { channel: row.key.trim(), alias } : { channel: row.key.trim() }
-        }),
+        channelInfoList: toChannelEntries(rows),
       })
       setDirty(false)
       setStatus({ kind: 'ok', text: '渠道列表已保存。' })
@@ -264,7 +261,11 @@ export function ChannelsScreen() {
               variant="outline"
               onClick={handleExportJson}
               disabled={saving || loading || rows.length === 0}
-              title={rows.length === 0 ? '渠道列表为空，没有可导出的内容' : '导出当前渠道列表'}
+              title={
+                rows.length === 0
+                  ? '渠道列表为空，没有可导出的内容'
+                  : '导出界面上的渠道列表（含尚未保存的修改）'
+              }
             >
               导出 JSON
             </Button>
@@ -335,8 +336,8 @@ export function ChannelsScreen() {
             改好后用右上角的「导入 JSON」读回来。
           </p>
           <p className="text-xs text-muted-foreground">
-            「导入 JSON」会先弹确认框，列出将要写入的条目，并让你选是覆盖现有列表还是追加到后面；
-            点「确认导入」才真正落盘。
+            「导入 JSON」会把文件里的条目读进一个预览框，可以在里面直接增删改；确认后只填进下面的列表，
+            点「保存渠道列表」才落盘。
           </p>
         </CardContent>
       </Card>
@@ -377,8 +378,6 @@ export function ChannelsScreen() {
         title="导入渠道 JSON"
         preview={pending}
         currentCount={rows.length}
-        dirty={dirty}
-        busy={importing}
         mode={importMode}
         onModeChange={setImportMode}
         onConfirm={handleConfirmImport}

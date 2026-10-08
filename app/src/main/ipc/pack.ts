@@ -1,9 +1,8 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron'
 import { IPC_CHANNELS } from '../../shared/constants/channels'
+import type { ChannelEntry } from '../../shared/types/store'
 import type {
   ChannelExportResult,
-  ChannelImportMode,
-  ChannelImportResult,
   ChannelListPreview,
   ChannelSampleExportResult,
   PackExportResult,
@@ -11,7 +10,6 @@ import type {
   PackPreviewResult,
 } from '../../shared/types/pack'
 import {
-  applyChannels,
   exportChannels,
   exportConfigPack,
   exportSampleChannels,
@@ -91,7 +89,12 @@ export function registerPackIpc(): void {
 
   ipcMain.handle(
     IPC_CHANNELS.channelsExport,
-    async (_event, id: string, app: string): Promise<ChannelExportResult> => {
+    async (
+      _event,
+      id: string,
+      app: string,
+      channelInfoList: ChannelEntry[],
+    ): Promise<ChannelExportResult> => {
       const targetPath = await pickSavePath(
         '导出渠道 JSON',
         `${id}_channels.json`,
@@ -100,12 +103,19 @@ export function registerPackIpc(): void {
       if (targetPath === null) {
         return { canceled: true }
       }
-      return { canceled: false, path: targetPath, count: exportChannels(id, app, targetPath) }
+      return {
+        canceled: false,
+        path: targetPath,
+        count: exportChannels(app, targetPath, channelInfoList),
+      }
     },
   )
 
-  // 导入分两步：先只读解析给渲染层弹确认框，用户点了「确认导入」再落盘。
-  // 渠道列表是整表替换，先看一眼比事后补救便宜。
+  /*
+   * 导入只到「解析」为止：把文件里的条目读出来交给渲染层，
+   * 由用户在预览框里改、选覆盖还是追加，确认后填进界面列表。
+   * 落盘统一走「保存渠道列表」—— 所以这里没有对应的 apply 通道。
+   */
   ipcMain.handle(
     IPC_CHANNELS.channelsImport,
     async (_event, app: string): Promise<ChannelListPreview | null> => {
@@ -130,18 +140,5 @@ export function registerPackIpc(): void {
       const { count, fromTemplate } = exportSampleChannels(app, prefix, targetPath)
       return { canceled: false, path: targetPath, count, fromTemplate }
     },
-  )
-
-  ipcMain.handle(
-    IPC_CHANNELS.channelsImportApply,
-    (
-      _event,
-      id: string,
-      app: string,
-      sourcePath: string,
-      mode: ChannelImportMode,
-    ): ChannelImportResult =>
-      // 渠道列表要写进 walle 的 defaultExtraInfo.app，app 取自 jks 条目而非文件
-      applyChannels(id, app, sourcePath, mode),
   )
 }
