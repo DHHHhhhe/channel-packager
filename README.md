@@ -122,6 +122,12 @@ pnpm dist              # 出便携版 exe，产物在 release/
 
 ## 已知注意事项
 
+### 发给别人时，第一次打开会被 Windows 拦一下
+
+exe 没有代码签名证书，Windows SmartScreen 会弹「Windows 已保护你的电脑」，发布者显示为「未知发布者」。这不是文件损坏，点「更多信息」→「仍要运行」即可。
+
+拿到 exe 的人需要知道的事（放哪、怎么过拦截、哪些文件不能外发）整理在 [交付说明.md](交付说明.md)，可以连同 exe 一起发过去。
+
 ### 本机 `pnpm dist` 报 `Unknown argument: …electron-builder\cli.js`
 
 pnpm 会把脚本体里的 `node` 替换成它自己运行所在的 Node。如果 pnpm 本身跑在 Electron 里（例如桌面端内置的 pnpm），这个替换会指向宿主 exe，于是 `.bin/electron-builder.CMD` 内部的 `node cli.js` 变成了 `宿主.exe cli.js`。
