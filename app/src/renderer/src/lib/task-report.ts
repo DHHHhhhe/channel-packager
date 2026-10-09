@@ -21,6 +21,7 @@ export const STAGE_LABELS: Record<TaskStage, string> = {
   'check-sign': '验证产物签名证书',
   publish: '移动到输出目录',
   done: '完成',
+  cancelled: '已取消',
   failed: '失败',
 }
 

@@ -5,6 +5,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary'
 import RuntimeBanner from '@/components/RuntimeBanner'
 import StoreProblemBanner from '@/components/StoreProblemBanner'
 import { AppSidebar, viewTitle, type AppView } from '@/components/AppSidebar'
+import { TaskIndicator } from '@/components/TaskIndicator'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { ChannelsScreen } from '@/screens/ChannelsScreen'
@@ -13,19 +14,41 @@ import { PackScreen } from '@/screens/PackScreen'
 import { TemplateScreen } from '@/screens/TemplateScreen'
 import { AppStoreProvider, useAppStore } from '@/store/app-store'
 import { NavProvider, useNav } from '@/store/nav'
+import { TaskProvider } from '@/store/task'
 import { ThemeProvider } from '@/store/theme'
 
-function CurrentView({ view }: { view: AppView }) {
-  switch (view) {
-    case 'pack':
-      return <PackScreen />
-    case 'jks':
-      return <JksScreen />
-    case 'channels':
-      return <ChannelsScreen />
-    case 'template':
-      return <TemplateScreen />
-  }
+/**
+ * 四个页面全部挂着，只把非当前的那个藏起来。
+ *
+ * 原来按 view 挑一个渲染，切页就是卸载：出包页填了一半的 APK 路径、输出目录、
+ * 排好的队列，切去渠道页配几条渠道再回来全没了；出包跑着的时候切页更糟 ——
+ * 页里挂的进度订阅跟着断掉，队列循环会停在那儿等一个永远不来的结果，
+ * 而主进程还在跑，再点「开始出包」只会被「已有任务在进行」顶回来。
+ *
+ * 用一个自带的 flex 列容器包住，是为了在页面外面多包一层 div 之后间距不变
+ * （父容器是 flex flex-col gap-4，这里照抄一份）。
+ * 藏起来用 class 而不是 hidden 属性：`.flex` 和 `[hidden]` 撞上时是作者样式
+ * 覆盖 UA 样式，元素照样会显示出来。
+ */
+function ViewStack({ view }: { view: AppView }) {
+  const screens: Array<{ view: AppView; node: React.ReactNode }> = [
+    { view: 'pack', node: <PackScreen /> },
+    { view: 'jks', node: <JksScreen /> },
+    { view: 'channels', node: <ChannelsScreen /> },
+    { view: 'template', node: <TemplateScreen /> },
+  ]
+  return (
+    <>
+      {screens.map((screen) => (
+        <div
+          key={screen.view}
+          className={screen.view === view ? 'flex flex-col gap-4' : 'hidden'}
+        >
+          {screen.node}
+        </div>
+      ))}
+    </>
+  )
 }
 
 function Shell() {
@@ -45,7 +68,9 @@ function Shell() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-10 flex h-[var(--topbar-height)] shrink-0 items-center gap-3 border-b bg-background/50 px-6 backdrop-blur">
           <h1 className="text-base font-semibold">{viewTitle(view)}</h1>
-          <div className="ml-auto flex items-center gap-2" id="topbar-status" />
+          <div className="ml-auto flex items-center gap-2" id="topbar-status">
+            <TaskIndicator />
+          </div>
         </header>
 
         <main className="flex-1 overflow-y-auto">
@@ -116,7 +141,7 @@ function Shell() {
                 正在读取本地配置…
               </p>
             ) : (
-              <CurrentView view={view} />
+              <ViewStack view={view} />
             )}
           </div>
         </main>
@@ -131,7 +156,9 @@ export default function App() {
       <ThemeProvider>
         <AppStoreProvider>
           <NavProvider>
-            <Shell />
+            <TaskProvider>
+              <Shell />
+            </TaskProvider>
           </NavProvider>
         </AppStoreProvider>
       </ThemeProvider>

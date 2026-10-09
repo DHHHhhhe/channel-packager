@@ -6,6 +6,8 @@ import type {
   SourceCheckResult,
   TaskInput,
   TaskProgressEvent,
+  TaskRunningState,
+  TaskStage,
   TaskStartResult,
   WalleShowResult,
 } from '../../shared/types/task'
@@ -21,6 +23,19 @@ import { walleShowChannel } from '../walle'
  * 与其显示错乱不如明确拒绝。
  */
 let runningTaskId: string | null = null
+
+/**
+ * 取消正在跑的任务。任务结束时置空 —— 留着的话，下一次点取消会对着
+ * 一个早就跑完的任务调 abort，看起来像「取消成功了」其实什么也没发生。
+ */
+let runningAbort: AbortController | null = null
+
+/**
+ * 当前阶段与说明。只给 `task:getRunning` 用：界面切页回来或刷新窗口后
+ * 拿它把状态接上，不至于以为没跑过。
+ */
+let runningStage: TaskStage = 'validate'
+let runningMessage = ''
 
 function broadcast(payload: TaskProgressEvent): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -38,19 +53,30 @@ export function registerTaskIpc(): void {
         throw new Error(`已有出包任务在进行（${runningTaskId}），请等它结束再试`)
       }
       const taskId = newTaskId()
+      const abort = new AbortController()
       runningTaskId = taskId
+      runningAbort = abort
+      runningStage = 'validate'
+      runningMessage = '启动中'
 
       /*
        * 按契约立刻返回 taskId，不 await：出包要跑几十秒，invoke 挂在那里
        * 既拿不到进度也无法取消。阶段与实时输出都走 task:progress，终态也在其中。
        */
       void runPipeline(taskId, input, {
-        onProgress: (stage, message, line) => broadcast({ taskId, stage, message, line }),
+        signal: abort.signal,
+        onProgress: (stage, message, line) => {
+          runningStage = stage
+          if (message !== '') {
+            runningMessage = message
+          }
+          broadcast({ taskId, stage, message, line })
+        },
       })
         .then((result) => {
           broadcast({
             taskId,
-            stage: result.ok ? 'done' : 'failed',
+            stage: result.ok ? 'done' : result.failure?.cancelled === true ? 'cancelled' : 'failed',
             message: result.message,
             result,
           })
@@ -64,11 +90,32 @@ export function registerTaskIpc(): void {
         })
         .finally(() => {
           runningTaskId = null
+          runningAbort = null
         })
 
       return { taskId }
     },
   )
+
+  /*
+   * 取消：只 abort 信号，不等结果。
+   * 流水线自己会走完收尾（杀子进程、把终态广播出来），这里再去 await 一次
+   * 只会让界面白等 —— 它要的是「点了就有反应」。
+   */
+  ipcMain.handle(IPC_CHANNELS.taskCancel, (): boolean => {
+    if (runningAbort === null) {
+      return false
+    }
+    runningAbort.abort()
+    return true
+  })
+
+  ipcMain.handle(IPC_CHANNELS.taskGetRunning, (): TaskRunningState | null => {
+    if (runningTaskId === null) {
+      return null
+    }
+    return { taskId: runningTaskId, stage: runningStage, message: runningMessage }
+  })
 
   ipcMain.handle(
     IPC_CHANNELS.walleShow,

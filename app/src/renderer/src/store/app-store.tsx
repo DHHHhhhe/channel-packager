@@ -39,6 +39,14 @@ interface AppStoreValue {
   jksItems: JksItem[]
   /** 渠道分组。渠道列表的归属，与 jks 无关 */
   groups: GroupItem[]
+  /**
+   * 渠道列表的保存次数。
+   *
+   * 四个页面现在一直挂着（切页不再卸载），渠道配置页不会再因为「重新挂载」而重读
+   * 磁盘。出包页的「自定义渠道导出」也会往同一个分组里存渠道 —— 存完得有个信号
+   * 让渠道配置页知道该重读了，否则切过去看到的还是旧的那一份。
+   */
+  channelsRevision: number
   template: TemplateFile
   reload: () => Promise<void>
   saveJks: (mutation: JksMutation) => Promise<JksMutationResult>
@@ -70,6 +78,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const [problems, setProblems] = useState<StoreProblem[]>([])
   const [jksItems, setJksItems] = useState<JksItem[]>([])
   const [groups, setGroups] = useState<GroupItem[]>([])
+  const [channelsRevision, setChannelsRevision] = useState(0)
   const [template, setTemplate] = useState<TemplateFile>({ version: 1, suffixes: [] })
 
   /** 按路径去重地并进问题列表，免得渠道列表读到的问题把 jks 列表那条顶掉 */
@@ -111,6 +120,57 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     void reload()
   }, [reload])
 
+  /*
+   * 这些方法都用 useCallback 固定住身份。
+   *
+   * 不这么做的话，下面那个 useMemo 一重算（比如 channelsRevision 变了），所有方法
+   * 都会换一份新的引用 —— 而页面里的读取 effect 是拿这些方法当依赖的，
+   * 于是一次保存会连带触发别的页面重新读盘：刚显示的「已保存」被清掉，
+   * 正在编辑的列表被磁盘内容冲掉。身份稳定，这些 effect 才只在真正该跑的时候跑。
+   */
+  const saveJks = useCallback(async (mutation: JksMutation): Promise<JksMutationResult> => {
+    const result = await window.api.saveJks(mutation)
+    setJksItems(result.items)
+    return result
+  }, [])
+
+  const saveGroup = useCallback(async (mutation: GroupMutation): Promise<GroupMutationResult> => {
+    const result = await window.api.saveGroup(mutation)
+    setGroups(result.items)
+    return result
+  }, [])
+
+  const saveTemplate = useCallback(async (next: TemplateFile): Promise<void> => {
+    const saved = await window.api.saveTemplate(next)
+    setTemplate(saved)
+  }, [])
+
+  const getChannels = useCallback(
+    async (id: string): Promise<ChannelConfig> => {
+      const config = await window.api.getChannels(id)
+      // 渠道列表是读的时候才知道坏没坏，补取一次问题
+      mergeProblems(await window.api.takeStoreProblems())
+      return config
+    },
+    [mergeProblems],
+  )
+
+  const saveChannels = useCallback(async (id: string, config: ChannelConfig): Promise<void> => {
+    await window.api.saveChannels(id, config)
+    setChannelsRevision((current) => current + 1)
+  }, [])
+
+  const refreshJks = useCallback(
+    (id: string): Promise<RefreshResult> => window.api.refreshJksFromSource(id),
+    [],
+  )
+
+  const verifyCredentials = useCallback(
+    (id: string, password: string, alias?: string): Promise<CredentialVerifyResult> =>
+      window.api.verifyCredentials(id, password, alias),
+    [],
+  )
+
   const value = useMemo<AppStoreValue>(
     () => ({
       loading,
@@ -121,39 +181,37 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       problems,
       jksItems,
       groups,
+      channelsRevision,
       template,
       reload,
-      async saveJks(mutation: JksMutation) {
-        const result = await window.api.saveJks(mutation)
-        setJksItems(result.items)
-        return result
-      },
-      async saveGroup(mutation: GroupMutation) {
-        const result = await window.api.saveGroup(mutation)
-        setGroups(result.items)
-        return result
-      },
-      async saveTemplate(next: TemplateFile) {
-        const saved = await window.api.saveTemplate(next)
-        setTemplate(saved)
-      },
-      async getChannels(id: string) {
-        const config = await window.api.getChannels(id)
-        // 渠道列表是读的时候才知道坏没坏，补取一次问题
-        mergeProblems(await window.api.takeStoreProblems())
-        return config
-      },
-      async saveChannels(id: string, config: ChannelConfig) {
-        await window.api.saveChannels(id, config)
-      },
-      refreshJks(id: string) {
-        return window.api.refreshJksFromSource(id)
-      },
-      verifyCredentials(id: string, password: string, alias?: string) {
-        return window.api.verifyCredentials(id, password, alias)
-      },
+      saveJks,
+      saveGroup,
+      saveTemplate,
+      getChannels,
+      saveChannels,
+      refreshJks,
+      verifyCredentials,
     }),
-    [loading, initialized, loadError, dataDir, usedFallback, problems, jksItems, groups, template, reload, mergeProblems],
+    [
+      loading,
+      initialized,
+      loadError,
+      dataDir,
+      usedFallback,
+      problems,
+      jksItems,
+      groups,
+      channelsRevision,
+      template,
+      reload,
+      saveJks,
+      saveGroup,
+      saveTemplate,
+      getChannels,
+      saveChannels,
+      refreshJks,
+      verifyCredentials,
+    ],
   )
 
   return <AppStoreContext.Provider value={value}>{children}</AppStoreContext.Provider>

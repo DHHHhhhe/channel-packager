@@ -32,6 +32,11 @@ function stripSignedStemSuffix(base: string): string {
 
 export interface PipelineHooks {
   onProgress: (stage: TaskStage, message: string, line?: string) => void
+  /**
+   * 取消信号。整条流水线共用一个：一路传给每个子进程，
+   * 取消时正在跑的那一步会被真的杀掉，而不是等它自己跑完。
+   */
+  signal?: AbortSignal
 }
 
 /** 时间戳 + 随机后缀，保证工作目录唯一 */
@@ -188,7 +193,8 @@ export async function runPipeline(
   }
 
   const finish = (ok: boolean, message: string, failure?: TaskFailure): TaskResult => {
-    if (!ok) {
+    // 取消不是错误：往日志里写一行红字，回头排查会以为工具坏了
+    if (!ok && failure?.cancelled !== true) {
       log.error(message)
     }
     return {
@@ -230,6 +236,7 @@ export async function runPipeline(
     const ctx: StepContext = {
       log,
       onLine: (line) => hooks.onProgress(currentStage, '', line),
+      signal: hooks.signal,
     }
 
     // 第 5 步的输入：跳过签名时直接用原包
@@ -353,7 +360,7 @@ export async function runPipeline(
     }
     for (const fileName of produced) {
       const full = path.join(outDir, fileName)
-      const shown = await walleShowChannel(full)
+      const shown = await walleShowChannel(full, ctx)
       const expected = p.pickedEntries.find((entry) => entry.channel === shown.channel)
       const verified = shown.ok && Boolean(expected)
       if (!verified) {
@@ -447,8 +454,19 @@ export async function runPipeline(
      * 而界面要的是「卡在 apksigner 签名」这种信息，光说一句「失败」等于没说。
      */
     const failedStage = currentStage
-    const message = error instanceof Error ? error.message : String(error)
+    const cancelled = error instanceof StepFailure && error.cancelled
+    const message = cancelled ? '已取消' : error instanceof Error ? error.message : String(error)
     const failure: TaskFailure = { stage: failedStage }
+    if (cancelled) {
+      /*
+       * 取消要单独标出来，不能混进普通失败：
+       * 界面据此说「已取消」而不是「失败」，也就不会给人一份「有问题的结果」。
+       */
+      failure.cancelled = true
+      log.info('任务已取消')
+      progress('cancelled', message)
+      return finish(false, message, failure)
+    }
     if (error instanceof StepFailure) {
       if (error.exitCode !== undefined) {
         failure.exitCode = error.exitCode

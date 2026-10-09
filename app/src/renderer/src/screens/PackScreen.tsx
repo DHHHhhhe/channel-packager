@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Eye, ListPlus, Package, Upload } from 'lucide-react'
+import { Eye, FolderOpen, ListPlus, Package, Search, Upload } from 'lucide-react'
 import {
   CustomChannelExportDialog,
   type CustomChannelExportPayload,
@@ -30,12 +30,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import type { ChannelEntry } from '@shared/types/store'
-import type { SignMode, SourceCheckResult, TaskInput, TaskResult, WalleShowResult } from '@shared/types/task'
+import type { SignMode, SourceCheckResult, TaskInput, WalleShowResult } from '@shared/types/task'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { NO_JKS_KEY, readLastGroup, writeLastGroup } from '@/lib/last-group'
-import { STAGE_LABELS } from '@/lib/task-report'
 import { useAppStore } from '@/store/app-store'
 import { useNav } from '@/store/nav'
+import { useTask } from '@/store/task'
 
 /** 默认输出到 APK 同级的「渠道包」目录（K11） */
 function defaultOutputDir(apkPath: string): string {
@@ -64,7 +64,7 @@ function baseNameOf(filePath: string): string {
 const NO_JKS = '__none__'
 
 export function PackScreen() {
-  const { groups, jksItems, getChannels, saveChannels, initialized } = useAppStore()
+  const { groups, jksItems, channelsRevision, getChannels, saveChannels, initialized } = useAppStore()
   const { go } = useNav()
   const [apkPath, setApkPath] = useState('')
   const [dragging, setDragging] = useState(false)
@@ -83,6 +83,8 @@ export function PackScreen() {
   const [groupId, setGroupId] = useState('')
   const [channels, setChannels] = useState<ChannelEntry[]>([])
   const [picked, setPicked] = useState<Set<string>>(new Set())
+  /** 渠道勾选区的搜索词：分组里几十上百条时，靠肉眼在网格里找太费劲 */
+  const [channelQuery, setChannelQuery] = useState('')
   const [outputDir, setOutputDir] = useState('')
   const [signMode, setSignMode] = useState<SignMode>('sign')
   /** 出包表单上的提前判断：这个包能不能按当前设置出 */
@@ -96,12 +98,25 @@ export function PackScreen() {
   const [showTarget, setShowTarget] = useState('')
   const [showing, setShowing] = useState(false)
 
-  const [running, setRunning] = useState(false)
-  const [stage, setStage] = useState<string | null>(null)
-  const [lines, setLines] = useState<string[]>([])
-  const [result, setResult] = useState<TaskResult | null>(null)
-  /** 本次出包用的参数，供结果卡片上的「重跑本次」填回表单 */
-  const [lastRun, setLastRun] = useState<TaskInput | null>(null)
+  /*
+   * 出包任务的运行状态放在 TaskProvider 里，不在这一页。
+   *
+   * 任务跑起来之后人常要切去别的页面改配置，页里一卸载，进度订阅就断、状态就丢，
+   * 队列循环还会停在「等这一项结果」那一句上再也不动，而主进程其实还在跑。
+   * 放外层之后：切页不断、顶栏一直看得见进度、随时能取消。
+   */
+  const {
+    running,
+    stage,
+    lines,
+    result,
+    lastRun,
+    queueProgress,
+    start,
+    runAndWait,
+    reset: resetTask,
+    setQueueProgress,
+  } = useTask()
   /** 批量出包的队列。空数组时整个队列卡片不渲染 */
   const [queue, setQueue] = useState<QueueItem[]>([])
   const [queueRunning, setQueueRunning] = useState(false)
@@ -114,40 +129,9 @@ export function PackScreen() {
   const [customInitial, setCustomInitial] = useState<{
     channels: ChannelEntry[]
   } | null>(null)
-  // null 表示「本界面还没启动过任务」；此时到达的进度一定属于本次启动
-  const taskIdRef = useRef<string | null>(null)
-  // 队列在等这一项的最终结果。进度事件带 result 时把它叫醒，循环才往下走；
-  // runTask 自己抛错时没人叫醒，所以参数允许 null 表示「这一项没结果」。
-  const queueResolveRef = useRef<((result: TaskResult | null) => void) | null>(null)
   // 「重跑本次」要恢复的勾选。渠道列表是异步读的，得等读完再套用，
   // 否则会被读盘那一步的「默认全选」盖掉。
   const pendingPickedRef = useRef<string[] | null>(null)
-
-  useEffect(() => {
-    const unsubscribe = window.api.onTaskProgress((event) => {
-      const current = taskIdRef.current
-      if (current !== null && event.taskId !== current) {
-        return
-      }
-      setStage(STAGE_LABELS[event.stage])
-      if (event.line !== undefined && event.line !== '') {
-        setLines((previous) => [...previous.slice(-499), event.line as string])
-      } else if (event.message !== '') {
-        setLines((previous) => [...previous.slice(-499), `— ${event.message}`])
-      }
-      if (event.result) {
-        setResult(event.result)
-        setRunning(false)
-        // 队列在等这一项跑完；叫醒它，否则循环会一直停在 await 上
-        const resolve = queueResolveRef.current
-        if (resolve !== null) {
-          queueResolveRef.current = null
-          resolve(event.result)
-        }
-      }
-    })
-    return unsubscribe
-  }, [])
 
   useEffect(() => {
     // 首屏还没读完就先不动：jksItems 初始是空数组，这时把 noJks 定成 true 会
@@ -203,6 +187,8 @@ export function PackScreen() {
       setPicked(new Set())
       return
     }
+    // 换了分组，上一份列表的搜索词留着只会让人以为新分组也是空的
+    setChannelQuery('')
     let cancelled = false
     getChannels(groupId)
       .then((config) => {
@@ -231,6 +217,51 @@ export function PackScreen() {
       cancelled = true
     }
   }, [groupId, getChannels])
+
+  const channelsRef = useRef(channels)
+  channelsRef.current = channels
+  /** 上一次补读对应的保存次数 */
+  const readRevisionRef = useRef(channelsRevision)
+
+  /*
+   * 分组里的渠道可能在「渠道配置」页被改过（那边一保存，这边就该跟着变）。
+   * 四个页面现在一直挂着，切回来不会再重新挂载读盘，所以自己盯着保存次数补读一次。
+   *
+   * 勾选按老规矩办：原来全选的，新增的也跟着选上（全选就是这个意思）；
+   * 只挑了一部分的，保持原样，把已经不存在的渠道去掉。
+   */
+  useEffect(() => {
+    if (readRevisionRef.current === channelsRevision) {
+      return
+    }
+    readRevisionRef.current = channelsRevision
+    if (!groupId) {
+      return
+    }
+    const previousCount = channelsRef.current.length
+    let cancelled = false
+    getChannels(groupId)
+      .then((config) => {
+        if (cancelled) {
+          return
+        }
+        const list = config.channelInfoList
+        const available = new Set(list.map((entry) => entry.channel))
+        setChannels(list)
+        setPicked((previous) => {
+          if (previous.size > 0 && previous.size === previousCount) {
+            return available
+          }
+          return new Set([...previous].filter((code) => available.has(code)))
+        })
+      })
+      .catch(() => {
+        // 只是后台补读，失败就维持现状
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [channelsRevision, groupId, getChannels])
 
   /*
    * 提前把「这个包能不能按当前设置出」问出来。
@@ -390,23 +421,12 @@ export function PackScreen() {
 
   /** 用一份明确给定的参数出包。表单那条路与「自定义渠道导出」那条路共用 */
   const startWith = async (params: TaskInput): Promise<void> => {
-    setLines([])
-    setResult(null)
     setStatus(null)
-    setStage('启动中')
+    // 单次出包的结果归单次结果卡片，别让队列卡片去认领
     setRanQueue(false)
-    taskIdRef.current = null
-    setRunning(true)
-    // 先记下这次用的参数，跑完能在结果卡片上「重跑本次」
-    setLastRun(params)
-    try {
-      const started = await window.api.runTask(params)
-      taskIdRef.current = started.taskId
-    } catch (error) {
-      setRunning(false)
-      setStage('失败')
-      setLines([ipcErrorMessage(error)])
-    }
+    // 单次出包不排队，进度标题上不该留着「第 N/M 项」
+    setQueueProgress(null)
+    await start(params)
   }
 
   const handleStart = async (): Promise<void> => {
@@ -524,7 +544,24 @@ export function PackScreen() {
     }
   }
 
-  const allPicked = channels.length > 0 && picked.size === channels.length
+  const channelKeyword = channelQuery.trim().toLowerCase()
+  const searching = channelKeyword !== ''
+  /*
+   * 搜索只影响「看得见什么」，不动勾选本身 —— 搜完再点全选，勾的是筛出来的那几条，
+   * 而不是把看不见的也一起改了。
+   */
+  const visibleChannels = useMemo(() => {
+    if (!searching) {
+      return channels
+    }
+    return channels.filter(
+      (entry) =>
+        entry.channel.toLowerCase().includes(channelKeyword) ||
+        (entry.alias ?? '').toLowerCase().includes(channelKeyword),
+    )
+  }, [channels, searching, channelKeyword])
+  const visibleAllPicked =
+    visibleChannels.length > 0 && visibleChannels.every((entry) => picked.has(entry.channel))
   const blockers = useMemo(() => {
     const list: string[] = []
     if (!apkPath.trim()) {
@@ -585,8 +622,11 @@ export function PackScreen() {
    * 串行跑队列。
    *
    * 单项失败只标它自己，循环照常往下走 —— 一批里坏一个就全停，等于把「批量」
-   * 这件事废掉了。结果要等进度事件带 result 才拿得到（runTask 只回 taskId），
-   * 所以用 queueResolveRef 把这一项挂起，进度回调来叫醒。
+   * 这件事废掉了。
+   *
+   * 等结果这件事交给 TaskProvider 的 runAndWait：它把「等结果」的钩子在启动任务
+   * 之前就挂好了（流水线在校验阶段就失败时，带 result 的进度事件可能比 runTask
+   * 的返回值先到，钩子挂晚了这一项会永远停在「出包中」，打包态实测踩到过）。
    */
   const handleStartQueue = async (): Promise<void> => {
     const pending = queue.filter((item) => item.status === 'pending')
@@ -597,49 +637,25 @@ export function PackScreen() {
     setStatus(null)
     setRanQueue(true)
     setQueueRunning(true)
-    setRunning(true)
     let ok = 0
     let bad = 0
+    let index = 0
+    let cancelled = false
     for (const item of pending) {
-      setLines([])
-      setResult(null)
-      setStage('启动中')
+      index += 1
+      // 队列跑起来之后人最想知道的是「还剩几项」，光看单项阶段看不出来
+      setQueueProgress({ index, total: pending.length })
       setQueue((previous) =>
         previous.map((row) => (row.id === item.id ? { ...row, status: 'running' } : row)),
       )
-      /*
-       * 先把「等结果」的钩子挂上，再启动任务。
-       *
-       * 反过来写会漏事件：流水线在「校验输入」阶段就失败时几乎立刻返回，那条带
-       * result 的进度事件可能比 runTask 的返回值先到，那时钩子还没挂上，这一项
-       * 就会永远停在「出包中」（打包态实测踩到过）。
-       * taskIdRef 仍要先清成 null，否则新任务的进度会被上一项的 taskId 过滤掉。
-       */
-      const waited = new Promise<TaskResult | null>((resolve) => {
-        queueResolveRef.current = resolve
-      })
-      taskIdRef.current = null
-      let failureText = ''
-      try {
-        const started = await window.api.runTask(item.params)
-        taskIdRef.current = started.taskId
-      } catch (error) {
-        failureText = ipcErrorMessage(error)
-        // runTask 自己就抛了错，不会有结果事件来叫醒，这里手动收尾
-        const resolve = queueResolveRef.current
-        queueResolveRef.current = null
-        if (resolve !== null) {
-          resolve(null)
-        }
-      }
-      const outcome = await waited
+      const { result: outcome, startError } = await runAndWait(item.params)
       if (outcome === null) {
         // runTask 自己就抛了错（还没轮到流水线），这时没有结果卡片可看，只记一句
         bad += 1
         setQueue((previous) =>
           previous.map((row) =>
             row.id === item.id
-              ? { ...row, status: 'failed', error: failureText || '未能取得本次出包的结果' }
+              ? { ...row, status: 'failed', error: startError || '未能取得本次出包的结果' }
               : row,
           ),
         )
@@ -655,20 +671,49 @@ export function PackScreen() {
             row.id === item.id ? { ...row, status: 'failed', result: outcome } : row,
           ),
         )
+        /*
+         * 取消不是「这一项失败」，是「这一批不做了」。
+         * 接着跑下一项等于把人的取消当成耳边风，所以停在这里，剩下的留在
+         * 「待出包」状态 —— 想接着跑再点一次「开始队列」就行。
+         */
+        if (outcome.failure?.cancelled === true) {
+          cancelled = true
+          break
+        }
       }
     }
     setQueueRunning(false)
-    setRunning(false)
-    setStage(null)
+    setQueueProgress(null)
     // 队列的逐项结果在队列卡片里看，别让最后一项又占一张单次出包的结果卡片
-    setResult(null)
-    setStatus({
-      // 全成走 ok；一项都没成是 error；成了一些是 warning（可继续，但要留意）
-      kind: bad === 0 ? 'ok' : ok === 0 ? 'error' : 'warning',
-      text:
-        `队列执行完毕：成功 ${ok} 项，失败 ${bad} 项。` +
-        (bad > 0 ? '失败项可点「详情」查看诊断信息。' : ''),
-    })
+    resetTask()
+    const remaining = pending.length - ok - bad
+    setStatus(
+      cancelled
+        ? {
+            kind: 'warning',
+            text: `已取消。这次跑完 ${ok + bad} 项（成功 ${ok} 项，失败 ${bad} 项），还剩 ${remaining} 项没有开始。`,
+          }
+        : {
+            // 全成走 ok；一项都没成是 error；成了一些是 warning（可继续，但要留意）
+            kind: bad === 0 ? 'ok' : ok === 0 ? 'error' : 'warning',
+            text:
+              `队列执行完毕：成功 ${ok} 项，失败 ${bad} 项。` +
+              (bad > 0 ? '失败项可点「详情」查看诊断信息。' : ''),
+          },
+    )
+  }
+
+  /** 选一个输出目录。用户取消时 pickDirectory 回 null，这时保持原值不动 */
+  const handlePickOutputDir = async (): Promise<void> => {
+    try {
+      const chosen = await window.api.pickDirectory('选择输出目录', outputDir.trim())
+      if (chosen !== null) {
+        setOutputDir(chosen)
+        setStatus(null)
+      }
+    } catch (error) {
+      setStatus({ kind: 'error', text: ipcErrorMessage(error) })
+    }
   }
 
   const handleClearQueue = () => {
@@ -848,28 +893,60 @@ export function PackScreen() {
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="pack-output">输出目录</Label>
-            <Input
-              id="pack-output"
-              value={outputDir}
-              onChange={(event) => setOutputDir(event.target.value)}
-              placeholder="默认 <APK 同级>\渠道包"
-            />
+            <div className="flex items-center gap-2">
+              <Input
+                id="pack-output"
+                value={outputDir}
+                onChange={(event) => setOutputDir(event.target.value)}
+                placeholder="默认 <APK 同级>\渠道包"
+              />
+              {/*
+               * 目录只让人手打一串 `D:\...` 太容易错：中文路径、反斜杠、末尾空格
+               * 都要到出包时才暴露。给个选择器，手打仍然保留。
+               */}
+              <Button
+                variant="outline"
+                onClick={() => void handlePickOutputDir()}
+                title="选择一个文件夹作为输出目录"
+              >
+                <FolderOpen />
+                选择目录
+              </Button>
+            </div>
           </div>
 
           <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-sm font-medium">
-                渠道（已勾选 {picked.size} / {channels.length}）
+                渠道（已勾选 {picked.size} / {channels.length}
+                {searching ? `，显示 ${visibleChannels.length} 条` : ''}）
               </span>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() =>
-                  setPicked(allPicked ? new Set() : new Set(channels.map((entry) => entry.channel)))
+                  setPicked((previous) => {
+                    const next = new Set(previous)
+                    // 有搜索词时只动「筛出来的那些」：看不见的行不该被顺手改掉
+                    for (const entry of visibleChannels) {
+                      if (visibleAllPicked) {
+                        next.delete(entry.channel)
+                      } else {
+                        next.add(entry.channel)
+                      }
+                    }
+                    return next
+                  })
                 }
-                disabled={channels.length === 0}
+                disabled={visibleChannels.length === 0}
               >
-                {allPicked ? '全不选' : '全选'}
+                {visibleAllPicked
+                  ? searching
+                    ? '取消勾选显示中的'
+                    : '全不选'
+                  : searching
+                    ? `勾选显示中的 ${visibleChannels.length} 条`
+                    : '全选'}
               </Button>
             </div>
             {channels.length === 0 ? (
@@ -880,16 +957,39 @@ export function PackScreen() {
                 </Button>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
-                {channels.map((entry) => {
-                  const alias = entry.alias?.trim()
-                  // 别名是给人看的，渠道号是实际写进包里的，两个都要能看见：
-                  // 只显示别名时，两条别名相近的渠道分不出哪条是哪条。
-                  return (
-                    <label
-                      key={entry.channel}
-                      className="flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm"
-                    >
+              <>
+                {/*
+                 * 分组里几十上百条渠道时，光靠肉眼在网格里找太难 —— 按别名或渠道号搜。
+                 * 全选按钮跟着搜索走，勾的只是看得见的那几条。
+                 */}
+                <div className="relative">
+                  <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={channelQuery}
+                    onChange={(event) => setChannelQuery(event.target.value)}
+                    placeholder="搜索别名或渠道号"
+                    aria-label="搜索渠道"
+                    className="pl-8"
+                  />
+                </div>
+                {visibleChannels.length === 0 ? (
+                  <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                    <span>没有匹配「{channelQuery.trim()}」的渠道。</span>
+                    <Button variant="outline" size="sm" onClick={() => setChannelQuery('')}>
+                      清空搜索
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+                    {visibleChannels.map((entry) => {
+                      const alias = entry.alias?.trim()
+                      // 别名是给人看的，渠道号是实际写进包里的，两个都要能看见：
+                      // 只显示别名时，两条别名相近的渠道分不出哪条是哪条。
+                      return (
+                        <label
+                          key={entry.channel}
+                          className="flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm"
+                        >
                       <Checkbox
                         checked={picked.has(entry.channel)}
                         onCheckedChange={(value) => toggleChannel(entry.channel, value === true)}
@@ -911,7 +1011,9 @@ export function PackScreen() {
                     </label>
                   )
                 })}
-              </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </CardContent>
@@ -931,7 +1033,7 @@ export function PackScreen() {
         </p>
       ) : null}
 
-      <ProgressPanel stage={stage} lines={lines} />
+      <ProgressPanel stage={stage} lines={lines} queueProgress={queueProgress} />
 
       <div className="flex flex-wrap items-center gap-3">
         <Button onClick={() => void handleStart()} disabled={!canStart}>

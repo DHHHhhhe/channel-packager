@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, session, shell } from 'electron'
 import path from 'node:path'
 import { registerClipboardIpc } from './ipc/clipboard'
 import { registerCredentialIpc } from './ipc/credential'
+import { registerDialogIpc } from './ipc/dialog'
 import { registerRuntimeIpc } from './ipc/runtime'
 import { registerStoreIpc } from './ipc/store'
 import { registerTaskIpc } from './ipc/task'
@@ -92,6 +93,7 @@ app.whenReady().then(() => {
   registerPackIpc()
   registerClipboardIpc()
   registerShellIpc()
+  registerDialogIpc()
 
   // 建窗口之前定下主题：底色与渲染层的 prefers-color-scheme 都取它
   const theme = initTheme()

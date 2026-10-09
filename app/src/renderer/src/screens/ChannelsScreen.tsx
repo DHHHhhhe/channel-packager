@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FileDown, Pencil, Plus, Trash2, Wand2 } from 'lucide-react'
 import { ChannelListPreviewDialog } from '@/components/ChannelListPreviewDialog'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
@@ -35,7 +35,7 @@ function toChannelEntries(rows: PairRow[]): ChannelEntry[] {
 }
 
 export function ChannelsScreen() {
-  const { groups, template, getChannels, saveChannels, saveGroup } = useAppStore()
+  const { groups, channelsRevision, template, getChannels, saveChannels, saveGroup } = useAppStore()
   const [selectedId, setSelectedId] = useState('')
   const [rows, setRows] = useState<PairRow[]>([])
   const [dirty, setDirty] = useState(false)
@@ -112,6 +112,50 @@ export function ChannelsScreen() {
   useEffect(() => {
     setPrefix('')
   }, [selectedId])
+
+  const dirtyRef = useRef(dirty)
+  dirtyRef.current = dirty
+  /** 上一次回读对应的保存次数 */
+  const readRevisionRef = useRef(channelsRevision)
+  /** 刚由本页面保存过，那次保存次数变化不用再回读一次 */
+  const skipReadRef = useRef(false)
+
+  /*
+   * 别的页面也会往同一个分组里存渠道 —— 出包页的「自定义渠道导出」就会。
+   * 四个页面现在一直挂着，切回来不会再重新挂载，所以得自己盯着保存次数重读一次。
+   *
+   * 手上有没保存的改动时不动它：那正是要保下来的东西，冲掉就等于又犯了一次
+   * 「切一下就丢改动」。这里是后台补读，失败也不打扰正在编辑的人。
+   */
+  useEffect(() => {
+    if (readRevisionRef.current === channelsRevision) {
+      return
+    }
+    readRevisionRef.current = channelsRevision
+    if (skipReadRef.current) {
+      skipReadRef.current = false
+      return
+    }
+    if (!selectedId || dirtyRef.current) {
+      return
+    }
+    let cancelled = false
+    getChannels(selectedId)
+      .then((config) => {
+        if (cancelled) {
+          return
+        }
+        setRows(
+          config.channelInfoList.map((entry) => newPairRow(entry.channel, entry.alias ?? '')),
+        )
+      })
+      .catch(() => {
+        // 只是补读，失败就维持现状
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [channelsRevision, selectedId, getChannels])
 
   const duplicates = useMemo(() => findDuplicates(rows.map((row) => row.key)), [rows])
   const hasEmpty = rows.some((row) => row.key.trim() === '')
@@ -250,6 +294,7 @@ export function ChannelsScreen() {
       await saveChannels(selected.id, {
         channelInfoList: toChannelEntries(rows),
       })
+      skipReadRef.current = true
       setDirty(false)
       setStatus({ kind: 'ok', text: '渠道列表已保存。' })
     } catch (error) {
@@ -261,12 +306,13 @@ export function ChannelsScreen() {
 
   /* Ctrl+S 与页面上的「保存渠道列表」走同一个动作 */
   useSaveShortcut(
+    'channels',
     useCallback(() => {
       void handleSave()
     }, [handleSave]),
   )
 
-  /* 有没保存的改动时，切页与关窗口都会被拦一下 */
+  /* 有没保存的改动时，关窗口会被拦一下（切页不会：页面一直挂着，切回来内容还在） */
   useUnsavedGuard(dirty ? '渠道列表的改动' : null)
 
   /*

@@ -18,6 +18,7 @@ import type {
   SourceCheckResult,
   TaskInput,
   TaskProgressEvent,
+  TaskRunningState,
   TaskStartResult,
   WalleShowResult,
 } from './task'
@@ -100,6 +101,21 @@ export interface RendererApi {
    * 组件卸载时务必调用，否则重复挂载会累积监听器、同一行输出收到多次。
    */
   onTaskProgress(listener: (event: TaskProgressEvent) => void): () => void
+
+  /**
+   * 取消正在跑的出包任务。返回是否真的取消了 —— 任务已经跑完时返回 false，
+   * 界面据此不要说「已取消」。
+   */
+  cancelTask(): Promise<boolean>
+
+  /**
+   * 现在有没有任务在跑。切页回来或刷新窗口后用它把状态接上，
+   * 否则界面会以为没跑过，再点一次还会被「已有任务在进行」拒掉。
+   */
+  getRunningTask(): Promise<TaskRunningState | null>
+
+  /** 选一个目录（输出目录这类手打路径的场景）。用户取消时返回 null */
+  pickDirectory(title: string, defaultPath: string): Promise<string | null>
 
   /** 用 walle show 查看某个 APK 的渠道信息 */
   showChannel(apkPath: string): Promise<WalleShowResult>

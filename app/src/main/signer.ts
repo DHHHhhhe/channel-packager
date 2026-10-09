@@ -27,6 +27,12 @@ export interface StepContext {
   log: TaskLogger
   /** 把子进程输出行实时推给界面 */
   onLine: (line: string) => void
+  /**
+   * 整条流水线共用一个取消信号。
+   * 一路传到 runProcess：取消时正在跑的那个子进程要被真的杀掉，
+   * 否则界面说「已取消」，签名进程还在后台写包。
+   */
+  signal?: AbortSignal
 }
 
 function pipe(ctx: StepContext, tag: string) {
@@ -47,7 +53,7 @@ export async function zipalign(
     resolveRuntimeComponentPath('zipalign'),
     ['-f', '-v', '4', inputApk, outputApk],
     // zipalign 是原生程序，中文 Windows 上按 GBK 写控制台
-    { encoding: 'gbk', onLine: pipe(ctx, 'zipalign') },
+    { encoding: 'gbk', onLine: pipe(ctx, 'zipalign'), signal: ctx.signal },
   )
   if (result.code !== 0) {
     throw new StepFailure(
@@ -101,6 +107,7 @@ export async function signApk(params: SignParams, ctx: StepContext): Promise<voi
     {
       env: { ...process.env, [STOREPASS_ENV]: params.storePassword },
       onLine: pipe(ctx, 'apksigner'),
+      signal: ctx.signal,
     },
   )
   if (result.code !== 0) {
@@ -124,7 +131,7 @@ export async function verifyApk(apkPath: string, ctx: StepContext): Promise<void
   const result = await runProcess(
     resolveRuntimeComponentPath('java'),
     [...JAVA_ENCODING_ARGS, '-jar', resolveRuntimeComponentPath('apksigner'), 'verify', '-v', apkPath],
-    { onLine: pipe(ctx, 'apksigner-verify') },
+    { onLine: pipe(ctx, 'apksigner-verify'), signal: ctx.signal },
   )
   if (result.code !== 0) {
     throw new StepFailure(
@@ -202,7 +209,7 @@ export async function readApkSignature(
       '-v',
       apkPath,
     ],
-    {},
+    { signal: ctx?.signal },
   )
   const output = result.stdout + result.stderr
   const digest = pickCertificateDigest(output)
@@ -240,7 +247,7 @@ export async function probeKeystoreCertificate(
       STOREPASS_ENV,
       '-rfc',
     ],
-    { env: { ...process.env, [STOREPASS_ENV]: storePassword } },
+    { env: { ...process.env, [STOREPASS_ENV]: storePassword }, signal: ctx?.signal },
   )
   const output = result.stdout + result.stderr
   const pem = /-----BEGIN CERTIFICATE-----([\s\S]*?)-----END CERTIFICATE-----/.exec(output)

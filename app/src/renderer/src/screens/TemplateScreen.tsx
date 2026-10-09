@@ -65,12 +65,13 @@ export function TemplateScreen() {
 
   /* Ctrl+S 与页面上的「保存模板」走同一个动作 */
   useSaveShortcut(
+    'template',
     useCallback(() => {
       void handleSave()
     }, [handleSave]),
   )
 
-  /* 有没保存的改动时，切页与关窗口都会被拦一下 */
+  /* 有没保存的改动时，关窗口会被拦一下（切页不会：页面一直挂着，切回来内容还在） */
   useUnsavedGuard(dirty ? '后缀表的改动' : null)
 
   const handleExportPack = async () => {

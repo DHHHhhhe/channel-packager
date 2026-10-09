@@ -33,6 +33,13 @@ export const IPC_CHANNELS = {
   taskProgress: 'task:progress',
   /** 只读：看看这个输入包能不能按当前设置出包（证书是谁签的、有没有 v2） */
   taskCheckSource: 'task:checkSource',
+  /** 取消正在跑的出包任务：强杀当前子进程，流水线以「已取消」收尾 */
+  taskCancel: 'task:cancel',
+  /** 只读：现在有没有任务在跑。切页回来 / 刷新窗口后用它把状态接上 */
+  taskGetRunning: 'task:getRunning',
+
+  /** 选一个目录（输出目录这类手打路径的场景） */
+  dialogPickDirectory: 'dialog:pickDirectory',
 
   walleShow: 'walle:show',
 

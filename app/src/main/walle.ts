@@ -50,7 +50,7 @@ export async function walleBatch2(
   const result = await runProcess(
     resolveRuntimeComponentPath('java'),
     javaArgs(['batch2', '-f', configFile, apkPath, outDir]),
-    { onLine: pipe(ctx, 'walle') },
+    { onLine: pipe(ctx, 'walle'), signal: ctx.signal },
   )
   if (result.code !== 0) {
     throw new StepFailure(
@@ -61,13 +61,20 @@ export async function walleBatch2(
   }
 }
 
-/** 读某个 APK 的渠道号。未写渠道的包 walle 会以非 0 退出，这里如实返回而不是抛错。 */
+/**
+ * 读某个 APK 的渠道号。未写渠道的包 walle 会以非 0 退出，这里如实返回而不是抛错。
+ *
+ * `ctx` 只有出包流水线传：那里是批量核对，一次要读几十个包，取消时得能中途停下。
+ * 界面上的「查看渠道」不传 —— 那是一次性的只读查询，不该被出包任务的取消信号牵连。
+ */
 export async function walleShowChannel(
   apkPath: string,
+  ctx?: StepContext,
 ): Promise<{ ok: boolean; channel: string; raw: string }> {
   const result = await runProcess(
     resolveRuntimeComponentPath('java'),
     javaArgs(['show', '-c', apkPath]),
+    { signal: ctx?.signal },
   )
   const raw = `${result.stdout}${result.stderr}`.trim()
   return { ok: result.code === 0, channel: valueAfterPath(raw), raw }

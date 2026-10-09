@@ -13,6 +13,13 @@ export interface RunOptions {
   onLine?: (line: string, stream: 'stdout' | 'stderr') => void
   /** 覆盖默认的「多久没有输出就判定卡死」，传 0 表示不设限（测试用） */
   idleTimeoutMs?: number
+  /**
+   * 外部取消。abort 时强杀子进程，并以 `cancelled` 的 StepFailure 收尾。
+   *
+   * 没有它的话，长任务只能等它自己跑完 —— 用户点了取消，界面已经说「已取消」，
+   * 子进程还在后台吃 CPU、还在往输出目录里写包，两边说的不是一回事。
+   */
+  signal?: AbortSignal
 }
 
 /**
@@ -65,18 +72,25 @@ export class StepFailure extends Error {
   readonly outputTail: readonly string[]
   /** 进程被超时强制结束 —— 和「跑完了但退出码非 0」是两回事，界面要分开说 */
   readonly timedOut: boolean
+  /**
+   * 用户主动取消。与「失败」必须分开：取消是预期内的动作，
+   * 报成失败会让人以为工具坏了，还会去翻根本不存在的问题。
+   */
+  readonly cancelled: boolean
 
   constructor(
     message: string,
     exitCode?: number,
     outputTail: readonly string[] = [],
     timedOut = false,
+    cancelled = false,
   ) {
     super(message)
     this.name = 'StepFailure'
     this.exitCode = exitCode
     this.outputTail = outputTail
     this.timedOut = timedOut
+    this.cancelled = cancelled
   }
 }
 
@@ -93,6 +107,12 @@ export function runProcess(
   options: RunOptions = {},
 ): Promise<RunOutcome> {
   return new Promise((resolve, reject) => {
+    const signal = options.signal
+    if (signal?.aborted) {
+      reject(new StepFailure('已取消', undefined, [], false, true))
+      return
+    }
+
     const child = spawn(command, [...args], {
       cwd: options.cwd,
       env: options.env ?? process.env,
@@ -109,6 +129,7 @@ export function runProcess(
     const idleMs = options.idleTimeoutMs ?? CHILD_IDLE_TIMEOUT_MS
     let settled = false
     let timedOut = false
+    let cancelled = false
     let idleTimer: NodeJS.Timeout | undefined
     let killTimer: NodeJS.Timeout | undefined
 
@@ -121,6 +142,8 @@ export function runProcess(
         clearTimeout(killTimer)
         killTimer = undefined
       }
+      // 不摘掉的话，长任务跑完很久之后外部再 abort，还会对着已退出的 child 调 kill
+      signal?.removeEventListener('abort', onAbort)
     }
 
     const timeoutError = (): StepFailure =>
@@ -130,6 +153,9 @@ export function runProcess(
         tailLineList(stdout + stderr),
         true,
       )
+
+    const cancelError = (): StepFailure =>
+      new StepFailure('已取消', undefined, tailLineList(stdout + stderr), false, true)
 
     const settleReject = (error: Error): void => {
       if (settled) {
@@ -151,6 +177,21 @@ export function runProcess(
       // 万一 close 迟迟不来（进程卡在内核里），也不能让任务永远转下去
       killTimer = setTimeout(() => settleReject(timeoutError()), KILL_GRACE_MS)
     }
+
+    const onAbort = (): void => {
+      if (settled) {
+        return
+      }
+      cancelled = true
+      try {
+        child.kill('SIGKILL')
+      } catch {
+        // 已经退了
+      }
+      killTimer = setTimeout(() => settleReject(cancelError()), KILL_GRACE_MS)
+    }
+
+    signal?.addEventListener('abort', onAbort, { once: true })
 
     /** 每次读到输出就把「多久没动静」的计时重置 */
     const armIdle = (): void => {
@@ -203,6 +244,10 @@ export function runProcess(
             options.onLine(pending[stream], stream)
           }
         }
+      }
+      if (cancelled) {
+        settleReject(cancelError())
+        return
       }
       if (timedOut) {
         settleReject(timeoutError())

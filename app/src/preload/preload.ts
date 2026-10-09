@@ -21,6 +21,7 @@ import type {
   SourceCheckResult,
   TaskInput,
   TaskProgressEvent,
+  TaskRunningState,
   TaskStartResult,
   WalleShowResult,
 } from '../shared/types/task'
@@ -131,6 +132,18 @@ const api: RendererApi = {
 
   showChannel(apkPath: string): Promise<WalleShowResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.walleShow, apkPath)
+  },
+
+  cancelTask(): Promise<boolean> {
+    return ipcRenderer.invoke(IPC_CHANNELS.taskCancel)
+  },
+
+  getRunningTask(): Promise<TaskRunningState | null> {
+    return ipcRenderer.invoke(IPC_CHANNELS.taskGetRunning)
+  },
+
+  pickDirectory(title: string, defaultPath: string): Promise<string | null> {
+    return ipcRenderer.invoke(IPC_CHANNELS.dialogPickDirectory, title, defaultPath)
   },
 
   checkSource(apkPath: string, jksId: string, signMode: SignMode): Promise<SourceCheckResult> {

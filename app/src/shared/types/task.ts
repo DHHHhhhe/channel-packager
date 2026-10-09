@@ -44,6 +44,8 @@ export type TaskStage =
   | 'check-sign'
   | 'publish'
   | 'done'
+  /** 用户主动取消。与 failed 分开，界面才能说「已取消」而不是「失败」 */
+  | 'cancelled'
   | 'failed'
 
 export interface TaskProgressEvent {
@@ -84,6 +86,11 @@ export interface TaskFailure {
   outputTail?: string[]
   /** 进程是被超时强制结束的（不是自己跑完退出） */
   timedOut?: boolean
+  /**
+   * 用户点了「取消」。此时 `stage` 是取消时所在的阶段，其余字段都为空 ——
+   * 界面要说「已取消」，不要摆出一份像是出错的结果。
+   */
+  cancelled?: boolean
 }
 
 export interface TaskResult {
@@ -102,6 +109,20 @@ export interface TaskResult {
 
 export interface TaskStartResult {
   taskId: string
+}
+
+/**
+ * 「现在有没有出包任务在跑」。
+ *
+ * 窗口刷新、或从别的页面切回来时用它把状态接上：主进程一直在跑，
+ * 界面不该以为没跑过 —— 否则再点一次会被「已有任务在进行」拒掉，
+ * 而人根本看不到是哪一个在跑。
+ */
+export interface TaskRunningState {
+  taskId: string
+  stage: TaskStage
+  /** 阶段说明，给人看的一句话 */
+  message: string
 }
 
 export interface WalleShowResult {
