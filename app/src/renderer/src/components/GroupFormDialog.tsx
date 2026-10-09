@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -24,6 +24,8 @@ interface GroupFormDialogProps {
   onOpenChange: (open: boolean) => void
   /** null = 新建 */
   group: GroupItem | null
+  /** 别的分组已经用掉的名字（不含正在编辑的这个）。重名会让出包时选错分组 */
+  takenNames?: readonly string[]
   busy?: boolean
   onSubmit: (payload: GroupFormPayload) => void
 }
@@ -37,6 +39,7 @@ export function GroupFormDialog({
   open,
   onOpenChange,
   group,
+  takenNames,
   busy = false,
   onSubmit,
 }: GroupFormDialogProps): React.JSX.Element {
@@ -59,10 +62,22 @@ export function GroupFormDialog({
 
   const resolvedName = nameTouched ? name : name.trim() === '' ? appLabel : name
 
+  /* 边打字边标红，别等点了「新建」才说 */
+  const nameClash = useMemo(() => {
+    const next = resolvedName.trim().toLowerCase()
+    return (
+      next !== '' && (takenNames ?? []).some((taken) => taken.trim().toLowerCase() === next)
+    )
+  }, [resolvedName, takenNames])
+
   const handleSubmit = () => {
     const nextName = resolvedName.trim()
     if (nextName === '') {
       setError('分组名不能为空 —— 渠道列表要用它区分。')
+      return
+    }
+    if (nameClash) {
+      setError(`已经有叫「${nextName}」的分组了，换个名字 —— 出包时选错分组会把渠道发错包。`)
       return
     }
     setError('')
@@ -90,6 +105,8 @@ export function GroupFormDialog({
                 setName(event.target.value)
               }}
               placeholder="例如 沐爱"
+              aria-invalid={nameClash}
+              title={nameClash ? '已经有同名分组了' : undefined}
             />
             <p className="text-xs text-muted-foreground">
               渠道列表的名字，用来区分不同分组。新建时默认跟随中文应用名，可以修改。

@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { FileDown, Pencil, Plus, Trash2, Wand2 } from 'lucide-react'
+import {
+  CircleCheck,
+  FileDown,
+  FolderOpen,
+  Pencil,
+  Plus,
+  Trash2,
+  TriangleAlert,
+  Wand2,
+  X,
+} from 'lucide-react'
 import { ChannelListPreviewDialog } from '@/components/ChannelListPreviewDialog'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { GroupFormDialog, type GroupFormPayload } from '@/components/GroupFormDialog'
@@ -21,8 +31,9 @@ import type { ChannelEntry, GroupItem } from '@shared/types/store'
 import type { ChannelImportMode, ChannelListPreview } from '@shared/types/pack'
 import { buildChannelsFromTemplate } from '@shared/utils/channels'
 import { mergeImportedRows } from '@/lib/channels-import'
-import { findDuplicates } from '@/lib/duplicates'
+import { findDuplicateGroups } from '@/lib/duplicates'
 import { ipcErrorMessage } from '@/lib/ipc-error'
+import { dirName } from '@/lib/paths'
 import { useAppStore } from '@/store/app-store'
 import { useSaveShortcut, useUnsavedGuard } from '@/store/nav'
 
@@ -34,6 +45,15 @@ function toChannelEntries(rows: PairRow[]): ChannelEntry[] {
   })
 }
 
+/** 把「第几行」拼成一句人话：第 12、15 行；太多了就只报处数 */
+function describeRows(indices: readonly number[]): string {
+  const shown = indices.slice(0, 5).map((index) => index + 1)
+  if (indices.length > shown.length) {
+    return `第 ${shown.join('、')} 行等 ${indices.length} 处`
+  }
+  return `第 ${shown.join('、')} 行`
+}
+
 export function ChannelsScreen() {
   const { groups, channelsRevision, template, getChannels, saveChannels, saveGroup } = useAppStore()
   const [selectedId, setSelectedId] = useState('')
@@ -42,7 +62,18 @@ export function ChannelsScreen() {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [prefix, setPrefix] = useState('')
-  const [status, setStatus] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
+  const [status, setStatus] = useState<{
+    kind: 'ok' | 'error'
+    text: string
+    /** 有值时给一个「打开所在目录」按钮 —— 导出后只甩一条路径等于让人自己去翻 */
+    path?: string
+    /** 「撤销生成」这类出口 */
+    action?: { label: string; run: () => void }
+  } | null>(null)
+  /** 正在读导入的文件：读大文件要一点时间，按钮得给个动静 */
+  const [importing, setImporting] = useState(false)
+  /** 保存被拦下时出问题的行，加一层底色并滚过去 */
+  const [errorRowIds, setErrorRowIds] = useState<string[]>([])
   /** 已解析待确认的导入；null 表示没有待确认的导入 */
   const [pending, setPending] = useState<ChannelListPreview | null>(null)
   /** 预览框里选的覆盖/追加，默认覆盖 */
@@ -83,6 +114,7 @@ export function ChannelsScreen() {
     setStatus(null)
     // 换分组后旧的导入确认框已经没意义了
     setPending(null)
+    setErrorRowIds([])
     getChannels(selectedId)
       .then((config) => {
         if (cancelled) {
@@ -157,34 +189,68 @@ export function ChannelsScreen() {
     }
   }, [channelsRevision, selectedId, getChannels])
 
-  const duplicates = useMemo(() => findDuplicates(rows.map((row) => row.key)), [rows])
+  /* 重复的键，带上每一处出现的行号 —— 光说「重名了」用户还得自己去找 */
+  const duplicateGroups = useMemo(
+    () => findDuplicateGroups(rows.map((row) => row.key)),
+    [rows],
+  )
+  const duplicates = useMemo(
+    () => duplicateGroups.map((group) => group.value),
+    [duplicateGroups],
+  )
   const hasEmpty = rows.some((row) => row.key.trim() === '')
+
+  /*
+   * 生成前先让人看到会得到什么。原来只有一个按钮，点下去之前完全不知道
+   * 会出来几条、长什么样。
+   */
+  const templatePreview = useMemo(() => {
+    const list = buildChannelsFromTemplate(template.suffixes, prefix).channelInfoList
+    return { total: list.length, sample: list.slice(0, 3).map((entry) => entry.channel) }
+  }, [template.suffixes, prefix])
 
   const handleChange = (next: PairRow[]) => {
     setRows(next)
     setDirty(true)
     setStatus(null)
+    // 动过之后原来的标红与滚动就过期了
+    setErrorRowIds([])
   }
+
+  /** 生成前的列表，给状态栏上的「撤销生成」留一份 */
+  const beforeTemplateRef = useRef<PairRow[]>([])
 
   const applyTemplate = () => {
     if (!selected) {
       return
     }
     const config = buildChannelsFromTemplate(template.suffixes, prefix)
+    const beforeRows = rows
+    const wasDirty = dirty
+    beforeTemplateRef.current = beforeRows
     setRows(config.channelInfoList.map((entry) => newPairRow(entry.channel, entry.alias ?? '')))
     setDirty(true)
+    setErrorRowIds([])
     setStatus({
       kind: 'ok',
       text: `已按模板生成 ${config.channelInfoList.length} 条，尚未保存。`,
+      action: {
+        label: '撤销生成',
+        run: () => {
+          setRows(beforeTemplateRef.current)
+          setDirty(wasDirty)
+          setStatus({ kind: 'ok', text: '已退回生成前的那份列表。' })
+        },
+      },
     })
   }
 
   /*
-   * 按模板生成是整表替换。列表里还有没保存的改动时先问一声 ——
-   * 那些改动只存在界面上，换掉就没了。
+   * 按模板生成是整表替换。只要列表里已经有东西就先问一声 ——
+   * 确认框里顺带把「会生成什么」列出来，不然只能凭前缀猜。
    */
   const handleApplyTemplateClick = () => {
-    if (rows.length > 0 && dirty) {
+    if (rows.length > 0) {
       setConfirmTemplate(true)
       return
     }
@@ -207,6 +273,7 @@ export function ChannelsScreen() {
         text: `已导出 ${result.count ?? 0} 条渠道：${result.path}${
           dirty ? '（含尚未保存的修改）' : ''
         }。可直接用于批量写入渠道。`,
+        path: result.path,
       })
     } catch (error) {
       setStatus({ kind: 'error', text: ipcErrorMessage(error) })
@@ -223,6 +290,7 @@ export function ChannelsScreen() {
       return
     }
     setStatus(null)
+    setImporting(true)
     try {
       const result = await window.api.previewChannels()
       if (result === null) {
@@ -232,6 +300,8 @@ export function ChannelsScreen() {
       setPending(result)
     } catch (error) {
       setStatus({ kind: 'error', text: ipcErrorMessage(error) })
+    } finally {
+      setImporting(false)
     }
   }
 
@@ -254,6 +324,7 @@ export function ChannelsScreen() {
         text: `已导出示例 ${result.count ?? 0} 条：${result.path}${
           result.fromTemplate ? '（条目取自「渠道模板」页的模板）' : '（模板为空，用的是内置兜底示例）'
         }。改好后用「导入 JSON」读回来。`,
+        path: result.path,
       })
     } catch (error) {
       setStatus({ kind: 'error', text: ipcErrorMessage(error) })
@@ -279,14 +350,28 @@ export function ChannelsScreen() {
       return
     }
     if (hasEmpty) {
+      const emptyIndices = rows.reduce<number[]>((collected, row, index) => {
+        if (row.key.trim() === '') {
+          collected.push(index)
+        }
+        return collected
+      }, [])
       // 空行可能正被搜索藏起来，先把筛选清掉再报错，免得用户找不到
       setFilterResetToken((value) => value + 1)
-      setStatus({ kind: 'error', text: '渠道名不能为空，空行已经标红。' })
+      setErrorRowIds(emptyIndices.map((index) => rows[index].rowId))
+      setStatus({
+        kind: 'error',
+        text: `${describeRows(emptyIndices)}的渠道名还是空的，已经标红。补全或删掉那一行再保存。`,
+      })
       return
     }
-    if (duplicates.length > 0) {
+    if (duplicateGroups.length > 0) {
+      const detail = duplicateGroups
+        .map((group) => `${group.value}（${describeRows(group.indices)}）`)
+        .join('；')
       setFilterResetToken((value) => value + 1)
-      setStatus({ kind: 'error', text: `渠道名重复：${duplicates.join('、')}。` })
+      setErrorRowIds(duplicateGroups.map((group) => rows[group.indices[0]].rowId))
+      setStatus({ kind: 'error', text: `渠道名重复：${detail}。已经标红，改掉后才能保存。` })
       return
     }
     setSaving(true)
@@ -296,13 +381,14 @@ export function ChannelsScreen() {
       })
       skipReadRef.current = true
       setDirty(false)
+      setErrorRowIds([])
       setStatus({ kind: 'ok', text: '渠道列表已保存。' })
     } catch (error) {
       setStatus({ kind: 'error', text: ipcErrorMessage(error) })
     } finally {
       setSaving(false)
     }
-  }, [selected, hasEmpty, duplicates, rows, saveChannels])
+  }, [selected, hasEmpty, duplicateGroups, rows, saveChannels])
 
   /* Ctrl+S 与页面上的「保存渠道列表」走同一个动作 */
   useSaveShortcut(
@@ -380,6 +466,9 @@ export function ChannelsScreen() {
         open={groupForm.open}
         onOpenChange={(open) => setGroupForm({ open, editing: open ? groupForm.editing : null })}
         group={groupForm.editing}
+        takenNames={groups
+          .filter((item) => item.id !== groupForm.editing?.id)
+          .map((item) => item.name)}
         busy={groupBusy}
         onSubmit={handleSubmitGroup}
       />
@@ -387,8 +476,14 @@ export function ChannelsScreen() {
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
         title="删除分组？"
-        description={`会删掉「${selected?.name ?? ''}」以及它名下的渠道列表。`}
-        warning="渠道列表会一并删除，无法恢复。"
+        description={`会删掉「${selected?.name ?? ''}」以及它名下的 ${
+          loading ? '渠道列表' : `${rows.length} 条渠道`
+        }。`}
+        warning={
+          rows.length > 50
+            ? `这个分组里有 ${rows.length} 条渠道，删掉要重新建一遍。渠道列表会一并删除，无法恢复。`
+            : '渠道列表会一并删除，无法恢复。'
+        }
         confirmText="删除分组"
         destructive
         onConfirm={handleDeleteGroup}
@@ -414,6 +509,9 @@ export function ChannelsScreen() {
             <p className="text-sm text-muted-foreground">
               签名文件只负责签名：需要重签名时才要用到，只写渠道时可以完全不选。
             </p>
+            <p className="text-sm text-muted-foreground">
+              建好之后不用一条条敲：「按模板生成」可以照「渠道模板」页的后缀一次铺出一整份列表，「导入 JSON」可以直接读入现成的列表。
+            </p>
             <div className="flex flex-wrap gap-2">
               <Button onClick={() => setGroupForm({ open: true, editing: null })}>
                 <Plus />
@@ -434,8 +532,14 @@ export function ChannelsScreen() {
         actions={
           <>
             {dirty ? <span className="text-xs text-muted-foreground">有未保存的修改</span> : null}
-            <Button variant="outline" onClick={handleImportJson} disabled={saving || loading}>
-              导入 JSON
+            <Button
+              variant="outline"
+              onClick={handleImportJson}
+              disabled={saving || loading || importing}
+              title="读一份渠道 JSON 进来，先预览、改完再确认"
+            >
+              {importing ? <Spinner /> : null}
+              {importing ? '读取中…' : '导入 JSON'}
             </Button>
             <Button
               variant="outline"
@@ -516,32 +620,23 @@ export function ChannelsScreen() {
                 placeholder="留空则渠道名等于后缀"
                 className="w-64"
               />
+              {/* 点「按模板生成」之前先看到会出来什么，而不是生成完才知道 */}
+              <p className="text-xs text-muted-foreground">
+                {template.suffixes.length === 0
+                  ? '「渠道模板」页还没有后缀，现在生成出来会是空的。'
+                  : `会生成 ${templatePreview.total} 条：${templatePreview.sample.join('、')}${
+                      templatePreview.total > templatePreview.sample.length ? '…' : ''
+                    }`}
+              </p>
             </div>
             <Button variant="outline" onClick={handleApplyTemplateClick}>
               <Wand2 />
               按模板生成
             </Button>
-            <Button
-              variant="outline"
-              onClick={handleExportSampleJson}
-              disabled={saving || loading || rows.length > 0}
-              title={
-                rows.length > 0
-                  ? '列表里已经有渠道了，要拿走现有内容请用右上角的「导出 JSON」'
-                  : '导出一份可编辑的示例 JSON'
-              }
-            >
-              <FileDown />
-              导出示例 JSON
-            </Button>
           </div>
           <p className="text-xs text-muted-foreground">
             生成规则：渠道名 = 前缀 + &quot;_&quot; + 后缀。生成的是独立副本，之后再改模板也不会影响这里。
-            列表里还有未保存的改动时，会先确认再覆盖。
-          </p>
-          <p className="text-xs text-muted-foreground">
-            「导出示例 JSON」只在渠道列表为空时可用，导出的是一份可编辑的起点（条目取自「渠道模板」页的模板）；
-            改好后用右上角的「导入 JSON」读回来。
+            列表里已经有条目时，会先把要生成的内容列出来让你确认，生成后还能在状态栏上撤销。
           </p>
           <p className="text-xs text-muted-foreground">
             「导入 JSON」会把文件里的条目读进一个预览框，可以在里面直接增删改；确认后只填进下面的列表，
@@ -550,18 +645,50 @@ export function ChannelsScreen() {
         </CardContent>
       </Card>
 
+      {/*
+        sticky：保存按钮在页面最上面，而用户多半正滚在列表里。提示钉在顶上，
+        不用滚回去才知道刚才那一下成没成。底色必须不透明，否则会被卡片透出来。
+      */}
       {status ? (
-        <p
+        <div
+          role={status.kind === 'error' ? 'alert' : 'status'}
           className={
             status.kind === 'error'
-              ? 'text-sm text-destructive'
-              : status.kind === 'ok'
-                ? 'text-sm text-success'
-                : 'text-sm text-muted-foreground'
+              ? 'sticky top-0 z-20 flex flex-wrap items-center gap-2 rounded-lg border border-destructive/50 bg-background px-3 py-2 text-sm text-destructive shadow-sm'
+              : 'sticky top-0 z-20 flex flex-wrap items-center gap-2 rounded-lg border border-success/50 bg-background px-3 py-2 text-sm text-success shadow-sm'
           }
         >
-          {status.text}
-        </p>
+          {status.kind === 'error' ? (
+            <TriangleAlert className="size-4 shrink-0" />
+          ) : (
+            <CircleCheck className="size-4 shrink-0" />
+          )}
+          <span className="min-w-0 flex-1 break-words">{status.text}</span>
+          {status.path !== undefined && dirName(status.path) !== '' ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void window.api.openPath(dirName(status.path ?? ''))}
+            >
+              <FolderOpen />
+              打开所在目录
+            </Button>
+          ) : null}
+          {status.action ? (
+            <Button variant="outline" size="sm" onClick={status.action.run}>
+              {status.action.label}
+            </Button>
+          ) : null}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => setStatus(null)}
+            aria-label="关闭这条提示"
+            title="关闭这条提示"
+          >
+            <X />
+          </Button>
+        </div>
       ) : null}
 
       <Card>
@@ -578,18 +705,51 @@ export function ChannelsScreen() {
             )}
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <PairListEditor
-            rows={rows}
-            onChange={handleChange}
-            keyLabel="渠道名"
-            keyPlaceholder="例如 sample_gf"
-            aliasPlaceholder="例如 官方"
-            emptyHint="还没有渠道条目。可手工添加，或用上面的「按模板生成」。"
-            selectable
-            filterable
-            resetFilterToken={filterResetToken}
-          />
+        <CardContent className="flex flex-col gap-3">
+          {/* 空白示例原来挤在「按模板生成」旁边，只能靠 hover 才分得清两个按钮 —— 挪到它真正有用的地方 */}
+          {rows.length === 0 && !loading ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+              <span className="text-sm text-muted-foreground">
+                列表是空的。可以从一份空白示例起步：导出后照着改，再用「导入 JSON」读回来。
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExportSampleJson}
+                disabled={saving || loading}
+              >
+                <FileDown />
+                导出一份空白示例
+              </Button>
+            </div>
+          ) : null}
+          {loading ? (
+            /* 读磁盘时先把表的骨架画出来，别让一整块空白杵在那儿 */
+            <div className="flex flex-col gap-2" aria-hidden="true">
+              {[0, 1, 2, 3, 4].map((index) => (
+                <div key={index} className="flex items-center gap-2">
+                  <div className="size-4 shrink-0 animate-pulse rounded bg-muted" />
+                  <div className="h-9 flex-1 animate-pulse rounded-md bg-muted" />
+                  <div className="h-9 flex-1 animate-pulse rounded-md bg-muted" />
+                  <div className="h-9 w-24 shrink-0 animate-pulse rounded-md bg-muted" />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <PairListEditor
+              rows={rows}
+              onChange={handleChange}
+              keyLabel="渠道名"
+              keyPlaceholder="例如 sample_gf"
+              aliasPlaceholder="例如 官方"
+              emptyHint="还没有渠道条目。可手工添加，或用上面的「按模板生成」。"
+              selectable
+              filterable
+              duplicates={duplicates}
+              errorRowIds={errorRowIds}
+              resetFilterToken={filterResetToken}
+            />
+          )}
         </CardContent>
       </Card>
 
@@ -608,8 +768,14 @@ export function ChannelsScreen() {
         open={confirmTemplate}
         onOpenChange={setConfirmTemplate}
         title="按模板生成？"
-        description={`会按当前前缀「${prefix.trim() || '（空）'}」重算一份列表，替换掉现有的 ${rows.length} 条。`}
-        warning="列表里有未保存的改动，覆盖后将丢失。"
+        description={`会按前缀「${prefix.trim() || '（空）'}」重算一份列表：共 ${templatePreview.total} 条${
+          templatePreview.sample.length > 0
+            ? `，例如 ${templatePreview.sample.join('、')}${
+                templatePreview.total > templatePreview.sample.length ? '…' : ''
+              }`
+            : ''
+        }。现在这 ${rows.length} 条会被替换掉，生成后可以用状态栏上的「撤销生成」退回来。`}
+        warning={dirty ? '列表里有未保存的改动，覆盖后将丢失。' : undefined}
         confirmText="覆盖生成"
         onConfirm={() => {
           setConfirmTemplate(false)

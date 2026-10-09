@@ -83,8 +83,10 @@ export function ChannelListPreviewDialog({
       {/*
         宽度必须带 sm: 前缀 —— 基础样式的 sm:max-w-sm 会盖掉裸的 max-w-2xl，
         预览框里是一张四列表格，窄了没法用。
+        布局也覆盖掉基础样式的 grid + overflow-y-auto：这里要的是「标题、处理方式、
+        底部按钮都钉住，只有表格区滚」—— 几百条时按钮不会再被滚到看不见。
       */}
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="flex max-h-[85vh] flex-col gap-4 overflow-hidden sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
@@ -163,24 +165,33 @@ export function ChannelListPreviewDialog({
           </p>
         ) : null}
 
-        {preview && preview.notes.length > 0 ? (
-          <ul className="flex flex-col gap-1 text-xs text-muted-foreground">
-            {preview.notes.map((note) => (
-              <li key={note}>· {note}</li>
-            ))}
-          </ul>
-        ) : null}
+        {/*
+          只有这一块滚：几百条时「覆盖 / 追加」的选择与下面的按钮都还看得见。
+          min-h-0 不能少 —— flex 子项默认 min-height:auto，不加它这一块会把
+          对话框撑开，滚动条就落到外层去了。
+        */}
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
+          {preview && preview.notes.length > 0 ? (
+            <ul className="flex flex-col gap-1 text-xs text-muted-foreground">
+              {preview.notes.map((note) => (
+                <li key={note}>· {note}</li>
+              ))}
+            </ul>
+          ) : null}
 
-        <PairListEditor
-          rows={edited}
-          onChange={setEdited}
-          keyLabel="渠道名"
-          keyPlaceholder="例如 sample_gf"
-          aliasPlaceholder="例如 官方"
-          emptyHint="文件里没有渠道条目。可点下面的「添加一行」手工补一条。"
-          selectable
-          disabled={busy}
-        />
+          <PairListEditor
+            rows={edited}
+            onChange={setEdited}
+            keyLabel="渠道名"
+            keyPlaceholder="例如 sample_gf"
+            aliasPlaceholder="例如 官方"
+            emptyHint="文件里没有渠道条目。可点上面的「添加一行」手工补一条。"
+            selectable
+            filterable
+            scrollTable={false}
+            disabled={busy}
+          />
+        </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>

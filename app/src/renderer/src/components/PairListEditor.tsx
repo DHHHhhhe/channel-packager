@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { ClipboardPaste, Plus, Search, Trash2 } from 'lucide-react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowDownUp, ClipboardPaste, Copy, Plus, Search, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -80,9 +80,129 @@ interface PairListEditorProps {
    * 去重校验本来只有保存时才跑，用户得点一次保存才知道哪行撞了。
    */
   duplicates?: string[]
+  /**
+   * 出问题的行的 rowId。比 duplicates 更具体：保存被拦下时，
+   * 光说「第 12 行重复」不够，得把那一行加一层更重的底色并滚进视野。
+   */
+  errorRowIds?: readonly string[]
   /** 打开「批量粘贴」：从表格软件或文档里一次贴一整批进来 */
   bulkPaste?: boolean
+  /**
+   * 表格自己限高滚动（默认开）：几百行时表头钉在顶上，不用滚回去对列名。
+   * 放进对话框里时关掉 —— 外层已经在滚，套两层滚动条更难用。
+   */
+  scrollTable?: boolean
 }
+
+/**
+ * 一行。单独抽出来并 memo：几百行时，改一个字只该重渲染改的那一行。
+ *
+ * 前提是父组件传进来的 row 对象没变（update 只给改动的那行造新对象）
+ * 且所有回调身份稳定 —— 否则 memo 每次都白比。
+ */
+const PairRowItem = memo(function PairRowItem({
+  row,
+  selectable,
+  disabled,
+  selected,
+  duplicate,
+  highlighted,
+  keyLabel,
+  keyPlaceholder,
+  aliasPlaceholder,
+  onUpdate,
+  onRemove,
+  onToggle,
+  onDuplicate,
+  onInsertBelow,
+}: {
+  row: PairRow
+  selectable: boolean
+  disabled: boolean
+  selected: boolean
+  duplicate: boolean
+  highlighted: boolean
+  keyLabel: string
+  keyPlaceholder: string
+  aliasPlaceholder: string
+  onUpdate: (rowId: string, patch: Partial<PairRow>) => void
+  onRemove: (rowId: string) => void
+  onToggle: (rowId: string, checked: boolean) => void
+  onDuplicate: (rowId: string) => void
+  onInsertBelow: (rowId: string) => void
+}) {
+  return (
+    <TableRow
+      data-row-id={row.rowId}
+      className={
+        highlighted ? 'bg-destructive/10' : duplicate ? 'bg-destructive/5' : undefined
+      }
+    >
+      {selectable ? (
+        <TableCell>
+          <Checkbox
+            checked={selected}
+            onCheckedChange={(value) => onToggle(row.rowId, value === true)}
+            disabled={disabled}
+            aria-label={`选中 ${row.key.trim() || '这一行'}`}
+          />
+        </TableCell>
+      ) : null}
+      <TableCell>
+        <Input
+          value={row.key}
+          onChange={(event) => onUpdate(row.rowId, { key: event.target.value })}
+          placeholder={keyPlaceholder}
+          aria-label={keyLabel}
+          aria-invalid={row.key.trim() === '' || duplicate}
+          title={duplicate ? `这个${keyLabel}与别的行重复了` : undefined}
+          disabled={disabled}
+        />
+      </TableCell>
+      <TableCell>
+        <Input
+          value={row.alias}
+          onChange={(event) => onUpdate(row.rowId, { alias: event.target.value })}
+          placeholder={aliasPlaceholder}
+          aria-label="别名"
+          disabled={disabled}
+        />
+      </TableCell>
+      <TableCell className="text-right whitespace-nowrap">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => onDuplicate(row.rowId)}
+          disabled={disabled}
+          aria-label="复制这一行"
+          title="复制这一行（插在它下面）"
+        >
+          <Copy />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => onInsertBelow(row.rowId)}
+          disabled={disabled}
+          aria-label="在下方插入空行"
+          title="在下方插入一个空行"
+        >
+          <Plus />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => onRemove(row.rowId)}
+          disabled={disabled}
+          aria-label="删除这一行"
+          title="删除这一行"
+        >
+          <Trash2 />
+        </Button>
+      </TableCell>
+    </TableRow>
+  )
+})
 
 /**
  * 模板页与渠道页都是「一行一个键 + 可选别名」的表格，编辑行为完全一致，
@@ -100,7 +220,9 @@ export function PairListEditor({
   filterable = false,
   resetFilterToken = 0,
   duplicates,
+  errorRowIds,
   bulkPaste = false,
+  scrollTable = true,
 }: PairListEditorProps) {
   const [picked, setPicked] = useState<string[]>([])
   const [query, setQuery] = useState('')
@@ -179,6 +301,31 @@ export function PairListEditor({
   }, [resetFilterToken])
 
   /*
+   * 把出错的那一行带进视野。
+   *
+   * 同一个数组引用只是父组件重渲染，不用再滚一次；换成新数组（哪怕内容一样）
+   * 说明又报了一次，那就再滚一次。行还没渲染出来时（筛选刚被清掉那一帧）
+   * 先不标记，等 query/rows 再变时重试。
+   */
+  const lastErrorRef = useRef<readonly string[] | null>(null)
+  useEffect(() => {
+    const ids = errorRowIds ?? []
+    if (ids.length === 0) {
+      lastErrorRef.current = null
+      return
+    }
+    if (ids === lastErrorRef.current) {
+      return
+    }
+    const target = document.querySelector(`[data-row-id="${ids[0]}"]`)
+    if (target === null) {
+      return
+    }
+    lastErrorRef.current = ids
+    target.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [errorRowIds, query, sort, rows])
+
+  /*
    * 外部整批换行时（切 jks、按模板生成、导入 JSON）旧 rowId 已经不在了。
    * 这里按当前显示的行过滤，而不是用 effect 去清 —— 省掉一次多余渲染，
    * 也不会出现「先渲染出已失效的选中数、下一帧才归零」的闪烁。
@@ -191,19 +338,56 @@ export function PairListEditor({
     [picked, visibleRows],
   )
 
-  const update = (rowId: string, patch: Partial<PairRow>) => {
-    onChange(rows.map((row) => (row.rowId === rowId ? { ...row, ...patch } : row)))
-  }
+  /*
+   * 逐行回调必须身份稳定，memo 才拦得住重渲染。
+   * rows 与 onChange 用 ref 兜住 —— 它们是父组件的 state，每次渲染都换新的。
+   */
+  const rowsRef = useRef(rows)
+  rowsRef.current = rows
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
+  const pickedIdsRef = useRef<string[]>([])
+  pickedIdsRef.current = pickedIds
 
-  const remove = (rowId: string) => {
-    onChange(rows.filter((row) => row.rowId !== rowId))
-  }
-
-  const toggle = (rowId: string, checked: boolean) => {
-    setPicked(
-      checked ? [...pickedIds, rowId] : pickedIds.filter((entry) => entry !== rowId),
+  const update = useCallback((rowId: string, patch: Partial<PairRow>) => {
+    onChangeRef.current(
+      rowsRef.current.map((row) => (row.rowId === rowId ? { ...row, ...patch } : row)),
     )
-  }
+  }, [])
+
+  const remove = useCallback((rowId: string) => {
+    onChangeRef.current(rowsRef.current.filter((row) => row.rowId !== rowId))
+  }, [])
+
+  /** 复制这一行：在它下面插一条同名同别名的副本 */
+  const duplicateRow = useCallback((rowId: string) => {
+    const list = rowsRef.current
+    const index = list.findIndex((row) => row.rowId === rowId)
+    if (index < 0) {
+      return
+    }
+    const source = list[index]
+    const next = [...list]
+    next.splice(index + 1, 0, newPairRow(source.key, source.alias))
+    onChangeRef.current(next)
+  }, [])
+
+  /** 在下方插一个空行：想插到中间时不用把后面的行全删了重排 */
+  const insertBelow = useCallback((rowId: string) => {
+    const list = rowsRef.current
+    const index = list.findIndex((row) => row.rowId === rowId)
+    if (index < 0) {
+      return
+    }
+    const next = [...list]
+    next.splice(index + 1, 0, newPairRow())
+    onChangeRef.current(next)
+  }, [])
+
+  const toggle = useCallback((rowId: string, checked: boolean) => {
+    const current = pickedIdsRef.current
+    setPicked(checked ? [...current, rowId] : current.filter((entry) => entry !== rowId))
+  }, [])
 
   const removePicked = () => {
     onChange(rows.filter((row) => !pickedIds.includes(row.rowId)))
@@ -223,6 +407,20 @@ export function PairListEditor({
 
   const clearFilter = () => {
     setQuery('')
+    setSort('none')
+    setPicked([])
+  }
+
+  /*
+   * 排序只改显示，保存与导出走的仍是 rows 的顺序。这里给一个显式的出口：
+   * 把列表本身改成现在看到的顺序。搜索开着时不给用 —— 那时 visibleRows
+   * 只是子集，写回去会把没显示出来的行删掉。
+   */
+  const applyOrder = () => {
+    if (query.trim() !== '' || sort === 'none') {
+      return
+    }
+    onChange(visibleRows)
     setSort('none')
     setPicked([])
   }
@@ -269,6 +467,21 @@ export function PairListEditor({
                 <SelectItem value="alias">按别名</SelectItem>
               </SelectContent>
             </Select>
+            {sort !== 'none' ? (
+              <Button
+                variant="outline"
+                onClick={applyOrder}
+                disabled={disabled || query.trim() !== ''}
+                title={
+                  query.trim() !== ''
+                    ? '先把搜索清掉 —— 带着搜索重排会把没显示出来的行删掉'
+                    : '把列表本身改成现在这个顺序，保存与导出的顺序会跟着变'
+                }
+              >
+                <ArrowDownUp />
+                按当前顺序重排
+              </Button>
+            ) : null}
             {filtering ? (
               <Button variant="ghost" onClick={clearFilter} disabled={disabled}>
                 清空
@@ -278,137 +491,111 @@ export function PairListEditor({
           {filtering ? (
             <p className="text-xs text-muted-foreground">
               搜索与排序只改显示，保存的仍是全部 {rows.length} 项。
+              {sort !== 'none' && query.trim() === ''
+                ? '想让保存的顺序也跟着变，点「按当前顺序重排」。'
+                : ''}
             </p>
           ) : null}
         </div>
       ) : null}
 
-      {selectable || filterable || duplicateKeys.size > 0 ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm text-muted-foreground">{countText}</span>
-          {duplicateKeys.size > 0 ? (
-            <span className="text-sm text-destructive">
-              有 {duplicateKeys.size} 个重复的{keyLabel}，已标红
-            </span>
-          ) : null}
-          {selectable ? (
-            <>
-              <Button
-                variant="outline"
-                onClick={removePicked}
-                disabled={disabled || pickedIds.length === 0}
-              >
-                <Trash2 />
-                删除选中
+      {/* 工具栏常驻：「添加一行」原来在列表最底下，几百行时要滚到底才点得到 */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm text-muted-foreground">{countText}</span>
+        {duplicateKeys.size > 0 ? (
+          <span className="text-sm text-destructive">
+            有 {duplicateKeys.size} 个重复的{keyLabel}，已标红
+          </span>
+        ) : null}
+        {selectable ? (
+          <>
+            <Button
+              variant="outline"
+              onClick={removePicked}
+              disabled={disabled || pickedIds.length === 0}
+            >
+              <Trash2 />
+              删除选中
+            </Button>
+            {pickedIds.length > 0 ? (
+              <Button variant="ghost" onClick={() => setPicked([])} disabled={disabled}>
+                取消选择
               </Button>
-              {pickedIds.length > 0 ? (
-                <Button variant="ghost" onClick={() => setPicked([])} disabled={disabled}>
-                  取消选择
-                </Button>
-              ) : null}
-            </>
+            ) : null}
+          </>
+        ) : null}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <Button variant="outline" onClick={addRow} disabled={disabled}>
+            <Plus />
+            添加一行
+          </Button>
+          {bulkPaste ? (
+            <Button variant="outline" onClick={openBulk} disabled={disabled}>
+              <ClipboardPaste />
+              批量粘贴
+            </Button>
           ) : null}
         </div>
-      ) : null}
+      </div>
 
-      <div className="overflow-hidden rounded-lg border">
-        <Table>
-          <TableHeader>
+      <Table
+        containerClassName={
+          scrollTable ? 'max-h-[60vh] overflow-y-auto rounded-lg border' : 'rounded-lg border'
+        }
+      >
+        {/* sticky 认的是上面这个容器；背景色不能少，否则行会从表头底下透出来 */}
+        <TableHeader className="sticky top-0 z-10 bg-background">
+          <TableRow>
+            {selectable ? (
+              <TableHead className="w-10">
+                <Checkbox
+                  checked={somePicked ? 'indeterminate' : allPicked}
+                  onCheckedChange={(value) => {
+                    setPicked(value === true ? visibleRows.map((row) => row.rowId) : [])
+                  }}
+                  disabled={disabled || visibleRows.length === 0}
+                  aria-label="全选"
+                  title={filtering ? '全选显示中的行' : '全选'}
+                />
+              </TableHead>
+            ) : null}
+            <TableHead className="w-[45%]">{keyLabel}</TableHead>
+            <TableHead className="w-[45%]">别名（选填）</TableHead>
+            <TableHead className="w-[10%] text-right">操作</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {visibleRows.length === 0 ? (
             <TableRow>
-              {selectable ? (
-                <TableHead className="w-10">
-                  <Checkbox
-                    checked={somePicked ? 'indeterminate' : allPicked}
-                    onCheckedChange={(value) => {
-                      setPicked(value === true ? visibleRows.map((row) => row.rowId) : [])
-                    }}
-                    disabled={disabled || visibleRows.length === 0}
-                    aria-label="全选"
-                    title={filtering ? '全选显示中的行' : '全选'}
-                  />
-                </TableHead>
-              ) : null}
-              <TableHead className="w-[45%]">{keyLabel}</TableHead>
-              <TableHead className="w-[45%]">别名（选填）</TableHead>
-              <TableHead className="w-[10%] text-right">操作</TableHead>
+              <TableCell colSpan={columnCount} className="text-muted-foreground">
+                {rows.length === 0
+                  ? emptyHint
+                  : `没有匹配「${query.trim()}」的条目。换个词，或点「清空」。`}
+              </TableCell>
             </TableRow>
-          </TableHeader>
-          <TableBody>
-            {visibleRows.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={columnCount} className="text-muted-foreground">
-                  {rows.length === 0
-                    ? emptyHint
-                    : `没有匹配「${query.trim()}」的条目。换个词，或点「清空」。`}
-                </TableCell>
-              </TableRow>
-            ) : (
-              visibleRows.map((row) => (
-                <TableRow
-                  key={row.rowId}
-                  className={isDuplicate(row.key) ? 'bg-destructive/5' : undefined}
-                >
-                  {selectable ? (
-                    <TableCell>
-                      <Checkbox
-                        checked={pickedIds.includes(row.rowId)}
-                        onCheckedChange={(value) => toggle(row.rowId, value === true)}
-                        disabled={disabled}
-                        aria-label={`选中 ${row.key.trim() || '这一行'}`}
-                      />
-                    </TableCell>
-                  ) : null}
-                  <TableCell>
-                    <Input
-                      value={row.key}
-                      onChange={(event) => update(row.rowId, { key: event.target.value })}
-                      placeholder={keyPlaceholder}
-                      aria-label={keyLabel}
-                      aria-invalid={row.key.trim() === '' || isDuplicate(row.key)}
-                      title={isDuplicate(row.key) ? `这个${keyLabel}与别的行重复了` : undefined}
-                      disabled={disabled}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Input
-                      value={row.alias}
-                      onChange={(event) => update(row.rowId, { alias: event.target.value })}
-                      placeholder={aliasPlaceholder}
-                      aria-label="别名"
-                      disabled={disabled}
-                    />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => remove(row.rowId)}
-                      disabled={disabled}
-                      aria-label="删除这一行"
-                      title="删除这一行"
-                    >
-                      <Trash2 />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Button variant="outline" onClick={addRow} disabled={disabled}>
-          <Plus />
-          添加一行
-        </Button>
-        {bulkPaste ? (
-          <Button variant="outline" onClick={openBulk} disabled={disabled}>
-            <ClipboardPaste />
-            批量粘贴
-          </Button>
-        ) : null}
-      </div>
+          ) : (
+            visibleRows.map((row) => (
+              <PairRowItem
+                key={row.rowId}
+                row={row}
+                selectable={selectable}
+                disabled={disabled}
+                selected={pickedIds.includes(row.rowId)}
+                duplicate={isDuplicate(row.key)}
+                highlighted={(errorRowIds ?? []).includes(row.rowId)}
+                keyLabel={keyLabel}
+                keyPlaceholder={keyPlaceholder}
+                aliasPlaceholder={aliasPlaceholder}
+                onUpdate={update}
+                onRemove={remove}
+                onToggle={toggle}
+                onDuplicate={duplicateRow}
+                onInsertBelow={insertBelow}
+              />
+            ))
+          )}
+        </TableBody>
+      </Table>
 
       {bulkPaste ? (
         <Dialog open={bulkOpen} onOpenChange={(open) => (open ? undefined : setBulkOpen(false))}>

@@ -28,12 +28,39 @@ export function buildChannelsFromTemplate(
  * 文件里带 `defaultExtraInfo` 是允许的（老配置与老版本导出的都有），
  * 读进来直接丢掉 —— 本工具不再写这个字段。
  */
+/**
+ * 把 JSON.parse 的报错翻译成「第几行第几列」。
+ *
+ * 只说「不是合法的 JSON」等于没说：几百行的文件里用户不知道该改哪儿。
+ * 新一点的 V8 直接在消息末尾带 `(line 42 column 7)`，老版本只给字符位置，
+ * 那就按字符位置自己数一遍行与列。
+ */
+function describeJsonError(error: unknown, text: string): string {
+  const message = error instanceof Error ? error.message : ''
+  const located = /\(line (\d+) column (\d+)\)/.exec(message)
+  if (located) {
+    return `（第 ${located[1]} 行第 ${located[2]} 列附近）`
+  }
+  const at = /position (\d+)/.exec(message)
+  if (at) {
+    const offset = Number(at[1])
+    const before = text.slice(0, offset)
+    const line = before.split(/\r?\n/).length
+    const column = offset - before.lastIndexOf('\n')
+    return `（第 ${line} 行第 ${column} 列附近）`
+  }
+  if (/end of JSON input|Unexpected end/i.test(message)) {
+    return '（文件像是少了一截，检查一下括号有没有配对）'
+  }
+  return ''
+}
+
 export function parseChannelConfig(text: string, sourceLabel = '文件'): ChannelConfig {
   let parsed: unknown
   try {
     parsed = JSON.parse(text)
-  } catch {
-    throw new Error(`${sourceLabel}不是合法的 JSON`)
+  } catch (error) {
+    throw new Error(`${sourceLabel}不是合法的 JSON${describeJsonError(error, text)}`)
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw new Error(`${sourceLabel}的顶层必须是一个对象`)
