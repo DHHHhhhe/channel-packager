@@ -24,6 +24,10 @@ export interface PackConflict {
   existingSha256: string
   /** 配置包里那份的 SHA256 */
   incomingSha256: string
+  /** 本机副本的字节数；拿不到时为 0，界面显示成「大小未知」 */
+  existingSize: number
+  /** 包里那份的字节数；拿不到时为 0 */
+  incomingSize: number
 }
 
 /** 同 id 但内容不同时的处理方式 */
@@ -50,6 +54,15 @@ export interface PackPreviewResult {
   credentialFree?: boolean
   /** 本机模板已被改过（与内置种子不同），导入模板会覆盖它 */
   templateDiffers?: boolean
+  /** 包内模板的条数（包内没有模板时为 0） */
+  incomingTemplateCount?: number
+  /**
+   * 包内模板前几条的样子（如 `gf → 官方`）。
+   *
+   * 导入前就能看见包里那份，才谈得上「要不要覆盖本机模板」这个决定 ——
+   * 否则用户只知道「包里有模板」，不知道换上去会变成什么。
+   */
+  incomingTemplateSample?: string[]
   conflicts?: PackConflict[]
 }
 

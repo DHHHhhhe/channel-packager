@@ -1,27 +1,44 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Download, Info, ShieldAlert, Upload } from 'lucide-react'
-import { ConfigPackDialog } from '@/components/ConfigPackDialog'
+import { Download, FolderOpen, Info, ShieldAlert, Upload } from 'lucide-react'
+import { ConfigPackDialog, summarizeImport } from '@/components/ConfigPackDialog'
 import { PageHeader } from '@/components/PageHeader'
 import { PairListEditor, newPairRow, type PairRow } from '@/components/PairListEditor'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 import type { PackImportResult, PackPreviewResult } from '@shared/types/pack'
 import { findDuplicates } from '@/lib/duplicates'
 import { ipcErrorMessage } from '@/lib/ipc-error'
+import { dirName } from '@/lib/paths'
 import { useAppStore } from '@/store/app-store'
 import { useSaveShortcut, useUnsavedGuard } from '@/store/nav'
 
 export function TemplateScreen() {
-  const { template, saveTemplate, reload } = useAppStore()
+  const { template, saveTemplate, reload, jksItems, groups } = useAppStore()
   const [rows, setRows] = useState<PairRow[]>([])
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [status, setStatus] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
+  const [status, setStatus] = useState<{
+    kind: 'ok' | 'error'
+    text: string
+    /** 导出成功后落在哪个文件上，用来给「打开所在目录」 */
+    path?: string
+    /** 导入结果的逐条明细，摘要一句话说不清「另存成了什么名字」 */
+    notes?: string[]
+  } | null>(null)
   const [packPreview, setPackPreview] = useState<PackPreviewResult | null>(null)
   const [packBusy, setPackBusy] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
   // 默认带凭据，保持原来的行为；勾上就是给同事的初始包
   const [credentialFree, setCredentialFree] = useState(false)
 
@@ -74,7 +91,19 @@ export function TemplateScreen() {
   /* 有没保存的改动时，关窗口会被拦一下（切页不会：页面一直挂着，切回来内容还在） */
   useUnsavedGuard(dirty ? '后缀表的改动' : null)
 
-  const handleExportPack = async () => {
+  /* 导出前的清单：先让人看清包里有什么，再弹系统保存框 */
+  const exportSummary = useMemo(() => {
+    const jksBytes = jksItems.reduce((total, item) => total + (item.fileSize ?? 0), 0)
+    return {
+      jksCount: jksItems.length,
+      jksNames: jksItems.map((item) => item.displayName),
+      jksKb: Math.round(jksBytes / 1024),
+      groupCount: groups.length,
+      templateCount: template.suffixes.length,
+    }
+  }, [jksItems, groups, template])
+
+  const runExport = async () => {
     setStatus(null)
     setPackBusy(true)
     try {
@@ -87,6 +116,7 @@ export function TemplateScreen() {
       setStatus({
         kind: 'ok',
         text: `已导出配置包${suffix}：${result.path}（${result.fileCount ?? 0} 个文件，${size} KB）`,
+        path: result.path ?? undefined,
       })
     } catch (error) {
       setStatus({ kind: 'error', text: ipcErrorMessage(error) })
@@ -113,17 +143,8 @@ export function TemplateScreen() {
 
   const handleImported = async (result: PackImportResult) => {
     setPackPreview(null)
-    const parts = [
-      `新增 ${result.importedJks} 个`,
-      result.overwritten > 0 ? `覆盖 ${result.overwritten} 个` : '',
-      result.renamed > 0 ? `另存 ${result.renamed} 个` : '',
-      result.skipped > 0 ? `跳过 ${result.skipped} 个` : '',
-      result.importedTemplate ? '模板已更新' : '模板未变',
-    ].filter((entry) => entry !== '')
-    setStatus({
-      kind: 'ok',
-      text: `导入完成：${parts.join('，')}。${result.notes.join(' ')}`,
-    })
+    /* 摘要只留一句话，逐条明细（尤其是「另存成了什么名字」）挂在下面单独列 */
+    setStatus({ kind: 'ok', text: `导入完成：${summarizeImport(result)}。`, notes: result.notes })
     // 导入会同时改 jks 与模板，整份重载，界面立刻反映新数据
     await reload()
   }
@@ -144,17 +165,37 @@ export function TemplateScreen() {
       />
 
       {status ? (
-        <p
-          className={
-            status.kind === 'error'
-              ? 'text-sm text-destructive'
-              : status.kind === 'ok'
-                ? 'text-sm text-success'
-                : 'text-sm text-muted-foreground'
-          }
-        >
-          {status.text}
-        </p>
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <p
+              className={
+                status.kind === 'error' ? 'text-sm text-destructive' : 'text-sm text-success'
+              }
+              role={status.kind === 'error' ? 'alert' : 'status'}
+            >
+              {status.text}
+            </p>
+            {status.path ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  void window.api.openPath(dirName(status.path ?? ''))
+                }}
+              >
+                <FolderOpen />
+                打开所在目录
+              </Button>
+            ) : null}
+          </div>
+          {status.notes && status.notes.length > 0 ? (
+            <ul className="flex flex-col gap-1 rounded-md border px-3 py-2 text-xs text-muted-foreground">
+              {status.notes.map((note, index) => (
+                <li key={index}>{note}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
       ) : null}
 
       <Card>
@@ -174,6 +215,8 @@ export function TemplateScreen() {
             emptyHint="模板为空。新增签名文件时勾选套用模板将得到空渠道列表。"
             selectable
             filterable
+            duplicates={duplicates}
+            bulkPaste
           />
         </CardContent>
       </Card>
@@ -187,7 +230,14 @@ export function TemplateScreen() {
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" onClick={handleExportPack} disabled={packBusy}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setStatus(null)
+                setExportOpen(true)
+              }}
+              disabled={packBusy}
+            >
               <Download />
               导出配置包
             </Button>
@@ -226,8 +276,73 @@ export function TemplateScreen() {
         </CardContent>
       </Card>
 
+      <Dialog
+        open={exportOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setExportOpen(false)
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>导出配置包</DialogTitle>
+            <DialogDescription>
+              打包后是一个 zip，换机器导入就能直接出包。确认后才会弹出保存位置。
+            </DialogDescription>
+          </DialogHeader>
+
+          <ul className="flex flex-col gap-1.5 text-sm">
+            {credentialFree ? (
+              <li className="text-muted-foreground">
+                不含签名凭据：包里只有模板（{exportSummary.templateCount} 条后缀），签名文件、渠道列表与分组都不带。
+              </li>
+            ) : (
+              <>
+                <li>
+                  签名文件：{exportSummary.jksCount} 个
+                  {exportSummary.jksCount > 0 ? `（${exportSummary.jksNames.join('、')}）` : ''}
+                  ，副本合计约 {exportSummary.jksKb} KB
+                </li>
+                <li>渠道列表：{exportSummary.groupCount} 份</li>
+                <li>模板：{exportSummary.templateCount} 条后缀</li>
+              </>
+            )}
+          </ul>
+
+          {credentialFree ? (
+            <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+              <Info className="mt-0.5 size-3.5 shrink-0" />
+              <span>适合发给同事作为初始配置，对方导入后自行新增签名文件并套用模板。</span>
+            </p>
+          ) : (
+            <p className="flex items-start gap-1.5 text-xs text-destructive">
+              <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
+              <span>
+                包里含<strong>明文密码与私钥</strong>。导出后只发给你信任的人。
+              </span>
+            </p>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setExportOpen(false)}>
+              取消
+            </Button>
+            <Button
+              onClick={() => {
+                setExportOpen(false)
+                void runExport()
+              }}
+            >
+              选择保存位置
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <ConfigPackDialog
         preview={packPreview}
+        localTemplateCount={template.suffixes.length}
         onClose={() => setPackPreview(null)}
         onImported={handleImported}
       />

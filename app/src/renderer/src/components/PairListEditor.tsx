@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Plus, Search, Trash2 } from 'lucide-react'
+import { ClipboardPaste, Plus, Search, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -11,6 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Textarea } from '@/components/ui/textarea'
 import { viewPairRows, type RowSort } from '@/lib/row-view'
 
 /** 一行「键 + 别名」。rowId 只用于 React key，不参与持久化 */
@@ -22,6 +31,30 @@ export interface PairRow {
 
 export function newPairRow(key = '', alias = ''): PairRow {
   return { rowId: crypto.randomUUID(), key, alias }
+}
+
+/**
+ * 把粘贴进来的一大段文本拆成行。
+ *
+ * 一行一条，键与别名之间用空格、逗号（中英文）或制表符隔开都认 ——
+ * 从表格软件里复制出来的多半是制表符，手写的多半是空格或逗号。
+ * 空行跳过；只有键没有别名的行也收，别名本来就选填。
+ */
+function parseBulkText(text: string): { key: string; alias: string }[] {
+  const parsed: { key: string; alias: string }[] = []
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (line === '') {
+      continue
+    }
+    const parts = line.split(/[\s,，\t]+/)
+    const key = (parts[0] ?? '').trim()
+    if (key === '') {
+      continue
+    }
+    parsed.push({ key, alias: parts.slice(1).join(' ').trim() })
+  }
+  return parsed
 }
 
 interface PairListEditorProps {
@@ -42,6 +75,13 @@ interface PairListEditorProps {
    * 调用方把出错的行指出来之前先递增一下，用户才看得见那一行。
    */
   resetFilterToken?: number
+  /**
+   * 已经重复的键（忽略大小写与首尾空白）。传进来就当场把这几行标红 ——
+   * 去重校验本来只有保存时才跑，用户得点一次保存才知道哪行撞了。
+   */
+  duplicates?: string[]
+  /** 打开「批量粘贴」：从表格软件或文档里一次贴一整批进来 */
+  bulkPaste?: boolean
 }
 
 /**
@@ -59,13 +99,60 @@ export function PairListEditor({
   disabled = false,
   filterable = false,
   resetFilterToken = 0,
+  duplicates,
+  bulkPaste = false,
 }: PairListEditorProps) {
   const [picked, setPicked] = useState<string[]>([])
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<RowSort>('none')
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [bulkText, setBulkText] = useState('')
 
   const visibleRows = useMemo(() => viewPairRows(rows, query, sort), [rows, query, sort])
   const filtering = filterable && (query.trim() !== '' || sort !== 'none')
+
+  /* 重复的键先归一化，表格里逐行判断用得上 */
+  const duplicateKeys = useMemo(
+    () => new Set((duplicates ?? []).map((value) => value.trim().toLowerCase())),
+    [duplicates],
+  )
+  const isDuplicate = (key: string): boolean => {
+    const normalized = key.trim().toLowerCase()
+    return normalized !== '' && duplicateKeys.has(normalized)
+  }
+
+  /* 批量粘贴的预览：解析出来多少条、其中多少条会撞上现有条目或彼此 */
+  const bulkRows = useMemo(() => parseBulkText(bulkText), [bulkText])
+  const bulkDuplicateCount = useMemo(() => {
+    const taken = new Set(
+      rows.map((row) => row.key.trim().toLowerCase()).filter((key) => key !== ''),
+    )
+    let duplicated = 0
+    for (const row of bulkRows) {
+      const key = row.key.trim().toLowerCase()
+      if (taken.has(key)) {
+        duplicated += 1
+      }
+      taken.add(key)
+    }
+    return duplicated
+  }, [bulkRows, rows])
+
+  const openBulk = () => {
+    setBulkText('')
+    setBulkOpen(true)
+  }
+
+  const confirmBulk = () => {
+    if (bulkRows.length === 0) {
+      return
+    }
+    onChange([...rows, ...bulkRows.map((row) => newPairRow(row.key, row.alias))])
+    // 新行多半匹配不上当前搜索词；不清掉会让人以为一条都没加上
+    setQuery('')
+    setBulkOpen(false)
+    setBulkText('')
+  }
 
   /*
    * 整份列表被换掉时（按模板生成、导入 JSON、切 jks）把搜索与排序清掉。
@@ -196,9 +283,14 @@ export function PairListEditor({
         </div>
       ) : null}
 
-      {selectable || filterable ? (
-        <div className="flex items-center gap-2">
+      {selectable || filterable || duplicateKeys.size > 0 ? (
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm text-muted-foreground">{countText}</span>
+          {duplicateKeys.size > 0 ? (
+            <span className="text-sm text-destructive">
+              有 {duplicateKeys.size} 个重复的{keyLabel}，已标红
+            </span>
+          ) : null}
           {selectable ? (
             <>
               <Button
@@ -252,7 +344,10 @@ export function PairListEditor({
               </TableRow>
             ) : (
               visibleRows.map((row) => (
-                <TableRow key={row.rowId}>
+                <TableRow
+                  key={row.rowId}
+                  className={isDuplicate(row.key) ? 'bg-destructive/5' : undefined}
+                >
                   {selectable ? (
                     <TableCell>
                       <Checkbox
@@ -269,7 +364,8 @@ export function PairListEditor({
                       onChange={(event) => update(row.rowId, { key: event.target.value })}
                       placeholder={keyPlaceholder}
                       aria-label={keyLabel}
-                      aria-invalid={row.key.trim() === ''}
+                      aria-invalid={row.key.trim() === '' || isDuplicate(row.key)}
+                      title={isDuplicate(row.key) ? `这个${keyLabel}与别的行重复了` : undefined}
                       disabled={disabled}
                     />
                   </TableCell>
@@ -301,12 +397,53 @@ export function PairListEditor({
         </Table>
       </div>
 
-      <div>
+      <div className="flex flex-wrap items-center gap-2">
         <Button variant="outline" onClick={addRow} disabled={disabled}>
           <Plus />
           添加一行
         </Button>
+        {bulkPaste ? (
+          <Button variant="outline" onClick={openBulk} disabled={disabled}>
+            <ClipboardPaste />
+            批量粘贴
+          </Button>
+        ) : null}
       </div>
+
+      {bulkPaste ? (
+        <Dialog open={bulkOpen} onOpenChange={(open) => (open ? undefined : setBulkOpen(false))}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>批量粘贴{keyLabel}</DialogTitle>
+              <DialogDescription>
+                一行一条：{keyLabel}，或者 {keyLabel} 加别名。中间用空格、逗号或制表符隔开都行。
+              </DialogDescription>
+            </DialogHeader>
+            <Textarea
+              value={bulkText}
+              onChange={(event) => setBulkText(event.target.value)}
+              placeholder={'gf 官方\nhw 华为\noppo'}
+              aria-label="批量粘贴内容"
+              rows={8}
+            />
+            <p className="text-xs text-muted-foreground">
+              {bulkRows.length === 0
+                ? '还没有内容。'
+                : bulkDuplicateCount > 0
+                  ? `解析出 ${bulkRows.length} 条，其中 ${bulkDuplicateCount} 条与现有条目或彼此重复，追加后要手工改掉。`
+                  : `解析出 ${bulkRows.length} 条，没有重复。`}
+            </p>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setBulkOpen(false)}>
+                取消
+              </Button>
+              <Button onClick={confirmBulk} disabled={bulkRows.length === 0}>
+                追加 {bulkRows.length} 条
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : null}
     </div>
   )
 }

@@ -368,6 +368,45 @@ function localTemplateDiffers(): boolean {
   })
 }
 
+/** 包里那份副本的真实字节数；读不到就退回 jks.json 里记的值 */
+function incomingKeystoreSize(dir: string, item: JksItem): number {
+  try {
+    return fs.statSync(safeJoin(dir, item.keystoreFile)).size
+  } catch {
+    return item.fileSize
+  }
+}
+
+/**
+ * 只看一眼包里的模板长什么样：条数 + 前几条。
+ *
+ * 解析失败一律当作「没有模板」而不是抛错 —— 真正决定能不能导入的是
+ * importConfigPack 里的校验，这里只负责让用户导入前有得看。
+ */
+function summarizeIncomingTemplate(dir: string): { count: number; sample: string[] } {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(safeJoin(dir, TEMPLATE_NAME), 'utf8')) as {
+      suffixes?: unknown
+    }
+    const raw = Array.isArray(parsed.suffixes) ? parsed.suffixes : []
+    const rows = raw.filter(
+      (entry): entry is { suffix: string; alias?: unknown } =>
+        typeof entry === 'object' &&
+        entry !== null &&
+        typeof (entry as { suffix?: unknown }).suffix === 'string',
+    )
+    return {
+      count: rows.length,
+      sample: rows.slice(0, 5).map((row) => {
+        const alias = typeof row.alias === 'string' && row.alias !== '' ? ` → ${row.alias}` : ''
+        return `${row.suffix}${alias}`
+      }),
+    }
+  } catch {
+    return { count: 0, sample: [] }
+  }
+}
+
 /** 只做校验与冲突探测，不改任何数据。界面拿它决定要不要让用户选冲突策略 */
 export async function previewConfigPack(packPath: string): Promise<PackPreviewResult> {
   const { dir, manifest } = await extractAndVerify(packPath)
@@ -383,10 +422,16 @@ export async function previewConfigPack(packPath: string): Promise<PackPreviewRe
           displayName: item.displayName,
           existingSha256: existing.sha256,
           incomingSha256: item.sha256,
+          existingSize: existing.fileSize,
+          incomingSize: incomingKeystoreSize(dir, item),
         })
       }
     }
     const relativePaths = Object.keys(manifest.files)
+    const hasTemplate = relativePaths.includes(TEMPLATE_NAME)
+    const templateSummary = hasTemplate
+      ? summarizeIncomingTemplate(dir)
+      : { count: 0, sample: [] as string[] }
     return {
       canceled: false,
       packPath,
@@ -394,9 +439,11 @@ export async function previewConfigPack(packPath: string): Promise<PackPreviewRe
       jksCount: incoming.length,
       keystoreCount: relativePaths.filter((entry) => entry.startsWith(`${KEYSTORES_DIR}/`)).length,
       channelCount: relativePaths.filter((entry) => entry.startsWith(`${CHANNELS_DIR}/`)).length,
-      hasTemplate: relativePaths.includes(TEMPLATE_NAME),
+      hasTemplate,
       credentialFree: manifest.credentialFree,
       templateDiffers: localTemplateDiffers(),
+      incomingTemplateCount: templateSummary.count,
+      incomingTemplateSample: templateSummary.sample,
       conflicts,
     }
   } finally {
