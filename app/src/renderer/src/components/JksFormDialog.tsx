@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react'
-import { Eye, EyeOff, FileUp, KeyRound } from 'lucide-react'
+import { Eye, EyeOff, FileUp, KeyRound, Wand2 } from 'lucide-react'
 import { ChannelListPreviewDialog } from '@/components/ChannelListPreviewDialog'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { PairListEditor, newPairRow, type PairRow } from '@/components/PairListEditor'
 import { PlaintextPasswordNotice } from '@/components/PlaintextPasswordNotice'
 import { Button } from '@/components/ui/button'
@@ -61,6 +62,10 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
   const [draftChannels, setDraftChannels] = useState<PairRow[]>([])
   /** 导入 JSON 的待确认内容；null 表示没有待确认的导入 */
   const [jsonPreview, setJsonPreview] = useState<ChannelListPreview | null>(null)
+  /** 用户是否在下面的列表里手改过（用来判断重新生成前要不要问一声） */
+  const [handEdited, setHandEdited] = useState(false)
+  /** 「按模板重新生成」的确认框 */
+  const [confirmRegenerate, setConfirmRegenerate] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [feedback, setFeedback] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
@@ -88,6 +93,8 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
     setPrefix(item?.id ?? '')
     setDraftChannels([])
     setJsonPreview(null)
+    setHandEdited(false)
+    setConfirmRegenerate(false)
     setShowPassword(false)
     setFeedback(null)
     setBusy(false)
@@ -109,6 +116,37 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
     buildChannelsFromTemplate(template.suffixes, value, app.trim()).channelInfoList.map((entry) =>
       newPairRow(entry.channel, entry.alias ?? ''),
     )
+
+  /*
+   * 程序性写入草稿（生成、导入、换来源）都走这里，顺便把「手改过」标记清掉。
+   * 下面列表里的编辑不走这里 —— 那个标记就是用来区分「这份列表还是生成的原样」和「用户动过」。
+   */
+  const applyDraft = (next: PairRow[]) => {
+    setDraftChannels(next)
+    setHandEdited(false)
+  }
+
+  /** 按当前前缀重新生成一份草稿 */
+  const regenerateFromTemplate = () => {
+    const next = templateDraft(prefix)
+    applyDraft(next)
+    setFeedback({
+      kind: 'ok',
+      text: `已按前缀「${prefix.trim() || '（空）'}」生成 ${next.length} 条。`,
+    })
+  }
+
+  /*
+   * 重新生成会整表替换。列表还是生成的原样就直接换；
+   * 用户手改过就先问一声 —— 那些改动没有别的地方存着，换掉就没了。
+   */
+  const handleRegenerateClick = () => {
+    if (handEdited && draftChannels.length > 0) {
+      setConfirmRegenerate(true)
+      return
+    }
+    regenerateFromTemplate()
+  }
 
   const handlePickSource = (file: File | undefined) => {
     if (!file) {
@@ -236,7 +274,7 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
 
   /** 预览框里点确认：这时才把改过的条目填进草稿列表 */
   const handleConfirmJson = (imported: PairRow[]) => {
-    setDraftChannels(imported)
+    applyDraft(imported)
     setJsonPreview(null)
     setFeedback({ kind: 'ok', text: `已导入 ${imported.length} 条渠道，可在下方直接改。` })
   }
@@ -251,9 +289,9 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
     setChannelMode(next)
     setFeedback(null)
     if (next === 'template') {
-      setDraftChannels(templateDraft(prefix))
+      applyDraft(templateDraft(prefix))
     } else {
-      setDraftChannels([])
+      applyDraft([])
     }
   }
 
@@ -528,29 +566,35 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
                 <SelectContent>
                   <SelectItem value="empty">不套用模板，得到空列表</SelectItem>
                   <SelectItem value="template">套用模板</SelectItem>
-                  <SelectItem value="json">导入 JSON（原样复制）</SelectItem>
+                  <SelectItem value="json">导入 JSON（先预览，可改）</SelectItem>
                 </SelectContent>
               </Select>
 
               {channelMode === 'template' ? (
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="jks-prefix">渠道前缀</Label>
-                  <Input
-                    id="jks-prefix"
-                    value={prefix}
-                    onChange={(event) => {
-                      const next = event.target.value
-                      setPrefix(next)
-                      // 前缀只影响生成结果，改了就把草稿重算一遍（手工改过的行会被覆盖）
-                      if (channelMode === 'template') {
-                        setDraftChannels(templateDraft(next))
-                      }
-                    }}
-                    placeholder="默认等于 jks 文件名"
-                    disabled={noJks}
-                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Input
+                      id="jks-prefix"
+                      value={prefix}
+                      onChange={(event) => setPrefix(event.target.value)}
+                      placeholder="默认等于 jks 文件名"
+                      className="w-64"
+                      disabled={noJks}
+                    />
+                    <Button
+                      variant="outline"
+                      type="button"
+                      onClick={handleRegenerateClick}
+                      disabled={noJks}
+                    >
+                      <Wand2 />
+                      按模板重新生成
+                    </Button>
+                  </div>
                   <p className="text-xs text-muted-foreground">
-                    渠道名 = 前缀 + &quot;_&quot; + 后缀。改前缀会按模板重新生成下面的列表。
+                    渠道名 = 前缀 + &quot;_&quot; + 后缀。改前缀不会动下面的列表，
+                    点「按模板重新生成」才按新前缀重算。
                   </p>
                 </div>
               ) : null}
@@ -589,7 +633,11 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
 
               <PairListEditor
                 rows={draftChannels}
-                onChange={setDraftChannels}
+                onChange={(next) => {
+                  // 列表里的编辑不走 applyDraft：这个标记就是用来记住「用户动过」
+                  setDraftChannels(next)
+                  setHandEdited(true)
+                }}
                 keyLabel="渠道名"
                 keyPlaceholder="例如 sample_gf"
                 aliasPlaceholder="例如 官方"
@@ -639,6 +687,19 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
         title="导入渠道 JSON"
         preview={jsonPreview}
         onConfirm={handleConfirmJson}
+      />
+
+      <ConfirmDialog
+        open={confirmRegenerate}
+        onOpenChange={setConfirmRegenerate}
+        title="按模板重新生成？"
+        description="会按当前前缀重算整份列表，然后覆盖下面这些行。"
+        warning={`你在下面改过 ${draftChannels.length} 条，重新生成后这些改动就没了。`}
+        confirmText="重新生成"
+        onConfirm={() => {
+          setConfirmRegenerate(false)
+          regenerateFromTemplate()
+        }}
       />
     </Dialog>
   )

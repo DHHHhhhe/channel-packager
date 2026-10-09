@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { FileDown, Wand2 } from 'lucide-react'
 import { ChannelListPreviewDialog } from '@/components/ChannelListPreviewDialog'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { PageHeader } from '@/components/PageHeader'
 import { PairListEditor, newPairRow, type PairRow } from '@/components/PairListEditor'
 import { Button } from '@/components/ui/button'
@@ -43,6 +44,8 @@ export function ChannelsScreen() {
   const [pending, setPending] = useState<ChannelListPreview | null>(null)
   /** 预览框里选的覆盖/追加，默认覆盖 */
   const [importMode, setImportMode] = useState<ChannelImportMode>('overwrite')
+  /** 「按模板生成」会整表替换，有未保存改动时先问一声 */
+  const [confirmTemplate, setConfirmTemplate] = useState(false)
 
   const selected = jksItems.find((item) => item.id === selectedId)
 
@@ -116,6 +119,18 @@ export function ChannelsScreen() {
       kind: 'ok',
       text: `已按模板生成 ${config.channelInfoList.length} 条，尚未保存。`,
     })
+  }
+
+  /*
+   * 按模板生成是整表替换。列表里还有没保存的改动时先问一声 ——
+   * 那些改动只存在界面上，换掉就没了。
+   */
+  const handleApplyTemplateClick = () => {
+    if (rows.length > 0 && dirty) {
+      setConfirmTemplate(true)
+      return
+    }
+    applyTemplate()
   }
 
   const handleExportJson = async () => {
@@ -309,7 +324,7 @@ export function ChannelsScreen() {
                 className="w-64"
               />
             </div>
-            <Button variant="outline" onClick={applyTemplate}>
+            <Button variant="outline" onClick={handleApplyTemplateClick}>
               <Wand2 />
               按模板生成
             </Button>
@@ -329,6 +344,7 @@ export function ChannelsScreen() {
           </div>
           <p className="text-xs text-muted-foreground">
             生成规则：渠道名 = 前缀 + &quot;_&quot; + 后缀。生成的是独立副本，之后再改模板也不会影响这里。
+            列表里还有没保存的改动时，会先问一声再覆盖。
           </p>
           <p className="text-xs text-muted-foreground">
             「导出示例 JSON」只在渠道列表为空时可用，导出的是一份可编辑的起点（条目取自「渠道模板」页的模板）；
@@ -380,6 +396,19 @@ export function ChannelsScreen() {
         mode={importMode}
         onModeChange={setImportMode}
         onConfirm={handleConfirmImport}
+      />
+
+      <ConfirmDialog
+        open={confirmTemplate}
+        onOpenChange={setConfirmTemplate}
+        title="按模板生成？"
+        description={`会按当前前缀「${prefix.trim() || '（空）'}」重算一份列表，替换掉下面现有的 ${rows.length} 条。`}
+        warning="这份列表里有还没保存的改动，覆盖后就没了。"
+        confirmText="覆盖生成"
+        onConfirm={() => {
+          setConfirmTemplate(false)
+          applyTemplate()
+        }}
       />
     </div>
   )

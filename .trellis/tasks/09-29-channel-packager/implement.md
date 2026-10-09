@@ -600,6 +600,47 @@ pnpm 那条是实测确认的（pnpm 11.8.0）：
 | 重签名时 apksigner 失败 | 卡片同时渲染三块：动作行（`打开输出目录` / `重跑本次` / 提示语）、失败诊断块（`卡在：apksigner 重签名` / `退出码：2` / 任务号 / 13 行输出 / `复制诊断信息` / 工作目录）、`日志：` + 可点按钮；`window.__h.errs()` 为空 |
 | 改掉输出目录后点「重跑本次」 | 输出目录回到 `…\p7\out`，卡片还在 |
 
+## 后续增强：覆盖渠道列表前先确认（2026-10-08 六续）
+
+起因：审计 P1 清单里的「P1-6 —— 「按模板生成」与「改前缀」加确认」。两处都会**整表替换**用户手里的列表，其中「新增 jks」那处的隐患更重：`#jks-prefix` 原本是**每敲一个字符就按新前缀重算一遍**，手工改过的行会被静默冲掉（旧代码的注释里自己也写着「手工改过的行会被覆盖」）。
+
+### 三处口径（改前与用户确认）
+
+| 问题 | 结论 |
+|---|---|
+| 「新增 jks」里的前缀怎么处理 | 改成**手动重新生成**：改前缀只记下来、列表不动；旁边加「按模板重新生成」按钮，点它时若手改过行才确认 |
+| 两个页面要不要各写一套 | 不。统一成「只有生成动作会覆盖列表，覆盖前先确认」 |
+| 用什么判「会被覆盖掉东西」 | 渠道配置页用 `rows.length > 0 && dirty`（磁盘上还有一份，没保存就替换界面内容不会丢数据，不必打扰）；jks 弹窗用 `handEdited` 标记 |
+
+用 `handEdited` 布尔标记而不是深比较「草稿是否等于生成结果」：只在程序性写入时清掉、只在 `PairListEditor` 的 `onChange` 里置位，比逐行比对 key/alias 更稳，也不怕行序变化。
+
+### 改动
+
+| 文件 | 改动 |
+|---|---|
+| `app/src/renderer/src/components/ConfirmDialog.tsx` | **新增**。`{open, onOpenChange, title, description, warning?, confirmText, cancelText, destructive?, onConfirm}`；只用来拦「点下去会覆盖掉用户手里东西」的动作 |
+| `app/src/renderer/src/components/JksFormDialog.tsx` | 新 state `handEdited` / `confirmRegenerate`；新增 `applyDraft()`（程序性写入统一走它，顺带清 `handEdited`）、`regenerateFromTemplate()`、`handleRegenerateClick()`；`#jks-prefix` 的 `onChange` 简化成只 `setPrefix`；同排加「按模板重新生成」按钮；`PairListEditor` 的 `onChange` 里置 `handEdited`；末尾挂一个 `ConfirmDialog` |
+| `app/src/renderer/src/screens/ChannelsScreen.tsx` | 新 state `confirmTemplate`；新增 `handleApplyTemplateClick()`；「按模板生成」按钮改指它；末尾挂一个 `ConfirmDialog` |
+
+确认按钮文案分别是 `覆盖生成`（渠道配置页）与 `重新生成`（jks 弹窗），都不是笼统的「确定」。
+
+### 实测（开发构建 + 打包版，页面错误 `[]`）
+
+夹具：`jks.json` 一条 `id=t17` / app `测试应用` / alias `t17key`；`channels/t17.json` 两条；模板用首次读取时落的 13 项种子。
+
+| 场景 | 结果 |
+|---|---|
+| 渠道配置：列表刚从磁盘读入（未改过）点「按模板生成」 | 不弹框，直接生成 13 条 |
+| 渠道配置：手改第一行为 `EDITED_MARK` 后再点 | 弹「按模板生成？…覆盖后就没了。」，按钮为 `取消` / `覆盖生成` |
+| 渠道配置：上一步点「取消」 | 列表不动，首行仍是 `EDITED_MARK` |
+| 渠道配置：再点并选「覆盖生成」 | 首行回到 `t17_jl_flow`，共 13 条 |
+| jks 弹窗：选入 jks → 切「套用模板」 | 13 条，首行 `t17_jl_flow` |
+| jks 弹窗：把前缀改成 `zzz` | **行数与首行都不变**（改前缀不再重算） |
+| jks 弹窗：点「按模板重新生成」（未手改） | 不弹框，首行变 `zzz_jl_flow` |
+| jks 弹窗：手改成 `EDITED_MARK` 后再点 | 弹「按模板重新生成？…你在下面改过 13 条…」，按钮为 `取消` / `重新生成` |
+| jks 弹窗：「取消」→ 再点 → 「重新生成」 | 取消后仍是 `EDITED_MARK`；确认后回到 `zzz_jl_flow` |
+| 打包版复跑渠道配置那四条 | 全部一致；打包版里「新增 jks」的渠道数据来源下拉仍按预期在未选文件时 `disabled` |
+
 ## 风险与回滚点
 
 | 风险 | 触发点 | 回滚/对策 |
