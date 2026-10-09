@@ -1286,20 +1286,6 @@ export function PackScreen() {
         failed={result !== null && !result.ok}
       />
 
-      <div className="flex flex-wrap items-center gap-3">
-        <Button onClick={() => void handleStart()} disabled={!canStart}>
-          {running ? <Spinner /> : null}
-          {running ? '出包中…' : '开始出包'}
-        </Button>
-        <Button variant="outline" onClick={handleEnqueue} disabled={!canStart}>
-          <ListPlus />
-          加入队列
-        </Button>
-        {blockers.length > 0 ? (
-          <span className="text-sm text-muted-foreground">还差：{blockers.join('、')}</span>
-        ) : null}
-      </div>
-
       {result && !ranQueue ? (
         <TaskResultCard
           result={result}
@@ -1371,6 +1357,26 @@ export function PackScreen() {
           </CardContent>
         </Card>
       ) : null}
+
+      {/*
+        主操作原来在长页面最底部：渠道网格一多，想点「开始出包」就得先滚到底，
+        滚到底又看不见上面填的对不对。放到最后一个视觉元素上并吸住滚动容器底部，
+        滚动时它一直可点；结果、队列这些反馈都排在它上面，不会被挡住。
+        负边距是为了让它贴到滚动区左右与底边，看着像一条固定的操作栏。
+      */}
+      <div className="sticky bottom-0 z-10 -mx-6 -mb-6 flex flex-wrap items-center gap-3 border-t bg-background px-6 py-3">
+        <Button onClick={() => void handleStart()} disabled={!canStart}>
+          {running ? <Spinner /> : null}
+          {running ? '出包中…' : '开始出包'}
+        </Button>
+        <Button variant="outline" onClick={handleEnqueue} disabled={!canStart}>
+          <ListPlus />
+          加入队列
+        </Button>
+        {blockers.length > 0 ? (
+          <span className="text-sm text-muted-foreground">还差：{blockers.join('、')}</span>
+        ) : null}
+      </div>
 
       {/*
         清空是整队一次丢光，而队列里的参数没有别的地方存着 —— 重新加一遍要回表单

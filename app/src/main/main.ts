@@ -8,6 +8,7 @@ import { registerStoreIpc } from './ipc/store'
 import { registerTaskIpc } from './ipc/task'
 import { registerPackIpc } from './ipc/pack'
 import { registerShellIpc } from './ipc/shell'
+import { installApplicationMenu } from './menu'
 import { initPaths } from './paths'
 import { currentBackgroundColor, initTheme } from './theme'
 import type { ThemeChoice } from '../shared/types/settings'
@@ -97,6 +98,9 @@ app.whenReady().then(() => {
 
   // 建窗口之前定下主题：底色与渲染层的 prefers-color-scheme 都取它
   const theme = initTheme()
+
+  // 自带菜单是英文的，还带着「重新加载」；换成自己的那份
+  installApplicationMenu()
 
   createWindow(theme)
 
