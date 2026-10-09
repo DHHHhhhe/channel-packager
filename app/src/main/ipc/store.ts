@@ -18,7 +18,6 @@ import {
   drainStoreProblems,
   migrateGroupsIfNeeded,
   readChannels,
-  readGroups,
   readJksFile,
   readTemplate,
   writeChannels,
@@ -57,7 +56,6 @@ export function registerStoreIpc(): void {
             displayName: mutation.displayName,
             alias: mutation.alias,
             storePassword: mutation.storePassword,
-            app: mutation.app,
           })
         case 'update':
           return updateJksItem(mutation.item)
@@ -75,10 +73,8 @@ export function registerStoreIpc(): void {
   })
 
   ipcMain.handle(IPC_CHANNELS.storeGetChannels, (_event, id: string): ChannelConfig => {
-    // 键是**分组 id**。老数据（还没迁移过、或渠道文件是孤儿）退回 jks 条目上的 app
-    const group = readGroups().items.find((entry) => entry.id === id)
-    const legacy = readJksFile().items.find((entry) => entry.id === id)
-    return readChannels(id, group?.app ?? legacy?.app ?? id)
+    // 键是**分组 id**；文件缺失时给一份空配置，界面自己决定怎么提示
+    return readChannels(id)
   })
 
   ipcMain.handle(

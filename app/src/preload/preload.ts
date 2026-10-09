@@ -118,24 +118,16 @@ const api: RendererApi = {
     return ipcRenderer.invoke(IPC_CHANNELS.taskCheckSource, apkPath, jksId, signMode)
   },
 
-  exportChannels(
-    id: string,
-    app: string,
-    channelInfoList: ChannelEntry[],
-  ): Promise<ChannelExportResult> {
-    return ipcRenderer.invoke(IPC_CHANNELS.channelsExport, id, app, channelInfoList)
+  exportChannels(id: string, channelInfoList: ChannelEntry[]): Promise<ChannelExportResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.channelsExport, id, channelInfoList)
   },
 
-  previewChannels(app: string): Promise<ChannelListPreview | null> {
-    return ipcRenderer.invoke(IPC_CHANNELS.channelsImport, app)
+  previewChannels(): Promise<ChannelListPreview | null> {
+    return ipcRenderer.invoke(IPC_CHANNELS.channelsImport)
   },
 
-  exportSampleChannels(
-    id: string,
-    app: string,
-    prefix: string,
-  ): Promise<ChannelSampleExportResult> {
-    return ipcRenderer.invoke(IPC_CHANNELS.channelsExportSample, id, app, prefix)
+  exportSampleChannels(id: string, prefix: string): Promise<ChannelSampleExportResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.channelsExportSample, id, prefix)
   },
 
   exportConfigPack(includeCredentials: boolean): Promise<PackExportResult> {

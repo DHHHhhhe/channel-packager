@@ -56,7 +56,6 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
   const [displayName, setDisplayName] = useState('')
   const [alias, setAlias] = useState('')
   const [password, setPassword] = useState('')
-  const [app, setApp] = useState('')
   const [channelMode, setChannelMode] = useState<ChannelMode>('empty')
   const [prefix, setPrefix] = useState('')
   /** 最终要保存的渠道列表。三种来源都只是「怎么填这份列表」，列表本身才是真相 */
@@ -93,7 +92,6 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
     setDisplayName(item?.displayName ?? '')
     setAlias(item?.alias ?? '')
     setPassword(item?.storePassword ?? '')
-    setApp(item?.app ?? '')
     setChannelMode('empty')
     setPrefix(item?.id ?? '')
     setDraftChannels([])
@@ -148,7 +146,7 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
 
   /** 按模板 + 前缀算出一份新的草稿行 */
   const templateDraft = (value: string): PairRow[] =>
-    buildChannelsFromTemplate(template.suffixes, value, app.trim()).channelInfoList.map((entry) =>
+    buildChannelsFromTemplate(template.suffixes, value).channelInfoList.map((entry) =>
       newPairRow(entry.channel, entry.alias ?? ''),
     )
 
@@ -208,7 +206,6 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
     setDisplayName(fileNameOf(picked))
     setAlias(base)
     setPassword(derivePassword(picked))
-    setApp(base)
     setPrefix(base)
     setFeedback(null)
     // 换了文件，之前那个「先选择 jks 文件」的红框自然该撤掉
@@ -283,13 +280,6 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
        * K3：原样导入，不做任何前缀替换。
        * 这里先不填列表，只给一份可编辑的预览 —— 选错文件时不会把已经编好的渠道冲掉。
        */
-      const notes: string[] = []
-      const fileApp = parsed.defaultExtraInfo?.app?.trim()
-      if (fileApp && fileApp !== app.trim()) {
-        notes.push(
-          `文件里的英文名是「${fileApp}」，保存时按表单里的「${app.trim() || '空'}」写。`,
-        )
-      }
       setJsonPreview({
         fileName: file.name,
         channels: parsed.channelInfoList.map((entry) => ({
@@ -297,7 +287,7 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
           alias: entry.alias,
         })),
         count: parsed.channelInfoList.length,
-        notes,
+        notes: [],
       })
       setChannelMode('json')
       setFeedback(null)
@@ -347,7 +337,6 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
         displayName: displayName.trim() || target.displayName,
         alias: finalAlias,
         storePassword: password,
-        app: app.trim() || target.app,
         credentialSource: 'manual',
       },
     })
@@ -364,7 +353,6 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
       displayName: displayName.trim() || undefined,
       alias: alias.trim(),
       storePassword: password,
-      app: app.trim() || undefined,
     })
     if (added.status === 'duplicate') {
       failWith(added.message ?? '该文件已存在。', 'keystore')
@@ -415,12 +403,8 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
         id: created.id,
         name: created.displayName,
         appLabel: '',
-        app: created.app,
       })
-      await saveChannels(group.item?.id ?? created.id, {
-        defaultExtraInfo: { app: created.app },
-        channelInfoList,
-      })
+      await saveChannels(group.item?.id ?? created.id, { channelInfoList })
     }
 
     const suffix =
@@ -584,7 +568,7 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
                 placeholder="sample"
               />
             </div>
-            <div className="flex flex-col gap-1.5">
+            <div className="col-span-2 flex flex-col gap-1.5">
               <Label htmlFor="jks-password">密码</Label>
               <div className="relative">
                 <Input
@@ -611,19 +595,6 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
                   {showPassword ? <EyeOff /> : <Eye />}
                 </Button>
               </div>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="jks-app">英文名</Label>
-              <Input
-                id="jks-app"
-                value={app}
-                onChange={(event) => setApp(event.target.value)}
-                placeholder="例如 demo"
-              />
-              <p className="text-xs text-muted-foreground">
-                会写进安装包，App 里按这个名字读取渠道。新增时下面配的渠道会存进一个同名分组，
-                分组的英文名取这里；分组建好之后以分组上的为准。
-              </p>
             </div>
           </div>
 

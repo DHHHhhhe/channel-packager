@@ -56,8 +56,6 @@ interface Prepared {
   sign?: { item: JksItem; keystorePath: string }
   /** 渠道来源的人话描述，进日志 */
   sourceLabel: string
-  /** 写进 defaultExtraInfo.app 的应用名 */
-  app: string
   pickedEntries: ChannelEntry[]
   outputDir: string
 }
@@ -115,7 +113,6 @@ function prepare(input: TaskInput): Prepared {
   }
 
   const groupId = input.groupId?.trim() ?? ''
-  let app: string
   let sourceLabel: string
   let sourceEntries: ChannelEntry[]
   if (groupId !== '') {
@@ -123,15 +120,14 @@ function prepare(input: TaskInput): Prepared {
     if (!group) {
       throw new Error(`找不到分组：${groupId}。可能刚被删掉了，回到出包页重选一个。`)
     }
-    app = group.app
-    sourceLabel = `分组「${group.name}」（${group.app}）`
-    sourceEntries = readChannels(group.id, group.app).channelInfoList
+    sourceLabel =
+      group.appLabel.trim() !== '' ? `分组「${group.name}」（${group.appLabel}）` : `分组「${group.name}」`
+    sourceEntries = readChannels(group.id).channelInfoList
   } else if (input.channelInfoList) {
     const entries = input.channelInfoList
     if (entries.length === 0) {
       throw new Error('自定义渠道列表是空的：请填渠道号，或导入一份渠道 JSON。')
     }
-    app = input.app?.trim() ?? ''
     sourceLabel = '自定义渠道列表（出包页临时指定）'
     sourceEntries = entries
   } else {
@@ -164,7 +160,6 @@ function prepare(input: TaskInput): Prepared {
     apkDir: path.dirname(apkPath),
     sign,
     sourceLabel,
-    app,
     pickedEntries,
     outputDir,
   }
@@ -184,8 +179,6 @@ export async function runPipeline(
   const artifacts: TaskArtifact[] = []
   let workDir = ''
   let outputDir = input.outputDir
-  // 结果卡片要回显写进包的应用名；prepare 之前还是空的，校验就失败时也不该编一个
-  let appName = ''
 
   // 子进程输出行需要知道当前属于哪个阶段，所以把阶段记在闭包里
   let currentStage: TaskStage = 'validate'
@@ -207,8 +200,7 @@ export async function runPipeline(
       logFile: log.file,
       artifacts,
       warnings,
-      // 成功时不写这两个键，避免结果里多出恒为 undefined / 空串的字段
-      ...(appName !== '' ? { appName } : {}),
+      // 成功时不写这个键，避免结果里多出恒为 undefined 的字段
       ...(failure ? { failure } : {}),
     }
   }
@@ -217,7 +209,6 @@ export async function runPipeline(
     progress('validate', '校验输入')
     const p = prepare(input)
     outputDir = p.outputDir
-    appName = p.app
     log.info(`输入 APK：${p.apkPath}`)
     log.info(`渠道来源：${p.sourceLabel}`)
     log.info(`签名模式：${input.signMode}`)
@@ -335,13 +326,8 @@ export async function runPipeline(
     }
 
     progress('channel-json', '写渠道配置')
-    const config: ChannelConfig = {
-      defaultExtraInfo: { app: p.app },
-      channelInfoList: p.pickedEntries,
-    }
-    if (p.app === '') {
-      warnings.push('这次出包没有英文应用名，包里的应用标识是空的')
-    }
+    // 只写渠道条目：walle 的 defaultExtraInfo 是可选的额外信息，本工具不再写它
+    const config: ChannelConfig = { channelInfoList: p.pickedEntries }
     const configFile = path.join(workDir, 'channel.json')
     fs.writeFileSync(configFile, JSON.stringify(config, null, 2), 'utf8')
     log.info(`渠道配置：${configFile}`)

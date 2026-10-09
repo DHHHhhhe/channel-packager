@@ -12,7 +12,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -31,8 +30,6 @@ import type { ChannelEntry, GroupItem } from '@shared/types/store'
 export interface CustomChannelExportPayload {
   /** 这次真正写进包的渠道条目 */
   channels: ChannelEntry[]
-  /** 写进 defaultExtraInfo.app 的英文名 */
-  app: string
   /** 要并入的目标分组 id；'' = 这次不往分组里存 */
   groupId: string
   /** 并进目标分组的那几条 —— 只含勾中的、且分组里还没有的 */
@@ -44,12 +41,10 @@ interface CustomChannelExportDialogProps {
   onOpenChange: (open: boolean) => void
   /** 可存入的分组。只列已有的 —— 建 / 改 / 删分组仍在「渠道配置」页 */
   groups: GroupItem[]
-  /** 英文名的默认值：当前所选分组的英文名 */
-  defaultApp: string
   /** 目标分组的默认值：当前所选分组 */
   defaultGroupId: string
   /** 「重跑本次」把上次那份自定义列表带回来；null = 从空开始 */
-  initial: { channels: ChannelEntry[]; app: string } | null
+  initial: { channels: ChannelEntry[] } | null
   busy?: boolean
   onConfirm: (payload: CustomChannelExportPayload) => void
   /** 一个分组都没有时给条去「渠道配置」的路 */
@@ -70,7 +65,6 @@ export function CustomChannelExportDialog({
   open,
   onOpenChange,
   groups,
-  defaultApp,
   defaultGroupId,
   initial,
   busy = false,
@@ -80,7 +74,6 @@ export function CustomChannelExportDialog({
   const { getChannels } = useAppStore()
 
   const [rows, setRows] = useState<PairRow[]>([])
-  const [app, setApp] = useState('')
   const [targetGroupId, setTargetGroupId] = useState('')
   /** 勾了「存入分组」的行 rowId */
   const [storeIds, setStoreIds] = useState<string[]>([])
@@ -100,13 +93,12 @@ export function CustomChannelExportDialog({
       return
     }
     setRows(initial ? initial.channels.map((entry) => newPairRow(entry.channel, entry.alias ?? '')) : [newPairRow()])
-    setApp(initial ? initial.app : defaultApp)
     setTargetGroupId(defaultGroupId !== '' ? defaultGroupId : (groups[0]?.id ?? ''))
     setStoreIds([])
     setImportError('')
     setImportName('')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, initial, defaultApp, defaultGroupId])
+  }, [open, initial, defaultGroupId])
 
   /* 目标分组换了就重新读它的条目 —— 「已存在几条」得按分组当下的内容算 */
   useEffect(() => {
@@ -162,7 +154,6 @@ export function CustomChannelExportDialog({
     rows.length > 0 &&
     !hasEmpty &&
     duplicates.length === 0 &&
-    app.trim() !== '' &&
     (toAdd.length === 0 || targetGroupId !== '')
 
   const handleImport = async (file: File | undefined): Promise<void> => {
@@ -176,10 +167,6 @@ export function CustomChannelExportDialog({
           ? parsed.channelInfoList.map((entry) => newPairRow(entry.channel, entry.alias ?? ''))
           : [newPairRow()],
       )
-      // 文件里带了 app 就跟着走 —— 它跟这份渠道是配套的
-      if (parsed.app !== undefined && parsed.app.trim() !== '') {
-        setApp(parsed.app)
-      }
       setImportName(file.name)
       setImportError('')
       setStoreIds([])
@@ -243,19 +230,6 @@ export function CustomChannelExportDialog({
             <span>{importError}</span>
           </p>
         ) : null}
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="custom-app">英文名</Label>
-          <Input
-            id="custom-app"
-            value={app}
-            onChange={(event) => setApp(event.target.value)}
-            placeholder="例如 demo"
-          />
-          <p className="text-xs text-muted-foreground">
-            会写进安装包，App 里按这个名字读取渠道，所以要用代码认得的英文标识。
-          </p>
-        </div>
 
         <div className="overflow-hidden rounded-lg border">
           <Table>
@@ -366,7 +340,7 @@ export function CustomChannelExportDialog({
                 <SelectContent>
                   {groups.map((item) => (
                     <SelectItem key={item.id} value={item.id}>
-                      {item.name}（{item.app}）
+                      {item.appLabel ? `${item.name}（${item.appLabel}）` : item.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -398,7 +372,7 @@ export function CustomChannelExportDialog({
             取消
           </Button>
           <Button
-            onClick={() => onConfirm({ channels, app: app.trim(), groupId: targetGroupId, rowsToSave })}
+            onClick={() => onConfirm({ channels, groupId: targetGroupId, rowsToSave })}
             disabled={!canConfirm}
           >
             {busy ? <Spinner /> : null}

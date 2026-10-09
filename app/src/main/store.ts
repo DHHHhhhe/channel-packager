@@ -183,24 +183,25 @@ export function writeTemplate(template: TemplateFile): void {
   })
 }
 
-/** 渠道文件缺失时给一份空配置，app 名取分组（老数据里退回 jks 条目）上的值 */
-export function readChannels(id: string, appName: string): ChannelConfig {
+/** 渠道文件缺失时给一份空配置 —— 分组还没配过渠道是常态 */
+export function readChannels(id: string): ChannelConfig {
   const filePath = channelsFilePath(id)
-  const empty: ChannelConfig = { defaultExtraInfo: { app: appName }, channelInfoList: [] }
+  const empty: ChannelConfig = { channelInfoList: [] }
   const { value, problem } = readJson<ChannelConfig>(filePath, `渠道列表（${id}）`)
   if (problem) {
     noteProblem(problem)
     return empty
   }
   if (!value) {
-    // 这个 jks 还没建过渠道列表，是常态
+    // 这个分组还没建过渠道列表，是常态
     return empty
   }
   if (!Array.isArray(value.channelInfoList)) {
     noteProblem(makeProblem(`渠道列表（${id}）`, filePath, '结构不对：缺少 channelInfoList 数组'))
     return empty
   }
-  return value
+  // 老文件里可能还留着 defaultExtraInfo，读进来只取渠道条目，顺手把它丢掉
+  return { channelInfoList: value.channelInfoList }
 }
 
 export function writeChannels(id: string, config: ChannelConfig): void {
@@ -236,40 +237,76 @@ export function writeGroups(file: GroupFile): void {
 }
 
 /**
+ * 老数据里的「英文名」字段（`app`）。新代码不再有这个概念，
+ * 但升级前落盘的 groups.json / jks.json 里还留着，迁移时读一次。
+ */
+function readLegacyApp(entry: unknown): string {
+  if (typeof entry !== 'object' || entry === null) {
+    return ''
+  }
+  const raw = (entry as Record<string, unknown>).app
+  return typeof raw === 'string' ? raw.trim() : ''
+}
+
+function hasLegacyApp(entry: unknown): boolean {
+  return typeof entry === 'object' && entry !== null && 'app' in (entry as Record<string, unknown>)
+}
+
+/**
  * 老数据迁移（R5 / R8）：`channels/<jksId>.json` 原地成为同名分组。
  *
  * - **一个文件都不删、不搬**：分组 id 就是原 jks id，渠道文件路径一字不变。
  * - 幂等判据是「groups.json 是否已含该 id」，重复启动不会重复建。
  * - 只对**渠道文件存在**的 jks 建分组，否则会给从没配过渠道的 jks 造一堆空分组。
  * - 反向不成立：channels/ 下的孤儿文件（jks 已删）不建分组，保留原地不动。
+ *
+ * 「英文名」字段删除后这里多做一件事：老条目上的 `app` 回填到**中文应用名**
+ * （只在中文应用名为空时补），否则升级时那份应用名会跟着字段一起消失；
+ * 字段本身顺手从索引里丢掉。
  */
 export function migrateGroupsIfNeeded(): GroupFile {
   const groups = readGroups()
   const jks = readJksFile()
   const known = new Set(groups.items.map((item) => item.id))
   const now = new Date().toISOString()
-  const added: GroupItem[] = []
+  const items: GroupItem[] = []
+  let changed = false
+
+  for (const entry of groups.items) {
+    const legacy = readLegacyApp(entry)
+    const backfill = entry.appLabel.trim() === '' ? legacy : ''
+    if (hasLegacyApp(entry) || backfill !== '') {
+      changed = true
+    }
+    items.push({
+      id: entry.id,
+      name: entry.name,
+      appLabel: backfill !== '' ? backfill : entry.appLabel,
+      createdAt: entry.createdAt,
+      updatedAt: backfill !== '' ? now : entry.updatedAt,
+    })
+  }
 
   for (const item of jks.items) {
     if (known.has(item.id) || !fs.existsSync(channelsFilePath(item.id))) {
       continue
     }
-    added.push({
+    items.push({
       id: item.id,
       name: item.displayName,
-      // 中文应用名是本次新增的概念，老数据里没有来源 —— 留空由用户补
-      appLabel: '',
-      app: item.app,
+      // 老 jks 上的英文名是这里唯一能拿到的应用名来源，回填到中文应用名
+      appLabel: readLegacyApp(item),
       createdAt: now,
       updatedAt: now,
     })
     known.add(item.id)
+    changed = true
   }
 
-  if (added.length === 0) {
-    return groups
+  if (!changed) {
+    return { version: GROUPS_FILE_VERSION, items }
   }
-  const migrated: GroupFile = { version: GROUPS_FILE_VERSION, items: [...groups.items, ...added] }
+  const migrated: GroupFile = { version: GROUPS_FILE_VERSION, items }
   writeGroups(migrated)
   return migrated
 }
@@ -284,18 +321,15 @@ export function applyGroupMutation(mutation: GroupMutation): GroupMutationResult
 
   if (mutation.action === 'add') {
     const taken = new Set(file.items.map((item) => item.id))
-    // 分组没有源文件名可借，id 从英文名推导；英文名也空时退到分组名，最后兜到 group。
-    // 调用方指定了 id（新建 jks 顺手建分组）就优先用它 —— 渠道文件路径依赖它
+    // 分组没有源文件名可借，id 从分组名推导，兜到 group。
+    // 调用方指定了 id（新建签名文件顺手建分组）就优先用它 —— 渠道文件路径依赖它
     const requested = toFileId(mutation.id ?? '', '')
-    const base =
-      requested !== ''
-        ? requested
-        : toFileId(mutation.app, toFileId(mutation.name, 'group'))
+    const base = requested !== '' ? requested : toFileId(mutation.name, 'group')
     const id = allocateId(base, taken)
     let name = mutation.name.trim()
     if (name === '') {
       // Q4：分组名默认取应用名。界面会预填，这里只是兜底
-      name = mutation.appLabel.trim() !== '' ? mutation.appLabel.trim() : mutation.app.trim()
+      name = mutation.appLabel.trim()
     }
     if (name === '') {
       name = id
@@ -304,7 +338,6 @@ export function applyGroupMutation(mutation: GroupMutation): GroupMutationResult
       id,
       name,
       appLabel: mutation.appLabel,
-      app: mutation.app,
       createdAt: now,
       updatedAt: now,
     }

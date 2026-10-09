@@ -104,27 +104,19 @@ export interface RendererApi {
    * 不是磁盘上那份 —— 导入只填界面，两者必须以界面为准才自洽。
    * 取消时 canceled 为 true。
    */
-  exportChannels(
-    id: string,
-    app: string,
-    channelInfoList: ChannelEntry[],
-  ): Promise<ChannelExportResult>
+  exportChannels(id: string, channelInfoList: ChannelEntry[]): Promise<ChannelExportResult>
 
   /**
    * 选渠道 JSON 并解析，**只读不落盘**，返回文件里的条目供用户预览与编辑。
    * 用户取消时返回 null。
    */
-  previewChannels(app: string): Promise<ChannelListPreview | null>
+  previewChannels(): Promise<ChannelListPreview | null>
 
   /**
    * 导出示例渠道 JSON。只在渠道列表为空时提供 ——
    * 条目来自「渠道模板」页的模板，模板为空时退回内置的两条兜底示例。
    */
-  exportSampleChannels(
-    id: string,
-    app: string,
-    prefix: string,
-  ): Promise<ChannelSampleExportResult>
+  exportSampleChannels(id: string, prefix: string): Promise<ChannelSampleExportResult>
 
   /**
    * 导出配置包 zip。

@@ -1,18 +1,16 @@
-import type { ChannelConfig, ChannelEntry, TemplateSuffix } from '../types/store'
+import type { ChannelConfig, TemplateSuffix } from '../types/store'
 
 /**
- * 套用模板生成某个 jks 的渠道列表。
+ * 套用模板生成某个分组的渠道列表。
  * `channel = <前缀> + "_" + suffix`；前缀为空时退化为 `channel = suffix`。
  * 返回的是全新对象，与模板无引用关系 —— 之后增删改副本都不会动到模板（K1）。
  */
 export function buildChannelsFromTemplate(
   suffixes: readonly TemplateSuffix[],
   prefix: string,
-  app: string,
 ): ChannelConfig {
   const trimmedPrefix = prefix.trim()
   return {
-    defaultExtraInfo: { app },
     channelInfoList: suffixes.map((item) => {
       const channel = trimmedPrefix ? `${trimmedPrefix}_${item.suffix}` : item.suffix
       const alias = item.alias.trim()
@@ -22,22 +20,15 @@ export function buildChannelsFromTemplate(
 }
 
 /**
- * 解析结果。
- * `app` 可能没有 —— 它属于 jks 自己的配置，调用方用条目上的 app 补齐，
- * 所以这里不做「补个空字符串」这种会污染数据的兜底。
- */
-export interface ParsedChannelConfig {
-  app?: string
-  channelInfoList: ChannelEntry[]
-}
-
-/**
  * 解析外部 JSON 成渠道配置，结构与 `channelConfig.sample.json` 一致。
  *
  * 刻意严格：结构不符就抛带原因的错，不静默兜底。静默把一份坏文件读成空列表，
  * 用户会以为「导入成功但渠道没了」，那比直接报错难查得多。
+ *
+ * 文件里带 `defaultExtraInfo` 是允许的（老配置与老版本导出的都有），
+ * 读进来直接丢掉 —— 本工具不再写这个字段。
  */
-export function parseChannelConfig(text: string, sourceLabel = '文件'): ParsedChannelConfig {
+export function parseChannelConfig(text: string, sourceLabel = '文件'): ChannelConfig {
   let parsed: unknown
   try {
     parsed = JSON.parse(text)
@@ -69,11 +60,5 @@ export function parseChannelConfig(text: string, sourceLabel = '文件'): Parsed
     return alias ? { channel: entry.channel.trim(), alias } : { channel: entry.channel.trim() }
   })
 
-  const extra = record.defaultExtraInfo
-  const app =
-    typeof extra === 'object' && extra !== null && typeof (extra as Record<string, unknown>).app === 'string'
-      ? ((extra as Record<string, unknown>).app as string)
-      : undefined
-
-  return app !== undefined ? { app, channelInfoList } : { channelInfoList }
+  return { channelInfoList }
 }

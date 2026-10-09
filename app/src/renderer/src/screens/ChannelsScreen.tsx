@@ -105,10 +105,10 @@ export function ChannelsScreen() {
     }
   }, [selectedId, getChannels])
 
-  // 前缀默认取分组的英文名（写进包的那个标识），可直接改
+  // 换分组时把前缀清空 —— 前缀由用户按这次要出的渠道自己填，不给默认值
   useEffect(() => {
-    setPrefix(selected?.app ?? selectedId)
-  }, [selected?.app, selectedId])
+    setPrefix('')
+  }, [selectedId])
 
   const duplicates = useMemo(() => findDuplicates(rows.map((row) => row.key)), [rows])
   const hasEmpty = rows.some((row) => row.key.trim() === '')
@@ -123,7 +123,7 @@ export function ChannelsScreen() {
     if (!selected) {
       return
     }
-    const config = buildChannelsFromTemplate(template.suffixes, prefix, selected.app)
+    const config = buildChannelsFromTemplate(template.suffixes, prefix)
     setRows(config.channelInfoList.map((entry) => newPairRow(entry.channel, entry.alias ?? '')))
     setDirty(true)
     setStatus({
@@ -151,11 +151,7 @@ export function ChannelsScreen() {
     setStatus(null)
     try {
       // 导的是界面上的列表，不是磁盘上那份 —— 刚导入还没保存时也能拿到看到的内容
-      const result = await window.api.exportChannels(
-        selected.id,
-        selected.app,
-        toChannelEntries(rows),
-      )
+      const result = await window.api.exportChannels(selected.id, toChannelEntries(rows))
       if (result.canceled) {
         return
       }
@@ -181,7 +177,7 @@ export function ChannelsScreen() {
     }
     setStatus(null)
     try {
-      const result = await window.api.previewChannels(selected.app)
+      const result = await window.api.previewChannels()
       if (result === null) {
         return
       }
@@ -202,7 +198,7 @@ export function ChannelsScreen() {
     }
     setStatus(null)
     try {
-      const result = await window.api.exportSampleChannels(selected.id, selected.app, prefix)
+      const result = await window.api.exportSampleChannels(selected.id, prefix)
       if (result.canceled) {
         return
       }
@@ -249,7 +245,6 @@ export function ChannelsScreen() {
     setSaving(true)
     try {
       await saveChannels(selected.id, {
-        defaultExtraInfo: { app: selected.app },
         channelInfoList: toChannelEntries(rows),
       })
       setDirty(false)
@@ -340,7 +335,7 @@ export function ChannelsScreen() {
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <p className="text-sm text-muted-foreground">
-              一个分组代表一个应用：中文应用名只在本工具里显示，英文名会写进安装包。出包时选中哪个分组，就按哪个分组的渠道列表出包。
+              一个分组代表一个应用：分组名是渠道列表的名字，中文应用名只在本工具里显示、不会写进安装包。出包时选中哪个分组，就按哪个分组的渠道列表出包。
             </p>
             <p className="text-sm text-muted-foreground">
               签名文件只负责签名：需要重签名时才要用到，只写渠道时可以完全不选。
@@ -393,9 +388,9 @@ export function ChannelsScreen() {
           <CardTitle>选择分组</CardTitle>
           <CardDescription>
             {selected
-              ? `英文名 ${selected.app}${
-                  selected.appLabel ? `　中文应用名 ${selected.appLabel}` : ''
-                }`
+              ? selected.appLabel
+                ? `中文应用名 ${selected.appLabel}`
+                : '这个分组还没填中文应用名。'
               : '请选择一个分组。'}
           </CardDescription>
         </CardHeader>
@@ -409,7 +404,7 @@ export function ChannelsScreen() {
                 <SelectContent>
                   {groups.map((item) => (
                     <SelectItem key={item.id} value={item.id}>
-                      {item.name}（{item.app}）
+                      {item.appLabel ? `${item.name}（${item.appLabel}）` : item.name}
                     </SelectItem>
                   ))}
                 </SelectContent>

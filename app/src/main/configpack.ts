@@ -3,7 +3,14 @@ import os from 'node:os'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { TEMPLATE_SEED } from '../shared/constants/templateSeed'
-import type { ChannelEntry, GroupFile, GroupItem, JksItem, TemplateSuffix } from '../shared/types/store'
+import type {
+  ChannelConfig,
+  ChannelEntry,
+  GroupFile,
+  GroupItem,
+  JksItem,
+  TemplateSuffix,
+} from '../shared/types/store'
 import {
   PACK_FORMAT,
   PACK_VERSION,
@@ -128,11 +135,41 @@ function parseIncomingJks(text: string): JksItem[] {
       fileSize: typeof entry.fileSize === 'number' ? entry.fileSize : 0,
       alias: typeof entry.alias === 'string' ? entry.alias : '',
       storePassword: typeof entry.storePassword === 'string' ? entry.storePassword : '',
-      app: typeof entry.app === 'string' ? entry.app : '',
       credentialSource: entry.credentialSource === 'manual' ? 'manual' : 'derived',
       importedAt: typeof entry.importedAt === 'string' ? entry.importedAt : new Date().toISOString(),
     }
   })
+}
+
+/**
+ * 配置包（尤其是老包）里 jks.json 上的「英文名」字段。
+ *
+ * 这个字段已从数据模型里删除，但老包里它是**唯一**能拿到的应用名来源 ——
+ * 导入时回填到分组的中文应用名，否则那份应用名会跟着字段一起消失。
+ * 解析失败不在这里报错：真正的报错由 parseIncomingJks 给出。
+ */
+function parseLegacyApps(text: string): Map<string, string> {
+  const result = new Map<string, string>()
+  try {
+    const parsed = JSON.parse(text) as { items?: unknown }
+    if (!Array.isArray(parsed.items)) {
+      return result
+    }
+    for (const raw of parsed.items) {
+      if (typeof raw !== 'object' || raw === null) {
+        continue
+      }
+      const entry = raw as Record<string, unknown>
+      const id = typeof entry.id === 'string' ? entry.id.trim() : ''
+      const app = typeof entry.app === 'string' ? entry.app.trim() : ''
+      if (id !== '' && app !== '') {
+        result.set(id, app)
+      }
+    }
+  } catch {
+    // 交给 parseIncomingJks 报错
+  }
+  return result
 }
 
 function readManifest(dir: string): PackManifest {
@@ -412,23 +449,24 @@ function restorePackedGroups(
   let imported = 0
 
   for (const raw of incoming) {
-    const entry = raw as Partial<GroupItem>
-    if (typeof entry.id !== 'string' || entry.id.trim() === '') {
+    const entry = raw as Record<string, unknown>
+    const packId = typeof entry.id === 'string' ? entry.id.trim() : ''
+    if (packId === '') {
       continue
     }
-    const packId = entry.id
     const id = allocateId(packId, taken)
-    const app = typeof entry.app === 'string' ? entry.app : ''
-    const appLabel = typeof entry.appLabel === 'string' ? entry.appLabel : ''
+    // 「英文名」字段已删除：老包的条目上还带着它，回填到中文应用名（只在中文应用名为空时补）
+    const legacyApp = typeof entry.app === 'string' ? entry.app.trim() : ''
+    const rawLabel = typeof entry.appLabel === 'string' ? entry.appLabel : ''
+    const appLabel = rawLabel.trim() !== '' ? rawLabel : legacyApp
     const rawName = typeof entry.name === 'string' ? entry.name.trim() : ''
-    // 名字缺了就退回中文应用名、再退回英文名 —— 与 applyGroupMutation 的兜底同序
-    const name = rawName !== '' ? rawName : appLabel.trim() !== '' ? appLabel.trim() : app
+    // 名字缺了就退回中文应用名 —— 与 applyGroupMutation 的兜底同序
+    const name = rawName !== '' ? rawName : appLabel.trim()
 
     groupFile.items.push({
       id,
       name: name.trim() === '' ? id : name,
       appLabel,
-      app,
       createdAt: now,
       updatedAt: now,
     })
@@ -439,8 +477,7 @@ function restorePackedGroups(
     if (manifest.files[channelsRelative] !== undefined) {
       const channelsText = fs.readFileSync(safeJoin(dir, channelsRelative), 'utf8')
       const channels = parseChannelConfig(channelsText, `配置包里的 ${channelsRelative}`)
-      // defaultExtraInfo.app 归分组所有：用索引里的值写回，不信渠道文件里那份（R1）
-      writeChannels(id, { defaultExtraInfo: { app }, channelInfoList: channels.channelInfoList })
+      writeChannels(id, { channelInfoList: channels.channelInfoList })
     }
   }
 
@@ -470,7 +507,9 @@ export async function importConfigPack(input: PackImportInput): Promise<PackImpo
     notes.push('这份包不含签名凭据（只有渠道模板），签名文件需自行新增')
   }
   try {
-    const incoming = parseIncomingJks(fs.readFileSync(safeJoin(dir, JKS_NAME), 'utf8'))
+    const jksText = fs.readFileSync(safeJoin(dir, JKS_NAME), 'utf8')
+    const incoming = parseIncomingJks(jksText)
+    const legacyApps = parseLegacyApps(jksText)
     const current = readJksFile()
     const items = [...current.items]
     const byId = new Map(items.map((item) => [item.id, item]))
@@ -544,19 +583,15 @@ export async function importConfigPack(input: PackImportInput): Promise<PackImpo
             groupFile.items.push({
               id: targetId,
               name: targetItem.displayName,
-              // 中文应用名是本次新增的概念，老包里没有来源 —— 留空由用户补
-              appLabel: '',
-              app: targetItem.app,
+              // 老包没有分组索引，jks 上的英文名是唯一的应用名来源，回填到中文应用名
+              appLabel: legacyApps.get(item.id) ?? '',
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
             })
             takenGroups.add(targetId)
             groupsChanged = true
           }
-          writeChannels(targetId, {
-            defaultExtraInfo: { app: targetItem.app },
-            channelInfoList: parsed.channelInfoList,
-          })
+          writeChannels(targetId, { channelInfoList: parsed.channelInfoList })
         }
       }
 
@@ -635,12 +670,8 @@ export async function importConfigPack(input: PackImportInput): Promise<PackImpo
  * 「导入 JSON」只把条目填进界面、由用户点「保存渠道列表」才落盘，
  * 若这里仍旧读文件，用户刚导入还没保存时导出的会是旧内容，两边对不上。
  */
-export function exportChannels(
-  app: string,
-  targetPath: string,
-  channelInfoList: ChannelEntry[],
-): number {
-  const config = { defaultExtraInfo: { app }, channelInfoList }
+export function exportChannels(targetPath: string, channelInfoList: ChannelEntry[]): number {
+  const config: ChannelConfig = { channelInfoList }
   fs.mkdirSync(path.dirname(targetPath), { recursive: true })
   fs.writeFileSync(targetPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8')
   return channelInfoList.length
@@ -652,20 +683,15 @@ export function exportChannels(
  * 落盘统一走「保存渠道列表」。
  *
  * **原样复制** channelInfoList —— 渠道名与别名逐字保留，不做前缀替换（K1/R14）。
+ * 文件里带的 `defaultExtraInfo` 直接忽略，不再有「与分组的值不一致」这回事。
  */
-export function previewChannels(app: string, sourcePath: string): ChannelListPreview {
+export function previewChannels(sourcePath: string): ChannelListPreview {
   const parsed = parseChannelConfig(fs.readFileSync(sourcePath, 'utf8'), '选择的文件')
-  const notes: string[] = []
-  if (parsed.app !== undefined && parsed.app !== app) {
-    notes.push(
-      `文件里的 defaultExtraInfo.app 是「${parsed.app}」，与本分组的「${app}」不同；按分组的值来，文件里的未采用。`,
-    )
-  }
   return {
     fileName: path.basename(sourcePath),
     channels: parsed.channelInfoList,
     count: parsed.channelInfoList.length,
-    notes,
+    notes: [],
   }
 }
 
@@ -681,20 +707,18 @@ const SAMPLE_SUFFIXES: TemplateSuffix[] = [
  * 条目按「渠道模板」页的模板 + 前缀展开（与「按模板生成」共用
  * `buildChannelsFromTemplate`，避免两处算出不同的渠道名）；模板为空时退回两条兜底示例。
  *
- * 顶层多一个 `_说明` 字段：`parseChannelConfig` 只读 `channelInfoList` 与
- * `defaultExtraInfo`，多余字段会被忽略，所以它纯粹是写给用户看的注释。
+ * 顶层多一个 `_说明` 字段：`parseChannelConfig` 只读 `channelInfoList`，
+ * 多余字段会被忽略，所以它纯粹是写给用户看的注释。
  */
 export function exportSampleChannels(
-  app: string,
   prefix: string,
   targetPath: string,
 ): { count: number; fromTemplate: boolean } {
   const suffixes = readTemplate().suffixes
   const fromTemplate = suffixes.length > 0
-  const config = buildChannelsFromTemplate(fromTemplate ? suffixes : SAMPLE_SUFFIXES, prefix, app)
+  const config = buildChannelsFromTemplate(fromTemplate ? suffixes : SAMPLE_SUFFIXES, prefix)
   const payload = {
-    _说明:
-      '这是示例文件。改好 channelInfoList 后用「导入 JSON」读回来；defaultExtraInfo.app 会按当前分组的值覆盖。',
+    _说明: '这是示例文件。改好 channelInfoList 后用「导入 JSON」读回来。',
     ...config,
   }
   fs.mkdirSync(path.dirname(targetPath), { recursive: true })

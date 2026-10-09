@@ -23,7 +23,6 @@ export interface AddKeystoreOptions {
   displayName?: string
   alias?: string
   storePassword?: string
-  app?: string
 }
 
 /**
@@ -63,7 +62,6 @@ export function addKeystore(sourcePath: string, options: AddKeystoreOptions = {}
     fileSize: stat.size,
     alias,
     storePassword,
-    app: options.app ?? id,
     // 判定依据是最终值是否等于按文件名推导的结果。界面会先自动带出再让用户改，
     // 所以不能看「调用方有没有传值」——那样永远都是手工，这个字段就失去意义了
     credentialSource:

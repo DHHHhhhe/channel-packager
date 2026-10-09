@@ -10,7 +10,7 @@ export type SignMode = 'sign' | 'skip'
  * - `jksId` 只管签名：给了就用它重签名（`signMode = 'sign'`），不给就只能跳过签名。
  *   它不再决定渠道从哪来 —— 渠道的归属是「分组」。
  * - 渠道来源二选一：`groupId`（「渠道配置」里的分组）或 `channelInfoList`
- *   （出包页「自定义渠道导出」临时给的那份列表，与 `app` 一起用）。
+ *   （出包页「自定义渠道导出」临时给的那份列表）。
  *
  * 条目直接带过来而不是给一个文件路径：使用者可能在预览框里改过内容，
  * 再从磁盘读一遍等于把改动丢掉。
@@ -18,12 +18,10 @@ export type SignMode = 'sign' | 'skip'
 export interface TaskInput {
   apkPath: string
   jksId?: string
-  /** 渠道来源 A：分组 id，渠道条目与 defaultExtraInfo.app 都取这个分组 */
+  /** 渠道来源 A：分组 id，渠道条目取这个分组 */
   groupId?: string
   /** 渠道来源 B：临时带过来的渠道条目；与 groupId 二选一 */
   channelInfoList?: ChannelEntry[]
-  /** 渠道来源 B 写进 defaultExtraInfo.app 的应用名 */
-  app?: string
   channelCodes: string[]
   signMode: SignMode
   outputDir: string
@@ -98,12 +96,6 @@ export interface TaskResult {
   artifacts: TaskArtifact[]
   /** 不中止流程但需要让人知道的问题 */
   warnings: string[]
-  /**
-   * 这次写进包的 `defaultExtraInfo.app`。结果卡片上回显它，是为了让人一眼看出
-   * 产物里的应用名对不对 —— 它是 App 侧 WalleChannelReader.get(context, "app")
-   * 的取值键，写错了渠道号读得对、应用名读不出来。
-   */
-  appName?: string
   /** 只有 ok === false 时存在 */
   failure?: TaskFailure
 }
@@ -117,8 +109,6 @@ export interface WalleShowResult {
   message: string
   /** walle show -c 读回的渠道号 */
   channel?: string
-  /** walle show -e 读回的额外信息原始输出 */
-  extraInfo?: string
 }
 
 /**

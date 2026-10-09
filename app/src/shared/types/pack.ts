@@ -80,7 +80,7 @@ export interface ChannelListPreview {
   /** 文件里的条目，顺序与文件里一致 */
   channels: ChannelEntry[]
   count: number
-  /** 需要让用户知道的忽略项或副作用（如 app 不一致） */
+  /** 需要让用户知道的忽略项或副作用 */
   notes: string[]
 }
 

@@ -72,13 +72,3 @@ export async function walleShowChannel(
   const raw = `${result.stdout}${result.stderr}`.trim()
   return { ok: result.code === 0, channel: valueAfterPath(raw), raw }
 }
-
-/** 读某个 APK 的额外信息（`defaultExtraInfo`），同样剥掉前面的路径。 */
-export async function walleShowExtraInfo(apkPath: string): Promise<{ ok: boolean; raw: string }> {
-  const result = await runProcess(
-    resolveRuntimeComponentPath('java'),
-    javaArgs(['show', '-e', apkPath]),
-  )
-  const raw = `${result.stdout}${result.stderr}`.trim()
-  return { ok: result.code === 0, raw: valueAfterPath(raw) }
-}

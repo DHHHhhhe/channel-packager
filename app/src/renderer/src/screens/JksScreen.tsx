@@ -118,7 +118,6 @@ export function JksScreen() {
                   <TableRow>
                     <TableHead>显示名</TableHead>
                     <TableHead>别名</TableHead>
-                    <TableHead>英文名</TableHead>
                     <TableHead>来源路径</TableHead>
                     <TableHead>SHA256</TableHead>
                     <TableHead className="text-right">操作</TableHead>
@@ -137,7 +136,6 @@ export function JksScreen() {
                         <div className="text-xs text-muted-foreground">{item.id}</div>
                       </TableCell>
                       <TableCell>{item.alias}</TableCell>
-                      <TableCell>{item.app}</TableCell>
                       <TableCell className="max-w-[16rem] truncate" title={item.sourcePath}>
                         {item.sourcePath}
                       </TableCell>

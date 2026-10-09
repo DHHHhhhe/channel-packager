@@ -113,7 +113,6 @@ export function PackScreen() {
   /** 「重跑本次」时把上次那份自定义列表放回弹窗；null = 从空开始 */
   const [customInitial, setCustomInitial] = useState<{
     channels: ChannelEntry[]
-    app: string
   } | null>(null)
   // null 表示「本界面还没启动过任务」；此时到达的进度一定属于本次启动
   const taskIdRef = useRef<string | null>(null)
@@ -353,7 +352,7 @@ export function PackScreen() {
 
   /*
    * 结果走弹窗而不是页面底部那一行状态文字：
-   * 渠道号与额外信息都要完整显示，塞进一行很容易被截断，也分不清哪段是哪段。
+   * 渠道号要完整显示，塞进一行很容易被截断。
    */
   const handleShowChannel = async () => {
     const target = apkPath.trim()
@@ -432,11 +431,8 @@ export function PackScreen() {
     setCustomBusy(true)
     try {
       if (payload.rowsToSave.length > 0 && payload.groupId !== '') {
-        const group = groups.find((item) => item.id === payload.groupId)
         const existing = await getChannels(payload.groupId)
         await saveChannels(payload.groupId, {
-          // 分组文件里的 app 属于分组自己，别被这次的临时英文名盖掉
-          defaultExtraInfo: { app: group?.app ?? existing.defaultExtraInfo.app },
           channelInfoList: [...existing.channelInfoList, ...payload.rowsToSave],
         })
         if (payload.groupId === groupId) {
@@ -455,7 +451,6 @@ export function PackScreen() {
         apkPath: apkPath.trim(),
         // 渠道来源 B：这份列表只存在于这次出包里
         channelInfoList: payload.channels,
-        app: payload.app,
         channelCodes: payload.channels.map((entry) => entry.channel),
         signMode,
         outputDir: outputDir.trim(),
@@ -494,7 +489,7 @@ export function PackScreen() {
        * 而且它不是任何分组的内容 —— 填回表单只会让人以为要出分组的渠道。
        * 所以把弹窗连同那份列表一起打开，让人看一眼再确认。
        */
-      setCustomInitial({ channels: restored, app: lastRun.app ?? '' })
+      setCustomInitial({ channels: restored })
       setCustomOpen(true)
       setStatus({ kind: 'ok', text: '上次用的是自定义渠道，已把那份列表放回弹窗。' })
       return
@@ -824,7 +819,7 @@ export function PackScreen() {
                 <SelectContent>
                   {groups.map((item) => (
                     <SelectItem key={item.id} value={item.id}>
-                      {item.name}（{item.app}）
+                      {item.appLabel ? `${item.name}（${item.appLabel}）` : item.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -847,7 +842,7 @@ export function PackScreen() {
             <p className="text-xs text-muted-foreground">
               {groups.length === 0
                 ? '还没有分组。渠道列表按分组存储，请先到「渠道配置」创建一个。'
-                : `写入包的英文应用名：${selectedGroup?.app ?? ''}。切换签名文件时，会回到该签名文件上次使用的分组。`}
+                : '出包时写入这个分组里的渠道。切换签名文件时，会回到该签名文件上次使用的分组。'}
             </p>
           </div>
 
@@ -976,7 +971,6 @@ export function PackScreen() {
         open={customOpen}
         onOpenChange={setCustomOpen}
         groups={groups}
-        defaultApp={selectedGroup?.app ?? ''}
         defaultGroupId={groupId}
         initial={customInitial}
         busy={customBusy}
@@ -1012,7 +1006,7 @@ export function PackScreen() {
             <p className="text-sm text-destructive">
               读取渠道信息失败：{showResult.message}
             </p>
-          ) : (showResult.channel ?? '') === '' && !showResult.extraInfo ? (
+          ) : (showResult.channel ?? '') === '' ? (
             <p className="text-sm text-muted-foreground">
               这个包没有渠道信息，说明尚未写入过渠道。
             </p>
@@ -1022,12 +1016,6 @@ export function PackScreen() {
                 <span className="text-muted-foreground">渠道号</span>
                 <span className="break-all font-mono">
                   {showResult.channel && showResult.channel !== '' ? showResult.channel : '(空)'}
-                </span>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-muted-foreground">额外信息</span>
-                <span className="break-all font-mono">
-                  {showResult.extraInfo ? showResult.extraInfo : '(无)'}
                 </span>
               </div>
             </div>

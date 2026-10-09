@@ -12,11 +12,6 @@ export interface JksItem {
   fileSize: number
   alias: string
   storePassword: string
-  /**
-   * 迁移时写进对应分组的英文名（R8）。
-   * 分组建立之后 jks 不再管渠道，这个字段只在老数据迁移时被读一次。
-   */
-  app: string
   /** derived = 来自规律推导；manual = 用户手工填过。仅用于界面提示 */
   credentialSource: 'derived' | 'manual'
   importedAt: string
@@ -40,11 +35,6 @@ export interface GroupItem {
   name: string
   /** 应用名（中文显示名，如「沐爱」）。**只给人看，不写进包** */
   appLabel: string
-  /**
-   * 英文名（如 demo）。写进 walle 的 defaultExtraInfo.app。
-   * 值会被 App 侧按 key 读出来用，所以必须是代码认得的标识，不能是中文。
-   */
-  app: string
   createdAt: string
   updatedAt: string
 }
@@ -74,8 +64,14 @@ export interface ChannelEntry {
   alias?: string
 }
 
+/**
+ * 一个分组的渠道列表，存在 data/channels/<分组 id>.json。
+ *
+ * 只存渠道条目：walle 的 `defaultExtraInfo` 是可选的额外信息，本工具不再写它
+ * （应用身份由 `applicationId` 决定，不需要在渠道里再放一份）。
+ * 解析外部 JSON 时仍容忍文件里带 `defaultExtraInfo`，读进来直接忽略。
+ */
 export interface ChannelConfig {
-  defaultExtraInfo: { app: string }
   channelInfoList: ChannelEntry[]
 }
 
@@ -84,7 +80,7 @@ export interface ChannelConfig {
  * 文件不存在不算问题 —— 那是「还没有」，不是「坏了」。
  */
 export interface StoreProblem {
-  /** 给用户看的角色名，例如「jks 列表」「渠道列表（xklinai）」 */
+  /** 给用户看的角色名，例如「签名文件列表」「渠道列表（xklinai）」 */
   label: string
   /** 绝对路径，界面要显示出来，用户才能自己去修 */
   path: string
@@ -115,7 +111,6 @@ export type JksMutation =
       displayName?: string
       alias?: string
       storePassword?: string
-      app?: string
     }
   | { action: 'update'; item: JksItem }
   | { action: 'remove'; id: string }
@@ -141,11 +136,10 @@ export type GroupMutation =
       action: 'add'
       name: string
       appLabel: string
-      app: string
       /**
-       * 指定分组 id。只有「新建 jks 时顺手把渠道也配好」那条路会传 ——
-       * 它要沿用 jks 的 id，渠道文件才落在 channels/<jksId>.json。
-       * 不传就按英文名（退分组名）推导，与用户手建分组一致。
+       * 指定分组 id。只有「新建签名文件时顺手把渠道也配好」那条路会传 ——
+       * 它要沿用签名文件的 id，渠道文件才落在 channels/<签名文件 id>.json。
+       * 不传就按分组名推导，与用户手建分组一致。
        */
       id?: string
     }

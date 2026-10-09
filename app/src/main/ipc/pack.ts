@@ -92,12 +92,7 @@ export function registerPackIpc(): void {
 
   ipcMain.handle(
     IPC_CHANNELS.channelsExport,
-    async (
-      _event,
-      id: string,
-      app: string,
-      channelInfoList: ChannelEntry[],
-    ): Promise<ChannelExportResult> => {
+    async (_event, id: string, channelInfoList: ChannelEntry[]): Promise<ChannelExportResult> => {
       const targetPath = await pickSavePath(
         '导出渠道 JSON',
         `${id}_channels.json`,
@@ -109,7 +104,7 @@ export function registerPackIpc(): void {
       return {
         canceled: false,
         path: targetPath,
-        count: exportChannels(app, targetPath, channelInfoList),
+        count: exportChannels(targetPath, channelInfoList),
       }
     },
   )
@@ -121,26 +116,26 @@ export function registerPackIpc(): void {
    */
   ipcMain.handle(
     IPC_CHANNELS.channelsImport,
-    async (_event, app: string): Promise<ChannelListPreview | null> => {
+    async (): Promise<ChannelListPreview | null> => {
       const sourcePath = await pickOpenPath('导入渠道 JSON', [{ name: 'JSON', extensions: ['json'] }])
       if (sourcePath === null) {
         return null
       }
-      return previewChannels(app, sourcePath)
+      return previewChannels(sourcePath)
     },
   )
 
   // 渠道列表为空时给一份可编辑的起点：导出示例 JSON，改完走「导入 JSON」读回来
   ipcMain.handle(
     IPC_CHANNELS.channelsExportSample,
-    async (_event, id: string, app: string, prefix: string): Promise<ChannelSampleExportResult> => {
+    async (_event, id: string, prefix: string): Promise<ChannelSampleExportResult> => {
       const targetPath = await pickSavePath('导出示例渠道 JSON', `${id}_channels_sample.json`, [
         { name: 'JSON', extensions: ['json'] },
       ])
       if (targetPath === null) {
         return { canceled: true }
       }
-      const { count, fromTemplate } = exportSampleChannels(app, prefix, targetPath)
+      const { count, fromTemplate } = exportSampleChannels(prefix, targetPath)
       return { canceled: false, path: targetPath, count, fromTemplate }
     },
   )

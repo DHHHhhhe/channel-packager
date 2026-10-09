@@ -13,7 +13,7 @@ import { newTaskId, runPipeline } from '../pipeline'
 import { resolveInData } from '../paths'
 import { probeKeystoreCertificate, readApkSignature } from '../signer'
 import { readJksFile } from '../store'
-import { walleShowChannel, walleShowExtraInfo } from '../walle'
+import { walleShowChannel } from '../walle'
 
 /**
  * 同时只允许一个出包任务。
@@ -74,13 +74,10 @@ export function registerTaskIpc(): void {
     IPC_CHANNELS.walleShow,
     async (_event, apkPath: string): Promise<WalleShowResult> => {
       const channel = await walleShowChannel(apkPath)
-      const extra = await walleShowExtraInfo(apkPath)
       return {
         ok: channel.ok,
         message: channel.ok ? '' : channel.raw || '没能读出渠道信息',
         channel: channel.channel,
-        // 空串表示包里没写额外信息，跟「读到但为空」不是一回事，这里统一成 undefined
-        extraInfo: extra.ok ? extra.raw || undefined : undefined,
       }
     },
   )

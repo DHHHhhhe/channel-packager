@@ -17,7 +17,7 @@ export function allocateId(baseId: string, taken: ReadonlySet<string>): string {
 
 /**
  * 把用户填的字段变成能当文件名用的 id。
- * jks 有源文件名可借，分组没有 —— 只能从「英文名」这类字段推导，
+ * 签名文件有源文件名可借，分组没有 —— 只能从分组名推导，
  * 所以这里要挡住路径分隔符与 Windows 保留字符。
  */
 export function toFileId(value: string, fallback: string): string {
