@@ -8,6 +8,8 @@ export const IPC_CHANNELS = {
   storeLoad: 'store:load',
   storeSaveJks: 'store:saveJks',
   jksRefreshFromSource: 'jks:refreshFromSource',
+  /** 用原文件覆盖副本，保留显示名/别名/密码。会换掉签名身份，调用方先确认 */
+  jksSyncFromSource: 'jks:syncFromSource',
 
   storeGetChannels: 'store:getChannels',
   storeSaveChannels: 'store:saveChannels',

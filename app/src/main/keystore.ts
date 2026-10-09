@@ -109,7 +109,7 @@ export function removeJksItem(id: string): JksMutationResult {
 
 /**
  * 从原文件重新读取并与记录的指纹比对。
- * 只报告差异，不自动同步 —— 覆盖副本要用户确认（设计里明确要求）。
+ * 只报告差异，不自动同步 —— 覆盖副本要用户确认（设计里明确要求），确认后走 syncFromSource。
  */
 export function refreshFromSource(id: string): RefreshResult {
   const item = readJksFile().items.find((entry) => entry.id === id)
@@ -131,4 +131,44 @@ export function refreshFromSource(id: string): RefreshResult {
     return { status: 'unchanged', sourceSha256: sha256, sourceFileSize: fileSize }
   }
   return { status: 'changed', sourceSha256: sha256, sourceFileSize: fileSize }
+}
+
+/**
+ * 用原文件覆盖副本。
+ *
+ * 原文件被重新生成过（换了私钥、重新导出）时，之前的做法是让用户删掉条目重建，
+ * 那会连带丢掉显示名、别名、密码 —— 而这三样和文件内容无关，本来就存在条目里。
+ * 所以这里只换副本与指纹，其余字段原样保留。
+ *
+ * 这会换掉签名身份：之后用这个文件出的包，签名与之前不同。调用方必须先让用户确认。
+ */
+export function syncFromSource(id: string): RefreshResult {
+  const file = readJksFile()
+  const index = file.items.findIndex((entry) => entry.id === id)
+  if (index < 0) {
+    throw new Error(`找不到签名文件：${id}`)
+  }
+  const item = file.items[index]
+
+  let sha256: string
+  let fileSize: number
+  try {
+    fileSize = fs.statSync(item.sourcePath).size
+    sha256 = sha256File(item.sourcePath)
+  } catch {
+    return { status: 'source-unavailable', message: `原文件不可访问：${item.sourcePath}` }
+  }
+
+  if (sha256 === item.sha256) {
+    return { status: 'unchanged', sourceSha256: sha256, sourceFileSize: fileSize }
+  }
+
+  // 先把目标路径解析出来：越界就直接失败，别覆盖了一半再报错
+  const copyPath = resolveInData(item.keystoreFile)
+  fs.copyFileSync(item.sourcePath, copyPath)
+
+  file.items[index] = { ...item, sha256, fileSize }
+  writeJksFile(file)
+
+  return { status: 'synced', sourceSha256: sha256, sourceFileSize: fileSize }
 }

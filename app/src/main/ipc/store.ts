@@ -12,7 +12,7 @@ import type {
   StoreSnapshot,
   TemplateFile,
 } from '../../shared/types/store'
-import { addKeystore, refreshFromSource, removeJksItem, updateJksItem } from '../keystore'
+import { addKeystore, refreshFromSource, removeJksItem, syncFromSource, updateJksItem } from '../keystore'
 import { getDataDir, isUsingFallbackDataDir } from '../paths'
 import { saveTheme } from '../theme'
 import {
@@ -72,6 +72,10 @@ export function registerStoreIpc(): void {
 
   ipcMain.handle(IPC_CHANNELS.jksRefreshFromSource, (_event, id: string): RefreshResult => {
     return refreshFromSource(id)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.jksSyncFromSource, (_event, id: string): RefreshResult => {
+    return syncFromSource(id)
   })
 
   ipcMain.handle(IPC_CHANNELS.storeGetChannels, (_event, id: string): ChannelConfig => {

@@ -154,12 +154,15 @@ export interface GroupMutationResult {
   item?: GroupItem
 }
 
-/** 从原文件重新导入的比对结果，不自动同步 */
-export type RefreshStatus = 'unchanged' | 'changed' | 'source-unavailable'
+/**
+ * 从原文件重新导入的结果。
+ * 比对（refreshFromSource）不自动同步，只有 synced 是用户点了「刷新副本」之后的结果。
+ */
+export type RefreshStatus = 'unchanged' | 'changed' | 'source-unavailable' | 'synced'
 
 export interface RefreshResult {
   status: RefreshStatus
-  /** changed 时给出源文件当前指纹，供用户确认是否覆盖副本 */
+  /** changed / synced 时给出原文件当前指纹：changed 供用户确认，synced 是刷新后的新副本 */
   sourceSha256?: string
   sourceFileSize?: number
   message?: string

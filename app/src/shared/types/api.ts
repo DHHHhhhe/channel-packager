@@ -72,6 +72,12 @@ export interface RendererApi {
   /** 读 sourcePath 现内容与记录指纹比对，只报告差异，不自动同步 */
   refreshJksFromSource(id: string): Promise<RefreshResult>
 
+  /**
+   * 用原文件覆盖副本，保留显示名、别名与密码。
+   * 会换掉签名身份，界面必须先让用户确认再调。
+   */
+  syncJksFromSource(id: string): Promise<RefreshResult>
+
   /** 新增 / 更新 / 删除分组。删除时一并清掉它的渠道文件 */
   saveGroup(mutation: GroupMutation): Promise<GroupMutationResult>
 

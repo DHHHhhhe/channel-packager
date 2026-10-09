@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { AlertTriangle, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { JksFormDialog } from '@/components/JksFormDialog'
 import { PageHeader } from '@/components/PageHeader'
 import { Badge } from '@/components/ui/badge'
@@ -20,12 +21,22 @@ import { Spinner } from '@/components/ui/spinner'
 import { useAppStore } from '@/store/app-store'
 
 export function JksScreen() {
-  const { jksItems, saveJks, refreshJks } = useAppStore()
+  const { jksItems, saveJks, refreshJks, syncJks } = useAppStore()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<JksItem | undefined>(undefined)
   const [deleting, setDeleting] = useState<JksItem | undefined>(undefined)
+  const [syncing, setSyncing] = useState<JksItem | undefined>(undefined)
   const [busy, setBusy] = useState(false)
-  const [status, setStatus] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
+  /*
+   * warning 是「没出错，但需要你决定」的状态（原文件变了）。
+   * syncId 记着这条提示对应哪个条目，好把「刷新副本」按钮直接放在提示里 ——
+   * 否则用户还得回表格里找是哪一行。
+   */
+  const [status, setStatus] = useState<{
+    kind: 'ok' | 'error' | 'warning'
+    text: string
+    syncId?: string
+  } | null>(null)
 
   const openAdd = () => {
     setEditing(undefined)
@@ -37,22 +48,66 @@ export function JksScreen() {
     setDialogOpen(true)
   }
 
+  /*
+   * 比对。原文件变了只是「有件事要你决定」，不是出错 —— 之前用红色报错，
+   * 用户看到的第一反应是「我搞坏了什么」，其实什么都没坏，只是副本旧了。
+   */
   const handleRefresh = async (item: JksItem) => {
     setStatus(null)
     try {
       const result = await refreshJks(item.id)
       if (result.status === 'unchanged') {
-        setStatus({ kind: 'ok', text: `${item.id}：原文件与本工具内的副本一致，无需处理。` })
+        setStatus({ kind: 'ok', text: `${item.displayName}：原文件与本工具内的副本一致，无需处理。` })
       } else if (result.status === 'changed') {
         setStatus({
-          kind: 'error',
-          text: `${item.id}：原文件已变化（SHA256 ${result.sourceSha256?.slice(0, 8)}），副本未同步。如需更新，请删除后重新新增。`,
+          kind: 'warning',
+          text: `${item.displayName}：原文件已变化（SHA256 ${result.sourceSha256?.slice(0, 8)}），本工具内还是旧的那份。`,
+          syncId: item.id,
         })
       } else {
-        setStatus({ kind: 'error', text: `${item.id}：${result.message ?? '原文件不可访问。'}` })
+        setStatus({
+          kind: 'warning',
+          text: `${item.displayName}：${result.message ?? '原文件不可访问。'}`,
+        })
       }
     } catch (error) {
       setStatus({ kind: 'error', text: ipcErrorMessage(error) })
+    }
+  }
+
+  /*
+   * 用原文件覆盖副本。
+   *
+   * 签名文件一旦换掉，之后出的包签名就跟以前不一样 —— 应用市场那边是按签名认应用的，
+   * 所以这一步必须让用户明确点一下，不能在「比对发现变了」之后顺手替他做了。
+   */
+  const handleSync = async () => {
+    if (!syncing) {
+      return
+    }
+    const target = syncing
+    setBusy(true)
+    try {
+      const result = await syncJks(target.id)
+      if (result.status === 'synced') {
+        setStatus({
+          kind: 'ok',
+          text: `已用原文件刷新 ${target.displayName} 的副本（SHA256 ${result.sourceSha256?.slice(0, 8)}），显示名、别名与密码都保留。`,
+        })
+      } else if (result.status === 'unchanged') {
+        setStatus({ kind: 'ok', text: `${target.displayName}：原文件与副本本来就一致，没有改动。` })
+      } else {
+        setStatus({
+          kind: 'warning',
+          text: `${target.displayName}：${result.message ?? '原文件不可访问。'}`,
+        })
+      }
+    } catch (error) {
+      setStatus({ kind: 'error', text: ipcErrorMessage(error) })
+    } finally {
+      // 失败也把确认框关掉：状态提示在对话框后面，不关就看不见
+      setBusy(false)
+      setSyncing(undefined)
     }
   }
 
@@ -65,7 +120,7 @@ export function JksScreen() {
       await saveJks({ action: 'remove', id: deleting.id })
       setStatus({
         kind: 'ok',
-        text: `已删除 ${deleting.id}，本工具内的副本已清除。分组与渠道列表不受影响。`,
+        text: `已删除 ${deleting.displayName}，本工具内的副本已清除。分组与渠道列表不受影响。`,
       })
       setDeleting(undefined)
     } catch (error) {
@@ -74,6 +129,9 @@ export function JksScreen() {
       setBusy(false)
     }
   }
+
+  // 提示里那个「刷新副本」按钮要认得出是哪一条；单独取出来，闭包里就不用再判空
+  const statusSyncId = status?.syncId
 
   return (
     <div className="flex flex-col gap-4">
@@ -88,17 +146,35 @@ export function JksScreen() {
       />
 
       {status ? (
-        <p
+        <div
+          role="status"
+          aria-live="polite"
           className={
             status.kind === 'error'
-              ? 'text-sm text-destructive'
-              : status.kind === 'ok'
-                ? 'text-sm text-success'
-                : 'text-sm text-muted-foreground'
+              ? 'flex flex-wrap items-center gap-2 text-sm text-destructive'
+              : status.kind === 'warning'
+                ? 'flex flex-wrap items-center gap-2 text-sm text-warning'
+                : 'flex flex-wrap items-center gap-2 text-sm text-success'
           }
         >
-          {status.text}
-        </p>
+          {status.kind === 'warning' ? <AlertTriangle className="size-4 shrink-0" /> : null}
+          <span>{status.text}</span>
+          {statusSyncId ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                const item = jksItems.find((entry) => entry.id === statusSyncId)
+                if (item) {
+                  setSyncing(item)
+                }
+              }}
+            >
+              <RefreshCw />
+              刷新副本
+            </Button>
+          ) : null}
+        </div>
       ) : null}
 
       <Card>
@@ -208,6 +284,17 @@ export function JksScreen() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={Boolean(syncing)}
+        onOpenChange={(open) => (open ? undefined : setSyncing(undefined))}
+        title={`用原文件刷新 ${syncing?.displayName ?? ''} 的副本？`}
+        description="会用原文件当前的内容覆盖本工具内的副本，显示名、别名与密码都保留。"
+        warning="签名身份会跟着变。之后用这个文件出的包，签名与之前不同，应用市场可能不认。"
+        confirmText="确认刷新"
+        destructive
+        onConfirm={handleSync}
+      />
     </div>
   )
 }

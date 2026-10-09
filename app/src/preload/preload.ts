@@ -88,6 +88,10 @@ const api: RendererApi = {
     return ipcRenderer.invoke(IPC_CHANNELS.jksRefreshFromSource, id)
   },
 
+  syncJksFromSource(id: string): Promise<RefreshResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.jksSyncFromSource, id)
+  },
+
   saveGroup(mutation: GroupMutation): Promise<GroupMutationResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.storeSaveGroup, mutation)
   },

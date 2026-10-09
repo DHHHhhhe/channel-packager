@@ -56,6 +56,8 @@ interface AppStoreValue {
   getChannels: (id: string) => Promise<ChannelConfig>
   saveChannels: (id: string, config: ChannelConfig) => Promise<void>
   refreshJks: (id: string) => Promise<RefreshResult>
+  /** 用原文件覆盖副本，保留显示名/别名/密码。调用方先让用户确认 */
+  syncJks: (id: string) => Promise<RefreshResult>
   verifyCredentials: (
     id: string,
     password: string,
@@ -165,6 +167,22 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  /*
+   * 刷新副本会换掉 jks.json 里的指纹，界面得跟着更新，
+   * 所以成功之后把列表重读一遍，别让表格还显示旧 SHA256。
+   * reload 的身份是固定的（下面那条注释说的就是这件事），可以安全地当依赖。
+   */
+  const syncJks = useCallback(
+    async (id: string): Promise<RefreshResult> => {
+      const result = await window.api.syncJksFromSource(id)
+      if (result.status === 'synced') {
+        await reload()
+      }
+      return result
+    },
+    [reload],
+  )
+
   const verifyCredentials = useCallback(
     (id: string, password: string, alias?: string): Promise<CredentialVerifyResult> =>
       window.api.verifyCredentials(id, password, alias),
@@ -190,6 +208,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       getChannels,
       saveChannels,
       refreshJks,
+      syncJks,
       verifyCredentials,
     }),
     [
@@ -210,6 +229,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       getChannels,
       saveChannels,
       refreshJks,
+      syncJks,
       verifyCredentials,
     ],
   )

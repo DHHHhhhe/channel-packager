@@ -66,6 +66,10 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
   const [handEdited, setHandEdited] = useState(false)
   /** 「按模板重新生成」的确认框 */
   const [confirmRegenerate, setConfirmRegenerate] = useState(false)
+  /** 待确认的「换渠道来源」；null 表示没有待确认的切换。确认前 channelMode 不动 */
+  const [pendingMode, setPendingMode] = useState<ChannelMode | null>(null)
+  /** 主进程回传的候选别名：别名猜错时用户点一下就能填上，不用从提示里抄 */
+  const [aliasCandidates, setAliasCandidates] = useState<string[]>([])
   /** 递增一下就让渠道草稿列表把搜索清掉 —— 保存被拦下时，问题行可能正被搜索藏着 */
   const [filterResetToken, setFilterResetToken] = useState(0)
   const [showPassword, setShowPassword] = useState(false)
@@ -77,6 +81,8 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
   const [dragging, setDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const jsonInputRef = useRef<HTMLInputElement>(null)
+  /** 提示块自己。它现在在标题下方，从底部点保存时要能把它滚回视口里 */
+  const feedbackRef = useRef<HTMLParagraphElement>(null)
   /*
    * dragenter/dragleave 会在子元素之间来回触发，
    * 用深度计数判断「真正离开了对话框」，否则高亮会一闪一闪。
@@ -98,6 +104,8 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
     setJsonPreview(null)
     setHandEdited(false)
     setConfirmRegenerate(false)
+    setPendingMode(null)
+    setAliasCandidates([])
     setShowPassword(false)
     setFeedback(null)
     setFieldErrors({})
@@ -105,6 +113,17 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
     setDragging(false)
     dragDepth.current = 0
   }, [open, item])
+
+  /*
+   * 提示块在标题下方，而用户往往是在滚动区最底部（渠道列表那一片）点的保存 ——
+   * 不把它滚回视口里，点了按钮界面上就等于没反应，最自然的下一步是反复点。
+   * block:'nearest' 在它本来就在视口里时不滚动，免得每次提示都跳一下。
+   */
+  useEffect(() => {
+    if (feedback) {
+      feedbackRef.current?.scrollIntoView({ block: 'nearest' })
+    }
+  }, [feedback])
 
   const isEdit = Boolean(item)
 
@@ -120,10 +139,13 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
    * 用户填了半天的东西不该因为一次口令打错就清空。
    * 主进程会告诉我们该查哪一项（`CredentialVerifyResult.field`），
    * 界面不靠匹配提示文案来猜。
+   *
+   * aliases 是主进程算好的候选别名，直接摆在别名框下面给用户点。
    */
-  const failWith = (text: string, field?: CredentialField): void => {
+  const failWith = (text: string, field?: CredentialField, aliases?: string[]): void => {
     setFeedback({ kind: 'error', text })
     setFieldErrors(field ? { [field]: true } : {})
+    setAliasCandidates(aliases ?? [])
   }
 
   /** 成功提示：顺手把红框全清掉 */
@@ -188,19 +210,38 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
     // 拖进来的文件不受 accept 过滤，这里自己挡一道，免得后面 keytool 报一句难懂的话
     const lower = file.name.toLowerCase()
     if (!JKS_EXTENSIONS.some((ext) => lower.endsWith(ext))) {
+      // 失败也要把上一次的红框撤掉：留着它，用户会以为文件已经收下了、只是格式提示
+      setFieldErrors({})
       setFeedback({
         kind: 'error',
         text: lower.endsWith('.json')
-          ? '这是渠道 JSON 文件，不是签名文件；请用下面「渠道数据」里的「选择文件」。'
+          ? '这是渠道 JSON 文件，不是签名文件；请用下方「渠道数据 → 导入 JSON」里的「选择 JSON」。'
           : `只认 .jks / .keystore 格式的签名文件，这个是「${file.name}」。`,
       })
       return
     }
     const picked = window.api.pathForFile(file)
     if (!picked) {
+      setFieldErrors({})
       setFeedback({ kind: 'error', text: '没能取到文件路径，请重新选择。' })
       return
     }
+
+    /*
+     * 编辑模式只把路径指对，不动显示名、别名与密码 ——
+     * 原文件被挪到别的目录、或当初就选错了路径时，用户要改的只有这一项。
+     * 副本这时并没有变，提示里必须说清楚，否则会让人以为签名已经跟着换了。
+     */
+    if (isEdit) {
+      setSourcePath(picked)
+      setFieldErrors({})
+      setFeedback({
+        kind: 'ok',
+        text: '原文件路径已更新。本工具内的副本没有变 —— 需要比对就点列表里的「从原文件重新导入」，确认要覆盖再选「刷新副本」。',
+      })
+      return
+    }
+
     const base = deriveAlias(picked)
     setSourcePath(picked)
     setDisplayName(fileNameOf(picked))
@@ -306,13 +347,8 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
     succeedWith(`已导入 ${imported.length} 条渠道，可在下方直接改。`)
   }
 
-  /**
-   * 切换来源只是「用什么填这份列表」。
-   * 换到模板就按当前前缀生成一份；换到不套用模板就清空，让用户手工加行；
-   * 换到 JSON 先清空，等选文件 —— 否则会显示上一次的来源留下的内容，容易误以为已经读到文件。
-   */
-  const handleModeChange = (value: string) => {
-    const next = value as ChannelMode
+  /** 真正换来源：按新来源重算整份草稿 */
+  const applyMode = (next: ChannelMode) => {
     setChannelMode(next)
     setFeedback(null)
     if (next === 'template') {
@@ -322,11 +358,32 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
     }
   }
 
+  /**
+   * 切换来源只是「用什么填这份列表」。
+   * 换到模板就按当前前缀生成一份；换到不套用模板就清空，让用户手工加行；
+   * 换到 JSON 先清空，等选文件 —— 否则会显示上一次的来源留下的内容，容易误以为已经读到文件。
+   *
+   * 但这三条路都会**整份替换**下面的列表，和「按模板重新生成」是同一类动作，
+   * 而那条路会先问一声。同一种后果两种待遇，用户没法预期哪次会被清掉，所以这里也问。
+   * 待确认期间不改 channelMode，下拉框停在原值上，等于「取消」。
+   */
+  const handleModeChange = (value: string) => {
+    const next = value as ChannelMode
+    if (next === channelMode) {
+      return
+    }
+    if (draftChannels.length > 0) {
+      setPendingMode(next)
+      return
+    }
+    applyMode(next)
+  }
+
   const handleEditSave = async (target: JksItem) => {
     // 编辑走副本校验，通过了才落库
     const result = await verifyCredentials(target.id, password, alias)
     if (!result.ok) {
-      failWith(`凭据校验未通过：${result.message ?? '原因未知'}`, result.field)
+      failWith(`凭据校验未通过：${result.message ?? '原因未知'}`, result.field, result.aliases)
       return false
     }
     const finalAlias = result.alias ?? alias.trim()
@@ -334,6 +391,8 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
       action: 'update',
       item: {
         ...target,
+        // 来源路径在这一步才可能被改（「重新选择」），别把用户的修改漏掉
+        sourcePath: sourcePath.trim() || target.sourcePath,
         displayName: displayName.trim() || target.displayName,
         alias: finalAlias,
         storePassword: password,
@@ -375,6 +434,7 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
       failWith(
         `凭据校验未通过，已撤销本次新增：${result.message ?? '原因未知'}`,
         result.field,
+        result.aliases,
       )
       return false
     }
@@ -474,6 +534,28 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
           </DialogDescription>
         </DialogHeader>
 
+        {/*
+          提示放在标题正下方，而不是滚动区末尾。
+          末尾那个位置在渠道列表展开几十行时压根不在视口里 ——
+          用户点完「新增并校验」，看到的只是界面没反应。
+        */}
+        {feedback ? (
+          <p
+            ref={feedbackRef}
+            role={feedback.kind === 'error' ? 'alert' : 'status'}
+            aria-live={feedback.kind === 'error' ? 'assertive' : 'polite'}
+            className={
+              feedback.kind === 'error'
+                ? 'rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive'
+                : feedback.kind === 'ok'
+                  ? 'rounded-md border border-success/40 bg-success/5 px-3 py-2 text-sm text-success'
+                  : 'text-sm text-muted-foreground'
+            }
+          >
+            {feedback.text}
+          </p>
+        ) : null}
+
         <div
           className="flex flex-col gap-4"
           onDragEnter={handleDragEnter}
@@ -528,20 +610,48 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
               <p className="text-xs text-muted-foreground">
                 会复制一份到本工具的数据目录，之后签名只用这份副本；原文件移走也不影响出包。
               </p>
+              {fieldErrors.keystore ? (
+                <p className="text-xs text-destructive">请先选择签名文件。</p>
+              ) : null}
             </div>
           ) : (
             <div className="flex flex-col gap-1.5">
-              <Label>来源路径</Label>
-              <p
-                className={
-                  fieldErrors.keystore
-                    ? 'truncate rounded-md border border-destructive px-2.5 py-1.5 text-sm text-muted-foreground'
-                    : 'truncate text-sm text-muted-foreground'
-                }
-                title={item?.sourcePath}
-              >
-                {item?.sourcePath}
+              <Label htmlFor="jks-source-edit">来源路径</Label>
+              <div className="flex items-center gap-2">
+                {/*
+                  这里原先是一段纯文本，和上面那一排输入框长得一样，
+                  很容易被当成「能改的框」——实际改不了，只能删掉重建。
+                  现在做成明确只读的样式，旁边补上真正能改的入口。
+                */}
+                <Input
+                  id="jks-source-edit"
+                  value={sourcePath}
+                  readOnly
+                  aria-invalid={fieldErrors.keystore === true}
+                  title={sourcePath}
+                  className="bg-muted/50 text-muted-foreground"
+                />
+                <Button variant="outline" type="button" onClick={() => fileInputRef.current?.click()}>
+                  <FileUp />
+                  重新选择
+                </Button>
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".jks,.keystore"
+                className="hidden"
+                onChange={(event) => {
+                  handlePickSource(event.target.files?.[0])
+                  event.target.value = ''
+                }}
+              />
+              <p className="text-xs text-muted-foreground">
+                改路径只是把原文件指向对的地方，本工具内的副本不会跟着变。原文件换了内容，用列表里的「刷新副本」。
               </p>
+              {fieldErrors.keystore ? (
+                <p className="text-xs text-destructive">原文件路径有问题，看上面的提示。</p>
+              ) : null}
             </div>
           )}
 
@@ -567,6 +677,32 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
                 }}
                 placeholder="sample"
               />
+              {fieldErrors.alias ? (
+                <p className="text-xs text-destructive">这个别名在签名文件里找不到。</p>
+              ) : null}
+              {/*
+                别名猜错时主进程会把文件里真正有的别名都回传，直接摆出来给用户点。
+                否则用户只能从那句错误文案里抄一个再滚回去粘。
+              */}
+              {aliasCandidates.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs text-muted-foreground">签名文件里有：</span>
+                  {aliasCandidates.map((candidate) => (
+                    <Button
+                      key={candidate}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setAlias(candidate)
+                        clearFieldError('alias')
+                      }}
+                    >
+                      {candidate}
+                    </Button>
+                  ))}
+                </div>
+              ) : null}
             </div>
             <div className="col-span-2 flex flex-col gap-1.5">
               <Label htmlFor="jks-password">密码</Label>
@@ -595,6 +731,9 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
                   {showPassword ? <EyeOff /> : <Eye />}
                 </Button>
               </div>
+              {fieldErrors.password ? (
+                <p className="text-xs text-destructive">密码不对，或与这个别名不匹配。</p>
+              ) : null}
             </div>
           </div>
 
@@ -710,19 +849,6 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
             </div>
           ) : null}
 
-          {feedback ? (
-            <p
-              className={
-                feedback.kind === 'error'
-                  ? 'text-sm text-destructive'
-                  : feedback.kind === 'ok'
-                    ? 'text-sm text-success'
-                    : 'text-sm text-muted-foreground'
-              }
-            >
-              {feedback.text}
-            </p>
-          ) : null}
         </div>
 
         <DialogFooter>
@@ -755,9 +881,27 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
         description="会按当前前缀重算整份列表，然后覆盖下面这些行。"
         warning={`你在下面改过 ${draftChannels.length} 条，重新生成后这些改动就没了。`}
         confirmText="重新生成"
+        destructive
         onConfirm={() => {
           setConfirmRegenerate(false)
           regenerateFromTemplate()
+        }}
+      />
+
+      <ConfirmDialog
+        open={pendingMode !== null}
+        onOpenChange={(next) => (next ? undefined : setPendingMode(null))}
+        title="切换渠道数据来源？"
+        description={`会按新的来源重算下面的渠道列表，现在这 ${draftChannels.length} 条会被替换掉。`}
+        warning="被替换的条目没有别的地方存着，撤销不了。"
+        confirmText="切换并重算"
+        destructive
+        onConfirm={() => {
+          const next = pendingMode
+          setPendingMode(null)
+          if (next) {
+            applyMode(next)
+          }
         }}
       />
     </Dialog>
