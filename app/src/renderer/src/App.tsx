@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { TriangleAlert } from 'lucide-react'
 import RuntimeBanner from '@/components/RuntimeBanner'
+import StoreProblemBanner from '@/components/StoreProblemBanner'
 import { AppSidebar, viewTitle, type AppView } from '@/components/AppSidebar'
 import { ChannelsScreen } from '@/screens/ChannelsScreen'
 import { JksScreen } from '@/screens/JksScreen'
@@ -56,6 +57,8 @@ function Shell() {
                 <span>程序目录不可写，数据已改存到用户目录，便携性不再成立。</span>
               </div>
             ) : null}
+
+            <StoreProblemBanner />
 
             {store.loading ? (
               <p className="text-sm text-muted-foreground">正在读取本地配置…</p>

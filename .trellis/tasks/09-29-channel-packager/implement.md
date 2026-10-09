@@ -702,6 +702,55 @@ pnpm 那条是实测确认的（pnpm 11.8.0）：
 | 搜索状态下点「按模板生成」（整表替换） | 搜索清空，13 行模板渠道 |
 | 渠道模板页 / 新增 jks 弹窗 | 工具条同样存在；弹窗未选 jks 文件时搜索框随 `noJks` 一起禁用 |
 
+## 后续增强：读坏的配置文件要报错（2026-10-09 八续）
+
+审计 P2 清单里的 P2-3「`jks.json` 写坏时界面明确报错并给路径，而不是静默当空列表」，风险一栏写的是「要区分『不存在』与『损坏』」。
+
+起因：旧 `store.ts` 里三个读函数都是 `readJson<T>()` 返回 `T | null`，把「文件不存在」和「文件在但解析失败」混成同一个 `null`。于是 `jks.json` 被写坏时，界面只会显示「已配置 0 个 jks」——看起来像配置整个丢了，用户第一反应是「我的凭据呢」，而不是「这个文件坏了」。更糟的是 `readTemplate()` 里那句「`!parsed` 就落种子」会把坏掉的 `template.json` **静默覆盖成种子**，等于顺手删掉用户自己攒的模板。
+
+三处口径：
+
+| 问题 | 结论 |
+|---|---|
+| 怎么区分「不存在」与「坏了」 | `readJson` 从「一律返回 null」改成返回 `{value, problem}`：`ENOENT` 视为正常（那是「还没配过」），其它 fs 错误与 `JSON.parse` 失败才算 problem。结构不对（缺 `items` / `suffixes` / `channelInfoList`）同样算 problem |
+| 坏文件要不要保住 | 要。`rescueBrokenFile` 先把原文件复制成 `<文件名>.broken` 再继续；**固定名 + 只在还没有备份时复制** —— 反复坏掉时保留最早那份，也不会让备份无限堆积。不备份的话，用户看到「0 个 jks」后随手新增一个，`writeJksFile` 就把坏文件覆盖掉了 |
+| 原文件动不动 | 一个字节都不动。报错后按空列表继续，让用户自己决定修还是删 |
+
+其它细节：
+
+- **`readTemplate()` 不再覆盖坏文件**：坏掉时只在内存里退回种子，**绝不写盘**；只有「文件不存在」（首次启动）才落种子。
+- **问题收集用模块级数组 + drain**：`noteProblem`（按 path 去重）+ `drainStoreProblems()`。`storeLoad` 先读 jks / template 再 drain 一次取走；渠道列表是按需逐个读的，所以另开一个 IPC `store:takeProblems`，渲染层在 `getChannels` 之后补取一次。
+- **横幅可关但新问题会重新冒出来**：dismiss 状态按 path 记，放在组件本地 state，不落盘。
+
+改动：
+
+| 文件 | 内容 |
+|---|---|
+| `app/src/shared/types/store.ts` | 新增 `StoreProblem { label; path; reason; backupPath? }`（label 是给用户看的角色名，如「jks 列表」「渠道列表（xklinai）」）；`StoreSnapshot` 增加 `problems` |
+| `app/src/main/store.ts` | 新增 `pendingProblems` / `noteProblem` / `drainStoreProblems` / `rescueBrokenFile` / `makeProblem`；`readJson` 改成返回 `ReadOutcome<T> = { value; problem }`；`readJksFile` / `readTemplate` / `readChannels` 三者按上述规则改写，`seedTemplate()` 抽出 |
+| `app/src/main/ipc/store.ts` | `storeLoad` 先读 jks 与 template、**再** drain（顺序不能反）；新增 `storeTakeProblems` handler |
+| `app/src/shared/constants/channels.ts` | 新增 `storeTakeProblems: 'store:takeProblems'` |
+| `app/src/preload/preload.ts`、`app/src/shared/types/api.ts` | 新增 `takeStoreProblems()` |
+| `app/src/renderer/src/store/app-store.tsx` | 新增 `problems` state 与 `mergeProblems`（按 path 去重合并）；`getChannels` 改成 `async`，读完配置再 `mergeProblems(await window.api.takeStoreProblems())` |
+| `app/src/renderer/src/components/StoreProblemBanner.tsx` | **新增**。根节点带 `data-slot="store-problem-banner"`；标题写清有几个文件读不出来、原文件没动、备份已留；每条列出 `角色名 · 原因`、绝对路径、备份路径；按钮「打开数据目录」与「知道了」 |
+| `app/src/renderer/src/App.tsx` | 在 `usedFallback` 横幅之后渲染 `<StoreProblemBanner />` |
+
+实测（开发构建 + CDP 驱动，页面错误 `[]`）：
+
+| 场景 | 结果 |
+|---|---|
+| `jks.json` 与 `template.json` 都是坏 JSON | 横幅「有 2 个配置文件读不出来…」，两条分别报 `不是合法的 JSON（…position 38…）` 与 `不是合法的 JSON（Unexpected token 'h'…）`，各带绝对路径与 `.broken` 备份路径 |
+| 磁盘核对 | `jks.json`（38 B）与 `template.json`（23 B）**内容原样未改** —— 旧代码会把坏掉的 `template.json` 覆盖成种子；两个 `.broken` 与原文逐字一致 |
+| 合法 JSON 但缺 `items` | 报「结构不对：缺少 items 数组」，原文件保住 |
+| 备份只做一次 | 先写 `BROKEN-ONE` 重载 → `.broken` = `BROKEN-ONE`（10 B）；再写 `BROKEN-TWO` 重载 → `.broken` 仍是 `BROKEN-ONE` |
+| `jks.json` 与 `template.json` 都不存在 | 无横幅；`template.json` 重新落种子（13 项）；`jks.json` **不被创建** |
+| 好的 `jks.json` + 坏的 `channels/t21.json` | 报「渠道列表（t21）·不是合法的 JSON（Unexpected end of JSON input）」。**出包页挂载时就会读当前 jks 的渠道列表**（`PackScreen.tsx` 的 `getChannels(jksId)`），所以不用切到「渠道配置」页问题就已经冒出来了 |
+| 点「打开数据目录」 | 资源管理器窗口数 6 → 7，新窗口地址 `file:///D:/工具/渠道分包工具/data` |
+| 点「知道了」 | 横幅消失（`{"present":false}`） |
+| 全部文件正常 | 无横幅，「已配置 1 个 jks」正常读出 |
+
+验证手法上的一条教训：核对磁盘文件内容时用 `[System.IO.File]::ReadAllBytes` + `[System.Text.Encoding]::UTF8.GetString` 直接打印字节数与原文，别用 `"…$((Get-Content $p -Raw))…"` 这种嵌套引号插值 —— 后者一度打出空串，让人误以为备份文件是空的。
+
 ## 风险与回滚点
 
 | 风险 | 触发点 | 回滚/对策 |

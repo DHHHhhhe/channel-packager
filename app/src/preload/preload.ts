@@ -9,6 +9,7 @@ import type {
   JksMutation,
   JksMutationResult,
   RefreshResult,
+  StoreProblem,
   StoreSnapshot,
   TemplateFile,
 } from '../shared/types/store'
@@ -44,6 +45,10 @@ const api: RendererApi = {
 
   loadStore(): Promise<StoreSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.storeLoad)
+  },
+
+  takeStoreProblems(): Promise<StoreProblem[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.storeTakeProblems)
   },
 
   saveJks(mutation: JksMutation): Promise<JksMutationResult> {

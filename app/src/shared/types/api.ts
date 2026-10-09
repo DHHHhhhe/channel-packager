@@ -6,6 +6,7 @@ import type {
   JksMutation,
   JksMutationResult,
   RefreshResult,
+  StoreProblem,
   StoreSnapshot,
   TemplateFile,
 } from './store'
@@ -36,6 +37,12 @@ export interface RendererApi {
 
   /** 取存储快照：jks 列表、模板、数据目录。界面启动时调一次 */
   loadStore(): Promise<StoreSnapshot>
+
+  /**
+   * 取走并清空「读到坏文件」的记录。
+   * 渠道列表是按需逐个读的，读完之后补调一次，问题才会冒到界面上。
+   */
+  takeStoreProblems(): Promise<StoreProblem[]>
 
   /** 新增 / 更新 / 删除 jks。新增时复制副本，删除时一并清副本与渠道文件 */
   saveJks(mutation: JksMutation): Promise<JksMutationResult>

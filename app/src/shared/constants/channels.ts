@@ -12,6 +12,8 @@ export const IPC_CHANNELS = {
   storeGetChannels: 'store:getChannels',
   storeSaveChannels: 'store:saveChannels',
   storeSaveTemplate: 'store:saveTemplate',
+  /** 取走并清空「读到坏文件」的记录；读不到的文件不存在时不算坏 */
+  storeTakeProblems: 'store:takeProblems',
 
   /** 选文件 + 解析，只读；返回文件里的条目供用户预览与编辑 */
   channelsImport: 'channels:import',

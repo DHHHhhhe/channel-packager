@@ -5,23 +5,40 @@ import type {
   JksMutation,
   JksMutationResult,
   RefreshResult,
+  StoreProblem,
   StoreSnapshot,
   TemplateFile,
 } from '../../shared/types/store'
 import { addKeystore, refreshFromSource, removeJksItem, updateJksItem } from '../keystore'
 import { getDataDir, isUsingFallbackDataDir } from '../paths'
-import { readChannels, readJksFile, readTemplate, writeChannels, writeTemplate } from '../store'
+import {
+  drainStoreProblems,
+  readChannels,
+  readJksFile,
+  readTemplate,
+  writeChannels,
+  writeTemplate,
+} from '../store'
 
 export function registerStoreIpc(): void {
-  ipcMain.handle(
-    IPC_CHANNELS.storeLoad,
-    (): StoreSnapshot => ({
-      jks: readJksFile(),
-      template: readTemplate(),
+  ipcMain.handle(IPC_CHANNELS.storeLoad, (): StoreSnapshot => {
+    // 顺序不能反：先把文件读一遍，问题才会攒下来，然后一次取走
+    const jks = readJksFile()
+    const template = readTemplate()
+    return {
+      jks,
+      template,
       dataDir: getDataDir(),
       usedFallback: isUsingFallbackDataDir(),
-    }),
-  )
+      problems: drainStoreProblems(),
+    }
+  })
+
+  /**
+   * 渠道列表是逐个按需读的，坏文件得另外取一次。
+   * 渲染层在 getChannels 之后调它，把问题并到顶部横幅上。
+   */
+  ipcMain.handle(IPC_CHANNELS.storeTakeProblems, (): StoreProblem[] => drainStoreProblems())
 
   ipcMain.handle(
     IPC_CHANNELS.storeSaveJks,

@@ -49,6 +49,21 @@ export interface ChannelConfig {
   channelInfoList: ChannelEntry[]
 }
 
+/**
+ * 一个「文件在、但读不出来」的配置文件。
+ * 文件不存在不算问题 —— 那是「还没有」，不是「坏了」。
+ */
+export interface StoreProblem {
+  /** 给用户看的角色名，例如「jks 列表」「渠道列表（xklinai）」 */
+  label: string
+  /** 绝对路径，界面要显示出来，用户才能自己去修 */
+  path: string
+  /** 失败原因：JSON 解析错误原文，或系统错误码 */
+  reason: string
+  /** 坏文件被另存到这里（只备份最早那份）；备份不成功时为 undefined */
+  backupPath?: string
+}
+
 /** 应用启动时一次性取回的存储快照，省掉多次往返 */
 export interface StoreSnapshot {
   jks: JksFile
@@ -56,6 +71,8 @@ export interface StoreSnapshot {
   dataDir: string
   /** data/ 不可写、已回退到 userData 时为 true，界面需要明示 */
   usedFallback: boolean
+  /** 这一轮读到的坏文件。空数组表示都正常 */
+  problems: StoreProblem[]
 }
 
 /** store:saveJks 的请求，一个通道承载增改删三种动作 */
