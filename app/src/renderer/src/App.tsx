@@ -60,7 +60,7 @@ function Shell() {
 
             <StoreProblemBanner />
 
-            {store.loading ? (
+            {store.loading && !store.initialized ? (
               <p className="text-sm text-muted-foreground">正在读取本地配置…</p>
             ) : (
               <CurrentView view={view} />

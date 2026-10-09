@@ -21,6 +21,12 @@ import { ipcErrorMessage } from '@/lib/ipc-error'
 
 interface AppStoreValue {
   loading: boolean
+  /**
+   * 首次加载是否已经结束过一次。
+   * 用它区分「首屏还在读」与「后台刷新」：后者不该把当前页面整个换掉 ——
+   * 页面被卸载会连同它自己的状态（比如「已导入 N 条」这类提示）一起丢掉。
+   */
+  initialized: boolean
   /** 读取存储失败时的原因，成功为 null */
   loadError: string | null
   dataDir: string
@@ -50,6 +56,7 @@ const AppStoreContext = createContext<AppStoreValue | null>(null)
  */
 export function AppStoreProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
+  const [initialized, setInitialized] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [dataDir, setDataDir] = useState('')
   const [usedFallback, setUsedFallback] = useState(false)
@@ -87,6 +94,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       setLoadError(ipcErrorMessage(error))
     } finally {
       setLoading(false)
+      setInitialized(true)
     }
   }, [])
 
@@ -97,6 +105,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AppStoreValue>(
     () => ({
       loading,
+      initialized,
       loadError,
       dataDir,
       usedFallback,
@@ -129,7 +138,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         return window.api.verifyCredentials(id, password, alias)
       },
     }),
-    [loading, loadError, dataDir, usedFallback, problems, jksItems, template, reload, mergeProblems],
+    [loading, initialized, loadError, dataDir, usedFallback, problems, jksItems, template, reload, mergeProblems],
   )
 
   return <AppStoreContext.Provider value={value}>{children}</AppStoreContext.Provider>
