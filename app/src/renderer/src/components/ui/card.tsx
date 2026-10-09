@@ -32,9 +32,14 @@ function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
-function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
+/*
+ * 卡片标题渲染成真正的 h2 而不是 div：顶栏那个页面名是全文唯一的 h1，读屏
+ * 用户按标题键跳转时，卡片标题是唯一的落脚点。用 div 的话整个界面只有一级
+ * 标题，等于没有结构。
+ */
+function CardTitle({ className, ...props }: React.ComponentProps<"h2">) {
   return (
-    <div
+    <h2
       data-slot="card-title"
       className={cn(
         "font-heading text-sm leading-snug font-medium group-data-[size=sm]/card:text-sm",
@@ -45,9 +50,9 @@ function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
-function CardDescription({ className, ...props }: React.ComponentProps<"div">) {
+function CardDescription({ className, ...props }: React.ComponentProps<"p">) {
   return (
-    <div
+    <p
       data-slot="card-description"
       className={cn("text-sm text-muted-foreground", className)}
       {...props}

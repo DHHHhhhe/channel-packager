@@ -3,6 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      声明本页深浅两套都支持。滚动条、表单控件这些浏览器自绘的部分靠它决定用哪套，
+      CSS 里的 .dark 管不到。首帧之前就得生效，所以放 meta 而不是等 JS 挂类。
+    -->
+    <meta name="color-scheme" content="light dark" />
     <title>渠道分包工具</title>
   </head>
   <body>

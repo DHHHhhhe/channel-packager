@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Download, Info, ShieldAlert, Upload } from 'lucide-react'
 import { ConfigPackDialog } from '@/components/ConfigPackDialog'
 import { PageHeader } from '@/components/PageHeader'
@@ -12,6 +12,7 @@ import type { PackImportResult, PackPreviewResult } from '@shared/types/pack'
 import { findDuplicates } from '@/lib/duplicates'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { useAppStore } from '@/store/app-store'
+import { useSaveShortcut, useUnsavedGuard } from '@/store/nav'
 
 export function TemplateScreen() {
   const { template, saveTemplate, reload } = useAppStore()
@@ -39,7 +40,7 @@ export function TemplateScreen() {
     setStatus(null)
   }
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     if (hasEmpty) {
       setStatus({ kind: 'error', text: '后缀不能为空。' })
       return
@@ -60,7 +61,17 @@ export function TemplateScreen() {
     } finally {
       setSaving(false)
     }
-  }
+  }, [hasEmpty, duplicates, rows, saveTemplate])
+
+  /* Ctrl+S 与页面上的「保存模板」走同一个动作 */
+  useSaveShortcut(
+    useCallback(() => {
+      void handleSave()
+    }, [handleSave]),
+  )
+
+  /* 有没保存的改动时，切页与关窗口都会被拦一下 */
+  useUnsavedGuard(dirty ? '后缀表的改动' : null)
 
   const handleExportPack = async () => {
     setStatus(null)

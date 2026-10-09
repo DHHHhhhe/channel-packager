@@ -15,9 +15,18 @@ export function prefersDark(): boolean {
   return window.matchMedia(DARK_QUERY).matches
 }
 
-/** 挂/摘 `<html class="dark">`。index.css 的 .dark 令牌块与所有 dark: 工具类都靠它 */
+/**
+ * 挂/摘 `<html class="dark">`，并把 color-scheme 一起设上。
+ *
+ * 光有 `.dark` 管不到浏览器自绘的那几样：滚动条、`<input type="file">` 的系统
+ * 按钮、数字输入的上下箭头、自动填充的底色。它们由 `color-scheme` 决定 ——
+ * 深色下不改，窗口右侧就会留一条刺眼的浅色滚动条。index.html 里那份 meta
+ * 负责首帧之前的值，这里负责跟随切换。
+ */
 export function applyThemeClass(dark: boolean): void {
-  document.documentElement.classList.toggle('dark', dark)
+  const root = document.documentElement
+  root.classList.toggle('dark', dark)
+  root.style.colorScheme = dark ? 'dark' : 'light'
 }
 
 /**

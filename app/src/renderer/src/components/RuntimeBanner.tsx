@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { JSX } from 'react'
 import { TriangleAlert } from 'lucide-react'
+import { CopyDiagnosticsButton } from '@/components/CopyDiagnosticsButton'
+import { ipcErrorMessage } from '@/lib/ipc-error'
 import type { RuntimeCheckResult } from '@shared/types/runtime'
 
 type CheckState =
@@ -45,9 +47,11 @@ export default function RuntimeBanner(): JSX.Element | null {
         if (cancelled) {
           return
         }
-        // 自检本身失败也要说出来，否则界面看起来一切正常，问题却被吞掉
-        const message = error instanceof Error ? error.message : String(error)
-        setState({ status: 'error', message })
+        // 自检本身失败也要说出来，否则界面看起来一切正常，问题却被吞掉。
+        // 走 ipcErrorMessage 剥掉外层 —— 直接把 Electron 的
+        // 「Error invoking remote method 'runtime:check': Error: …」给用户看，
+        // 通道名会被当成问题本身。
+        setState({ status: 'error', message: ipcErrorMessage(error) })
       })
 
     return () => {
@@ -67,6 +71,9 @@ export default function RuntimeBanner(): JSX.Element | null {
           内置运行时自检失败
         </div>
         <p className="mt-1 pl-6 text-xs">{state.message}</p>
+        <div className="mt-2 pl-6">
+          <CopyDiagnosticsButton text={`内置运行时自检失败：${state.message}`} />
+        </div>
       </div>
     )
   }
@@ -90,6 +97,14 @@ export default function RuntimeBanner(): JSX.Element | null {
       <p className="mt-1 pl-6 text-xs">
         缺少 {missing.length} 项。这些文件应位于：{state.result.binDir}。重新安装或换用完整安装包可以补齐。
       </p>
+      <div className="mt-2 pl-6">
+        <CopyDiagnosticsButton
+          text={[
+            `运行环境不完整，缺少 ${missing.length} 项。应位于：${state.result.binDir}`,
+            ...missing.map((component) => `- ${component.label}：${component.path}`),
+          ].join('\n')}
+        />
+      </div>
     </div>
   )
 }

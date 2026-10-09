@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { FileDown, Pencil, Plus, Trash2, Wand2 } from 'lucide-react'
 import { ChannelListPreviewDialog } from '@/components/ChannelListPreviewDialog'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
@@ -24,6 +24,7 @@ import { mergeImportedRows } from '@/lib/channels-import'
 import { findDuplicates } from '@/lib/duplicates'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { useAppStore } from '@/store/app-store'
+import { useSaveShortcut, useUnsavedGuard } from '@/store/nav'
 
 /** 编辑器里的行 → 落盘/导出用的条目；别名为空时不写这个字段 */
 function toChannelEntries(rows: PairRow[]): ChannelEntry[] {
@@ -57,6 +58,8 @@ export function ChannelsScreen() {
   })
   const [groupBusy, setGroupBusy] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  /** 有未保存改动时想切分组，先拦在这里；值是打算切过去的 id */
+  const [confirmSwitch, setConfirmSwitch] = useState<string | null>(null)
 
   const selected = groups.find((item) => item.id === selectedId)
 
@@ -227,7 +230,7 @@ export function ChannelsScreen() {
     setStatus({ kind: 'ok', text: `${detail}尚未保存，确认无误后点「保存渠道列表」。` })
   }
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     if (!selected) {
       return
     }
@@ -254,6 +257,31 @@ export function ChannelsScreen() {
     } finally {
       setSaving(false)
     }
+  }, [selected, hasEmpty, duplicates, rows, saveChannels])
+
+  /* Ctrl+S 与页面上的「保存渠道列表」走同一个动作 */
+  useSaveShortcut(
+    useCallback(() => {
+      void handleSave()
+    }, [handleSave]),
+  )
+
+  /* 有没保存的改动时，切页与关窗口都会被拦一下 */
+  useUnsavedGuard(dirty ? '渠道列表的改动' : null)
+
+  /*
+   * 切分组会把整张表换成另一个分组的列表。
+   * 原来这里是直接 setSelectedId —— 界面上那批还没保存的改动连问都不问就没了。
+   */
+  const handleSelectGroup = (next: string) => {
+    if (next === selectedId) {
+      return
+    }
+    if (dirty) {
+      setConfirmSwitch(next)
+      return
+    }
+    setSelectedId(next)
   }
 
   const handleSubmitGroup = async (payload: GroupFormPayload) => {
@@ -397,7 +425,7 @@ export function ChannelsScreen() {
         <CardContent className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-2">
             <div className="max-w-sm flex-1">
-              <Select value={selectedId} onValueChange={setSelectedId}>
+              <Select value={selectedId} onValueChange={handleSelectGroup}>
                 <SelectTrigger aria-label="选择分组">
                   <SelectValue placeholder="请选择分组" />
                 </SelectTrigger>
@@ -493,9 +521,15 @@ export function ChannelsScreen() {
       <Card>
         <CardHeader>
           <CardTitle>渠道列表</CardTitle>
-          <CardDescription>
-            渠道必填、别名选填。保存写的是整份列表，与搜索无关。
-            {loading ? ' 读取中…' : ''}
+          <CardDescription className="flex items-center gap-2">
+            {loading ? (
+              <>
+                <Spinner />
+                <span role="status">正在读取这个分组的渠道列表…</span>
+              </>
+            ) : (
+              '渠道必填、别名选填。保存写的是整份列表，与搜索无关。'
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -534,6 +568,28 @@ export function ChannelsScreen() {
         onConfirm={() => {
           setConfirmTemplate(false)
           applyTemplate()
+        }}
+      />
+
+      <ConfirmDialog
+        open={confirmSwitch !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setConfirmSwitch(null)
+          }
+        }}
+        title="换分组？"
+        description={`「${selected?.name ?? ''}」里有 ${rows.length} 条还没保存的改动，换成别的分组就会丢掉。`}
+        warning="想留下就先取消，再点「保存渠道列表」。"
+        confirmText="放弃改动并切换"
+        cancelText="留下继续编辑"
+        destructive
+        onConfirm={() => {
+          const target = confirmSwitch
+          setConfirmSwitch(null)
+          if (target) {
+            setSelectedId(target)
+          }
         }}
       />
 
