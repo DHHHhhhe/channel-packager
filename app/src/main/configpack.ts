@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { createHash } from 'node:crypto'
 import { TEMPLATE_SEED } from '../shared/constants/templateSeed'
 import type { ChannelEntry, JksItem, TemplateSuffix } from '../shared/types/store'
 import {
@@ -166,6 +167,8 @@ function readManifest(dir: string): PackManifest {
     version,
     exportedAt: typeof record.exportedAt === 'string' ? record.exportedAt : '',
     jksCount: typeof record.jksCount === 'number' ? record.jksCount : 0,
+    // 旧版导出的包没有这个字段，按「含凭据」处理
+    credentialFree: record.credentialFree === true,
     files: normalized,
   }
 }
@@ -220,6 +223,13 @@ async function extractAndVerify(packPath: string): Promise<Extracted> {
 
 export interface PackExportInput {
   targetPath: string
+  /**
+   * 是否把签名凭据（jks 副本与 jks.json 里的条目）打进去。
+   *
+   * 置 false 时包内只有 template.json 与一份空的 jks.json，给同事当初始包用：
+   * 对方导入后拿到渠道模板，自己再新增 jks —— 私钥与明文密码不出本机。
+   */
+  includeCredentials: boolean
 }
 
 /** 导出配置包。只含 jks.json / keystores / channels / template.json，**不含 logs 与 .runtime** */
@@ -236,21 +246,37 @@ export async function exportConfigPack(input: PackExportInput): Promise<PackExpo
 
     // 先读一次模板：文件不存在时 readTemplate 会落一份种子，避免导出缺文件
     readTemplate()
-    stage(JKS_NAME, jksFilePath())
     stage(TEMPLATE_NAME, templateFilePath())
 
-    for (const name of listFiles(getKeystoresDir())) {
-      stage(`${KEYSTORES_DIR}/${name}`, path.join(getKeystoresDir(), name))
-    }
-    for (const name of listFiles(getChannelsDir())) {
-      stage(`${CHANNELS_DIR}/${name}`, path.join(getChannelsDir(), name))
+    if (input.includeCredentials) {
+      stage(JKS_NAME, jksFilePath())
+
+      for (const name of listFiles(getKeystoresDir())) {
+        stage(`${KEYSTORES_DIR}/${name}`, path.join(getKeystoresDir(), name))
+      }
+      for (const name of listFiles(getChannelsDir())) {
+        stage(`${CHANNELS_DIR}/${name}`, path.join(getChannelsDir(), name))
+      }
+    } else {
+      /*
+       * 不含凭据时仍要放一份**空的** jks.json：导入侧第一步就是读它，
+       * 缺文件会被判成「这不是本工具导出的配置包」。空列表则一路走空循环，
+       * 对方的既有 jks 一条都不会动（importConfigPack 是在本机列表上追加）。
+       * 渠道列表挂在 jks 上，没有 jks 就没有渠道可带，所以 channels/ 也一并省掉。
+       */
+      const emptyJks = `${JSON.stringify({ version: JKS_FILE_VERSION, items: [] }, null, 2)}\n`
+      const target = safeJoin(staging, JKS_NAME)
+      fs.mkdirSync(path.dirname(target), { recursive: true })
+      fs.writeFileSync(target, emptyJks, 'utf8')
+      files[JKS_NAME] = createHash('sha256').update(emptyJks, 'utf8').digest('hex')
     }
 
     const manifest: PackManifest = {
       format: PACK_FORMAT,
       version: PACK_VERSION,
       exportedAt: new Date().toISOString(),
-      jksCount: readJksFile().items.length,
+      jksCount: input.includeCredentials ? readJksFile().items.length : 0,
+      credentialFree: !input.includeCredentials,
       files,
     }
     fs.writeFileSync(path.join(staging, MANIFEST_NAME), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
@@ -271,6 +297,7 @@ export async function exportConfigPack(input: PackExportInput): Promise<PackExpo
       path: input.targetPath,
       fileCount: Object.keys(files).length,
       totalBytes: fs.statSync(input.targetPath).size,
+      credentialFree: !input.includeCredentials,
     }
   } finally {
     fs.rmSync(staging, { recursive: true, force: true })
@@ -316,6 +343,7 @@ export async function previewConfigPack(packPath: string): Promise<PackPreviewRe
       keystoreCount: relativePaths.filter((entry) => entry.startsWith(`${KEYSTORES_DIR}/`)).length,
       channelCount: relativePaths.filter((entry) => entry.startsWith(`${CHANNELS_DIR}/`)).length,
       hasTemplate: relativePaths.includes(TEMPLATE_NAME),
+      credentialFree: manifest.credentialFree,
       templateDiffers: localTemplateDiffers(),
       conflicts,
     }
@@ -334,6 +362,9 @@ export interface PackImportInput {
 export async function importConfigPack(input: PackImportInput): Promise<PackImportResult> {
   const { dir, manifest } = await extractAndVerify(input.packPath)
   const notes: string[] = []
+  if (manifest.credentialFree) {
+    notes.push('这份包不含签名凭据（只有渠道模板），jks 需要你自己新增')
+  }
   try {
     const incoming = parseIncomingJks(fs.readFileSync(safeJoin(dir, JKS_NAME), 'utf8'))
     const current = readJksFile()

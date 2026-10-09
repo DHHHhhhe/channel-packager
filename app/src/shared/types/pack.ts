@@ -11,6 +11,8 @@ export interface PackManifest {
   version: number
   exportedAt: string
   jksCount: number
+  /** 导出时明确剔除了签名凭据：包内没有 keystores/，jks.json 是空列表 */
+  credentialFree: boolean
   /** 包内相对路径 → SHA256 */
   files: Record<string, string>
 }
@@ -32,6 +34,8 @@ export interface PackExportResult {
   path?: string
   fileCount?: number
   totalBytes?: number
+  /** 这次导出没带签名凭据 */
+  credentialFree?: boolean
 }
 
 export interface PackPreviewResult {
@@ -42,6 +46,8 @@ export interface PackPreviewResult {
   keystoreCount?: number
   channelCount?: number
   hasTemplate?: boolean
+  /** 这份包不含签名凭据，导入后只有模板，jks 要自己补 */
+  credentialFree?: boolean
   /** 本机模板已被改过（与内置种子不同），导入模板会覆盖它 */
   templateDiffers?: boolean
   conflicts?: PackConflict[]

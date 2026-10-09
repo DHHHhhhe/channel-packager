@@ -121,8 +121,8 @@ const api: RendererApi = {
     return ipcRenderer.invoke(IPC_CHANNELS.channelsExportSample, id, app, prefix)
   },
 
-  exportConfigPack(): Promise<PackExportResult> {
-    return ipcRenderer.invoke(IPC_CHANNELS.packExport)
+  exportConfigPack(includeCredentials: boolean): Promise<PackExportResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.packExport, includeCredentials)
   },
 
   pickConfigPack(): Promise<PackPreviewResult> {

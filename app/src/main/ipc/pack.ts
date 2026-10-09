@@ -62,17 +62,20 @@ async function pickOpenPath(
 }
 
 export function registerPackIpc(): void {
-  ipcMain.handle(IPC_CHANNELS.packExport, async (): Promise<PackExportResult> => {
-    const targetPath = await pickSavePath(
-      '导出配置包',
-      `渠道配置包_${today()}.zip`,
-      [{ name: '配置包', extensions: ['zip'] }],
-    )
-    if (targetPath === null) {
-      return { canceled: true }
-    }
-    return exportConfigPack({ targetPath })
-  })
+  ipcMain.handle(
+    IPC_CHANNELS.packExport,
+    async (_event, includeCredentials: boolean): Promise<PackExportResult> => {
+      const targetPath = await pickSavePath(
+        includeCredentials ? '导出配置包' : '导出不含凭据的配置包',
+        includeCredentials ? `渠道配置包_${today()}.zip` : `渠道模板_${today()}.zip`,
+        [{ name: '配置包', extensions: ['zip'] }],
+      )
+      if (targetPath === null) {
+        return { canceled: true }
+      }
+      return exportConfigPack({ targetPath, includeCredentials })
+    },
+  )
 
   ipcMain.handle(IPC_CHANNELS.packImport, async (): Promise<PackPreviewResult> => {
     const packPath = await pickOpenPath('选择配置包', [{ name: '配置包', extensions: ['zip'] }])

@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Download, ShieldAlert, Upload } from 'lucide-react'
+import { Download, Info, ShieldAlert, Upload } from 'lucide-react'
 import { ConfigPackDialog } from '@/components/ConfigPackDialog'
 import { PageHeader } from '@/components/PageHeader'
 import { PairListEditor, newPairRow, type PairRow } from '@/components/PairListEditor'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Label } from '@/components/ui/label'
 import type { PackImportResult, PackPreviewResult } from '@shared/types/pack'
 import { findDuplicates } from '@/lib/duplicates'
 import { ipcErrorMessage } from '@/lib/ipc-error'
@@ -18,6 +20,8 @@ export function TemplateScreen() {
   const [status, setStatus] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const [packPreview, setPackPreview] = useState<PackPreviewResult | null>(null)
   const [packBusy, setPackBusy] = useState(false)
+  // 默认带凭据，保持原来的行为；勾上就是给同事的初始包
+  const [credentialFree, setCredentialFree] = useState(false)
 
   // 首次加载与每次保存后用存储里的内容重置草稿
   useEffect(() => {
@@ -61,14 +65,15 @@ export function TemplateScreen() {
     setStatus(null)
     setPackBusy(true)
     try {
-      const result = await window.api.exportConfigPack()
+      const result = await window.api.exportConfigPack(!credentialFree)
       if (result.canceled) {
         return
       }
       const size = Math.round((result.totalBytes ?? 0) / 1024)
+      const suffix = result.credentialFree === true ? '（不含签名凭据）' : ''
       setStatus({
         kind: 'ok',
-        text: `已导出配置包：${result.path}（${result.fileCount ?? 0} 个文件，${size} KB）`,
+        text: `已导出配置包${suffix}：${result.path}（${result.fileCount ?? 0} 个文件，${size} KB）`,
       })
     } catch (error) {
       setStatus({ kind: 'error', text: ipcErrorMessage(error) })
@@ -169,12 +174,33 @@ export function TemplateScreen() {
               导入配置包
             </Button>
           </div>
-          <p className="flex items-start gap-1.5 text-xs text-destructive">
-            <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
-            <span>
-              配置包内含<strong>明文密码与私钥</strong>。导出后只发给你信任的人；导入等于把对方的签名身份装进本机。
-            </span>
-          </p>
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="pack-credential-free"
+              checked={credentialFree}
+              onCheckedChange={(checked) => setCredentialFree(checked === true)}
+              disabled={packBusy}
+            />
+            <Label htmlFor="pack-credential-free" className="text-sm font-normal">
+              导出时不带签名凭据（只给渠道模板，对方自己补 jks）
+            </Label>
+          </div>
+          {credentialFree ? (
+            <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+              <Info className="mt-0.5 size-3.5 shrink-0" />
+              <span>
+                这份包里只有渠道模板，没有私钥、密码，也没有渠道列表（渠道列表挂在 jks 上，没有 jks
+                就没得带）。适合发给同事当初始配置，对方导入后自己新增 jks 再套用模板。
+              </span>
+            </p>
+          ) : (
+            <p className="flex items-start gap-1.5 text-xs text-destructive">
+              <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
+              <span>
+                配置包内含<strong>明文密码与私钥</strong>。导出后只发给你信任的人；导入等于把对方的签名身份装进本机。
+              </span>
+            </p>
+          )}
         </CardContent>
       </Card>
 

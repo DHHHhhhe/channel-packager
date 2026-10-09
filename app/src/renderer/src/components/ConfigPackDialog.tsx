@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ShieldAlert } from 'lucide-react'
+import { Info, ShieldAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -63,6 +63,8 @@ export function ConfigPackDialog({ preview, onClose, onImported }: ConfigPackDia
   }, [preview])
 
   const conflicts = preview?.conflicts ?? []
+  // 不含凭据的包里一个 jks 都没有，「有没有冲突」这句话对它没意义
+  const credentialFree = preview?.credentialFree === true
 
   const handleApply = async () => {
     if (!preview?.packPath) {
@@ -89,20 +91,32 @@ export function ConfigPackDialog({ preview, onClose, onImported }: ConfigPackDia
         <DialogHeader>
           <DialogTitle>导入配置包</DialogTitle>
           <DialogDescription>
-            包内 {preview?.jksCount ?? 0} 个 jks、{preview?.channelCount ?? 0} 份渠道文件
+            {preview?.credentialFree
+              ? '这是一份不含签名凭据的初始包，只有渠道模板'
+              : `包内 ${preview?.jksCount ?? 0} 个 jks、${preview?.channelCount ?? 0} 份渠道文件`}
             {preview?.exportedAt ? `，导出于 ${preview.exportedAt.slice(0, 19).replace('T', ' ')}` : ''}。
             校验已通过。
           </DialogDescription>
         </DialogHeader>
 
-        <p className="flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-          <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
-          <span>
-            配置包内含<strong>明文密码与私钥</strong>。导入等于把对方的签名身份装进本机，请只导入你信任的来源。
-          </span>
-        </p>
+        {preview?.credentialFree ? (
+          <p className="flex items-start gap-1.5 rounded-md border px-3 py-2 text-xs text-muted-foreground">
+            <Info className="mt-0.5 size-3.5 shrink-0" />
+            <span>
+              这份包里没有私钥、密码，也没有渠道列表，本机的 jks 与渠道数据一条都不会被动到。
+              导入后自己新增 jks 即可套用模板。
+            </span>
+          </p>
+        ) : (
+          <p className="flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+            <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
+            <span>
+              配置包内含<strong>明文密码与私钥</strong>。导入等于把对方的签名身份装进本机，请只导入你信任的来源。
+            </span>
+          </p>
+        )}
 
-        {conflicts.length > 0 ? (
+        {credentialFree ? null : conflicts.length > 0 ? (
           <div className="flex flex-col gap-2">
             <Label>以下 {conflicts.length} 个 id 在本机已存在且内容不同</Label>
             <div className="overflow-hidden rounded-md border">
