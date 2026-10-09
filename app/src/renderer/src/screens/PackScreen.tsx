@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Eye, ListPlus, Package, Upload } from 'lucide-react'
+import { Eye, FileUp, ListPlus, Package, Upload } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 import { PackQueueCard, type QueueItem } from '@/components/PackQueueCard'
 import { ProgressPanel } from '@/components/ProgressPanel'
@@ -25,10 +25,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import type { ChannelEntry } from '@shared/types/store'
-import type { SignMode, TaskInput, TaskResult, WalleShowResult } from '@shared/types/task'
+import type { SignMode, SourceCheckResult, TaskInput, TaskResult, WalleShowResult } from '@shared/types/task'
+import { parseChannelConfig } from '@shared/utils/channels'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { STAGE_LABELS } from '@/lib/task-report'
 import { useAppStore } from '@/store/app-store'
+import { useNav } from '@/store/nav'
 
 /** 默认输出到 APK 同级的「渠道包」目录（K11） */
 function defaultOutputDir(apkPath: string): string {
@@ -50,15 +52,34 @@ function baseNameOf(filePath: string): string {
   return normalized.slice(normalized.lastIndexOf('/') + 1)
 }
 
+/**
+ * Radix Select 不接受空串当 value，所以用这个哨兵表示「不用 jks」。
+ * 真值不放 '' 是因为 '' 同时被用作「还没选」，两个意思混在一起会打架。
+ */
+const NO_JKS = '__none__'
+
 export function PackScreen() {
-  const { jksItems, getChannels } = useAppStore()
+  const { jksItems, getChannels, initialized } = useAppStore()
+  const { go } = useNav()
   const [apkPath, setApkPath] = useState('')
   const [dragging, setDragging] = useState(false)
   const [jksId, setJksId] = useState('')
+  /*
+   * true = 不用 jks，只写渠道。渠道条目改为从一份渠道 JSON 现读进来。
+   *
+   * 用独立状态而不是把 jksId 置空：下面「自动选中第一个 jks」那条 effect 会把
+   * 空 jksId 立刻填回去，置空的写法根本站不住。
+   */
+  const [noJks, setNoJks] = useState(false)
+  const [channelApp, setChannelApp] = useState('')
+  /** 临时渠道列表来自哪个文件（只用于显示；条目本身在 channels 里） */
+  const [channelFileName, setChannelFileName] = useState('')
   const [channels, setChannels] = useState<ChannelEntry[]>([])
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [outputDir, setOutputDir] = useState('')
   const [signMode, setSignMode] = useState<SignMode>('sign')
+  /** 出包表单上的提前判断：这个包能不能按当前设置出 */
+  const [sourceCheck, setSourceCheck] = useState<SourceCheckResult | null>(null)
   const [status, setStatus] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   /** 「查看渠道」的结果，非 null 时弹窗展示 */
   const [showResult, setShowResult] = useState<WalleShowResult | null>(null)
@@ -112,16 +133,31 @@ export function PackScreen() {
   }, [])
 
   useEffect(() => {
+    // 首屏还没读完就先不动：jksItems 初始是空数组，这时把 noJks 定成 true 会
+    // 让有 jks 的人也进「不用 jks」模式。
+    if (!initialized) {
+      return
+    }
+    if (noJks) {
+      return
+    }
     if (jksItems.length === 0) {
+      // 一个 jks 都没有：直接进「不用 jks」。只写渠道不需要私钥，
+      // 不该因为签名配置是空的就完全没法出包。
       setJksId('')
+      setNoJks(true)
       return
     }
     if (!jksItems.some((item) => item.id === jksId)) {
       setJksId(jksItems[0].id)
     }
-  }, [jksItems, jksId])
+  }, [initialized, jksItems, jksId, noJks])
 
   useEffect(() => {
+    // 「不用 jks」时渠道来自导入的 JSON，这里不动它
+    if (noJks) {
+      return
+    }
     if (!jksId) {
       setChannels([])
       setPicked(new Set())
@@ -154,9 +190,87 @@ export function PackScreen() {
     return () => {
       cancelled = true
     }
-  }, [jksId, getChannels])
+  }, [noJks, jksId, getChannels])
+
+  /*
+   * 提前把「这个包能不能按当前设置出」问出来。
+   *
+   * 加这条是因为证书核对原来只在流水线里跑，包是别人签的、手上没有对应私钥时，
+   * 要等到点了「开始出包」跑完几步才被拦下 —— 那时候人已经以为快好了。
+   * 600ms 是防抖：APK 路径是手打或拖进来的，逐字符敲完再问，别每敲一下就起个子进程。
+   */
+  useEffect(() => {
+    const target = apkPath.trim()
+    if (target === '' || !target.toLowerCase().endsWith('.apk')) {
+      setSourceCheck(null)
+      return
+    }
+    let cancelled = false
+    // 参数一变就先清掉，免得上一份结论挂在那儿看着像新的
+    setSourceCheck(null)
+    const timer = window.setTimeout(() => {
+      window.api
+        .checkSource(target, noJks ? '' : jksId, signMode)
+        .then((result) => {
+          if (!cancelled) {
+            setSourceCheck(result)
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setSourceCheck(null)
+          }
+        })
+    }, 600)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [apkPath, noJks, jksId, signMode])
 
   const selectedJks = jksItems.find((item) => item.id === jksId)
+
+  /*
+   * 切「不用 jks」时把 jks 带来的渠道清掉 —— 那是上一个来源的残留，
+   * 留着会让人以为渠道已经选好了。切回去时下面读渠道列表的 effect 会重新读。
+   */
+  const handlePickJks = (value: string) => {
+    if (value === NO_JKS) {
+      setNoJks(true)
+      // 没有私钥就只能跳过签名，这里顺手改掉，省得人以为还能重签名
+      setSignMode('skip')
+      setChannels([])
+      setPicked(new Set())
+      setChannelApp('')
+      setChannelFileName('')
+      return
+    }
+    setNoJks(false)
+    setJksId(value)
+  }
+
+  /*
+   * 「不用 jks」时的渠道来源：现读一份渠道 JSON。
+   * 只填界面，不出包、不落盘 —— 与「渠道配置」页导入 JSON 的口径一致。
+   */
+  const handleChannelJson = async (file: File | undefined) => {
+    if (!file) {
+      return
+    }
+    try {
+      const parsed = parseChannelConfig(await file.text(), file.name)
+      setChannels(parsed.channelInfoList)
+      setChannelApp(parsed.app ?? '')
+      setChannelFileName(file.name)
+      setPicked(new Set(parsed.channelInfoList.map((entry) => entry.channel)))
+      setStatus(null)
+    } catch (error) {
+      setStatus({
+        kind: 'error',
+        text: error instanceof Error ? error.message : '这份渠道 JSON 读不出来。',
+      })
+    }
+  }
 
   const handleApk = (file: File | undefined) => {
     if (!file) {
@@ -212,13 +326,20 @@ export function PackScreen() {
   }
 
   /** 把当前表单的参数整理成一份出包输入；单次出包与「加入队列」共用 */
-  const currentParams = (): TaskInput => ({
-    apkPath: apkPath.trim(),
-    jksId,
-    channelCodes: [...picked],
-    signMode,
-    outputDir: outputDir.trim(),
-  })
+  const currentParams = (): TaskInput => {
+    const base = {
+      apkPath: apkPath.trim(),
+      channelCodes: [...picked],
+      signMode,
+      outputDir: outputDir.trim(),
+    }
+    if (noJks) {
+      // 不带 jks 就只能跳过签名；渠道条目直接带上，别让主进程再回磁盘读一遍
+      // —— 那会把人在导入预览里改过的内容丢掉。
+      return { ...base, signMode: 'skip', channelInfoList: channels, app: channelApp }
+    }
+    return { ...base, jksId }
+  }
 
   const handleStart = async () => {
     setLines([])
@@ -252,14 +373,28 @@ export function PackScreen() {
     if (!lastRun) {
       return
     }
-    if (lastRun.jksId === jksId) {
-      const available = new Set(channels.map((entry) => entry.channel))
+    const targetJksId = lastRun.jksId ?? ''
+    if (targetJksId === '') {
+      // 上次是「不用 jks」：渠道条目在 lastRun 里，直接还原。
+      // 文件名还原不了（输入里只有条目），显示成「已导入 N 条」即可。
+      const restored = lastRun.channelInfoList ?? []
+      const available = new Set(restored.map((entry) => entry.channel))
+      setNoJks(true)
+      setChannels(restored)
+      setChannelApp(lastRun.app ?? '')
+      setChannelFileName('')
       setPicked(new Set(lastRun.channelCodes.filter((code) => available.has(code))))
     } else {
-      pendingPickedRef.current = lastRun.channelCodes
+      setNoJks(false)
+      if (targetJksId === jksId) {
+        const available = new Set(channels.map((entry) => entry.channel))
+        setPicked(new Set(lastRun.channelCodes.filter((code) => available.has(code))))
+      } else {
+        pendingPickedRef.current = lastRun.channelCodes
+      }
+      setJksId(targetJksId)
     }
     setApkPath(lastRun.apkPath)
-    setJksId(lastRun.jksId)
     setSignMode(lastRun.signMode)
     setOutputDir(lastRun.outputDir)
     setStatus({ kind: 'ok', text: '已把上次出包的参数填回上面，确认后点「开始出包」。' })
@@ -290,11 +425,11 @@ export function PackScreen() {
     if (!apkPath.trim()) {
       list.push('尚未选择 APK')
     }
-    if (!selectedJks) {
+    if (!noJks && !selectedJks) {
       list.push('尚未选择 jks')
     }
     if (channels.length === 0) {
-      list.push('该 jks 还没有渠道条目')
+      list.push(noJks ? '尚未导入渠道 JSON' : '该 jks 还没有渠道条目')
     } else if (picked.size === 0) {
       list.push('尚未勾选任何渠道')
     }
@@ -302,7 +437,7 @@ export function PackScreen() {
       list.push('尚未设置输出目录')
     }
     return list
-  }, [apkPath, selectedJks, channels.length, picked.size, outputDir])
+  }, [apkPath, noJks, selectedJks, channels.length, picked.size, outputDir])
 
   const canStart = blockers.length === 0 && !running && !queueRunning
 
@@ -320,7 +455,7 @@ export function PackScreen() {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       params,
       apkName: baseNameOf(params.apkPath),
-      jksName: selectedJks?.displayName ?? params.jksId,
+      jksName: noJks ? '不用 jks' : (selectedJks?.displayName ?? jksId),
       status: 'pending',
     }
     setQueue((previous) => [...previous, item])
@@ -427,7 +562,7 @@ export function PackScreen() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader description="一个 APK 配一个 jks，勾选渠道后生成渠道包。产物名为 <原包名>_<别名>.apk。" />
+      <PageHeader description="一个 APK 配一个 jks，勾选渠道后生成渠道包。产物名为 <原包名>_<别名>.apk。手上只有别人签好的包、没有私钥时，把 jks 选成「不用 jks」再导入一份渠道 JSON 即可 —— 只写渠道，不重签名。" />
 
       <Card>
         <CardHeader>
@@ -493,6 +628,17 @@ export function PackScreen() {
                 查看渠道
               </Button>
             </div>
+            {sourceCheck ? (
+              <p
+                className={
+                  sourceCheck.ok
+                    ? 'text-xs text-muted-foreground'
+                    : 'text-xs text-destructive'
+                }
+              >
+                {sourceCheck.message}
+              </p>
+            ) : null}
           </div>
         </CardContent>
       </Card>
@@ -501,20 +647,23 @@ export function PackScreen() {
         <CardHeader>
           <CardTitle>签名与渠道</CardTitle>
           <CardDescription>
-            {selectedJks
-              ? `别名 ${selectedJks.alias} ｜ 应用名 ${selectedJks.app}`
-              : '请选择一个 jks'}
+            {noJks
+              ? '不用 jks：只把渠道写进包里，签名保持原样。渠道条目从下面导入的那份 JSON 读。'
+              : selectedJks
+                ? `别名 ${selectedJks.alias} ｜ 应用名 ${selectedJks.app}`
+                : '请选择一个 jks'}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="pack-jks">jks</Label>
-              <Select value={jksId} onValueChange={setJksId}>
+              <Select value={noJks ? NO_JKS : jksId} onValueChange={handlePickJks}>
                 <SelectTrigger id="pack-jks">
                   <SelectValue placeholder="请选择 jks" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value={NO_JKS}>不用 jks（只写渠道，直接导入渠道 JSON）</SelectItem>
                   {jksItems.map((item) => (
                     <SelectItem key={item.id} value={item.id}>
                       {item.displayName}（{item.id}）
@@ -525,7 +674,11 @@ export function PackScreen() {
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="pack-sign-mode">签名模式</Label>
-              <Select value={signMode} onValueChange={(value) => setSignMode(value as SignMode)}>
+              <Select
+                value={signMode}
+                onValueChange={(value) => setSignMode(value as SignMode)}
+                disabled={noJks}
+              >
                 <SelectTrigger id="pack-sign-mode">
                   <SelectValue />
                 </SelectTrigger>
@@ -536,6 +689,44 @@ export function PackScreen() {
               </Select>
             </div>
           </div>
+
+          {noJks ? (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="pack-channel-json">渠道 JSON 文件</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="pack-channel-json"
+                  readOnly
+                  value={
+                    channelFileName !== ''
+                      ? channelFileName
+                      : channels.length > 0
+                        ? `已导入 ${channels.length} 条`
+                        : ''
+                  }
+                  placeholder="选择一份渠道 JSON，条目会列在下面"
+                />
+                <label className="cursor-pointer">
+                  <span className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium hover:bg-muted">
+                    <FileUp className="size-4" />
+                    选择文件
+                  </span>
+                  <input
+                    type="file"
+                    accept=".json"
+                    className="hidden"
+                    onChange={(event) => {
+                      void handleChannelJson(event.target.files?.[0])
+                      event.target.value = ''
+                    }}
+                  />
+                </label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                这份 JSON 只是这次的渠道来源，不会写进「渠道配置」。想长期留着，就到「渠道配置」页导入。
+              </p>
+            </div>
+          ) : null}
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="pack-output">输出目录</Label>
@@ -564,9 +755,18 @@ export function PackScreen() {
               </Button>
             </div>
             {channels.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                该 jks 还没有渠道条目，请先到「渠道配置」添加。
-              </p>
+              noJks ? (
+                <p className="text-sm text-muted-foreground">
+                  还没有导入渠道 JSON —— 用上面的「选择文件」选一份。
+                </p>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                  <span>该 jks 还没有渠道条目。</span>
+                  <Button variant="outline" size="sm" onClick={() => go('channels')}>
+                    去「渠道配置」
+                  </Button>
+                </div>
+              )
             ) : (
               <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
                 {channels.map((entry) => {

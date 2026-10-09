@@ -26,6 +26,8 @@ export const IPC_CHANNELS = {
 
   taskRun: 'task:run',
   taskProgress: 'task:progress',
+  /** 只读：看看这个输入包能不能按当前设置出包（证书是谁签的、有没有 v2） */
+  taskCheckSource: 'task:checkSource',
 
   walleShow: 'walle:show',
 

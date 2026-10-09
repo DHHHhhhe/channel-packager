@@ -142,6 +142,18 @@ interface CertProbe {
   tail: string[]
 }
 
+/** 一个 APK 的签名情况。`digest` 为空串表示读不出证书 */
+export interface ApkSignature {
+  digest: string
+  /**
+   * 有没有 v2 签名 —— walle 把渠道写进 APK Signing Block，只认 v2。
+   * `undefined` 表示 apksigner 没报这一行（不同版本输出可能不一样），
+   * 这时不做拦截，让 walle 自己报错，免得因为认不出格式而挡住正常的包。
+   */
+  v2?: boolean
+  tail: string[]
+}
+
 /**
  * 从 apksigner 的输出里挑证书 SHA-256 指纹。
  * 必须按行匹配而不是整个输出 —— `--print-certs` 会在几十上百行
@@ -158,10 +170,27 @@ function pickCertificateDigest(output: string): string {
 }
 
 /**
- * 读 APK 里签名证书的 SHA-256 指纹。
- * 刻意不把输出推给界面：那些 WARNING 对使用者是纯噪音，核对结果一句话就够。
+ * apksigner 只在 `-v` 模式下报这一行，v1-only 的包这里是 false。
+ * 认不出这一行时返回 undefined（见 `ApkSignature.v2` 的说明）。
  */
-async function probeApkCertificate(apkPath: string, ctx: StepContext): Promise<CertProbe> {
+function pickV2Flag(output: string): boolean | undefined {
+  const matched = /Verified using v2 scheme \(APK Signature Scheme v2\):\s*(true|false)/i.exec(output)
+  if (!matched) {
+    return undefined
+  }
+  return matched[1].toLowerCase() === 'true'
+}
+
+/**
+ * 读 APK 的签名情况（证书指纹 + 有没有 v2）。
+ *
+ * `--print-certs` 与 `-v` 一起给，一次调用拿全两件事。刻意不把输出推给界面：
+ * 那些 WARNING 对使用者是纯噪音，核对结果一句话就够。
+ */
+export async function readApkSignature(
+  apkPath: string,
+  ctx?: StepContext,
+): Promise<ApkSignature> {
   const result = await runProcess(
     resolveRuntimeComponentPath('java'),
     [
@@ -170,14 +199,17 @@ async function probeApkCertificate(apkPath: string, ctx: StepContext): Promise<C
       resolveRuntimeComponentPath('apksigner'),
       'verify',
       '--print-certs',
+      '-v',
       apkPath,
     ],
     {},
   )
   const output = result.stdout + result.stderr
   const digest = pickCertificateDigest(output)
-  ctx.log.info(`读输入包证书指纹：${digest || '(读不出)'}（退出码 ${result.code}）`)
-  return { digest, tail: tailLineList(output) }
+  const v2 = pickV2Flag(output)
+  const v2Text = v2 === undefined ? '读不出' : v2 ? '有' : '无'
+  ctx?.log.info(`读输入包签名：证书 ${digest || '(读不出)'}，v2 ${v2Text}（退出码 ${result.code}）`)
+  return { digest, v2, tail: tailLineList(output) }
 }
 
 /**
@@ -186,11 +218,11 @@ async function probeApkCertificate(apkPath: string, ctx: StepContext): Promise<C
  * `-rfc` 直接给 PEM，把 base64 解回 DER 再算 SHA-256 —— 实测与 apksigner 报的
  * `certificate SHA-256 digest` 是同一个值，所以两边可以直接比字符串。
  */
-async function probeKeystoreCertificate(
+export async function probeKeystoreCertificate(
   keystorePath: string,
   alias: string,
   storePassword: string,
-  ctx: StepContext,
+  ctx?: StepContext,
 ): Promise<CertProbe> {
   const result = await runProcess(
     resolveRuntimeComponentPath('keytool'),
@@ -223,8 +255,31 @@ async function probeKeystoreCertificate(
   }
   const der = Buffer.from(pem[1].replace(/\s+/g, ''), 'base64')
   const digest = createHash('sha256').update(der).digest('hex')
-  ctx.log.info(`读 jks 证书指纹：${digest}`)
+  ctx?.log.info(`读 jks 证书指纹：${digest}`)
   return { digest, tail: tailLineList(output) }
+}
+
+/**
+ * 「跳过签名」的两条路径都绕不过这两条：包得读得出签名证书，且得有 v2 签名。
+ * v1-only 的包 walle 会直接抛 `No APK Signing Block before ZIP Central Directory`，
+ * 与其让人对着 Java 栈猜，不如在这里说清楚。
+ */
+function assertSkippable(apk: ApkSignature): void {
+  if (apk.digest === '') {
+    throw new StepFailure(
+      '这个包读不出签名证书（没签名或文件损坏），跳过签名会得到装不上的包，已中止',
+      undefined,
+      apk.tail,
+    )
+  }
+  if (apk.v2 === false) {
+    throw new StepFailure(
+      '这个包只有 v1 签名，没有 v2 签名。walle 要把渠道写进 APK Signing Block，只认 v2 —— ' +
+        '先用 apksigner 重签一次再拿过来，或者改用「重签名」模式。',
+      undefined,
+      apk.tail,
+    )
+  }
 }
 
 /**
@@ -240,14 +295,8 @@ export async function assertSignedByKeystore(
   ctx: StepContext,
 ): Promise<void> {
   ctx.log.section('跳过签名前核对签名证书')
-  const apk = await probeApkCertificate(apkPath, ctx)
-  if (apk.digest === '') {
-    throw new StepFailure(
-      '这个包读不出签名证书（没签名或文件损坏），跳过签名会得到装不上的包，已中止',
-      undefined,
-      apk.tail,
-    )
-  }
+  const apk = await readApkSignature(apkPath, ctx)
+  assertSkippable(apk)
   const keystore = await probeKeystoreCertificate(
     params.keystorePath,
     params.alias,
@@ -264,4 +313,19 @@ export async function assertSignedByKeystore(
     )
   }
   ctx.log.info('证书一致，可以跳过签名')
+}
+
+/**
+ * 没有 jks 时的自查。
+ *
+ * 拿不到私钥就没法和某个 keystore 比对，所以这里只做那两件不需要私钥的事：
+ * 包得读得出证书、得有 v2 签名。输出包的签名是否与输入包一致，由流水线在
+ * 写渠道之后再核一遍 —— 那一步比这里更强，它直接验证「跳过签名没把签名改坏」。
+ */
+export async function assertSkippableApk(apkPath: string, ctx: StepContext): Promise<ApkSignature> {
+  ctx.log.section('跳过签名前自查输入包')
+  const apk = await readApkSignature(apkPath, ctx)
+  assertSkippable(apk)
+  ctx.log.info('输入包可以跳过签名')
+  return apk
 }

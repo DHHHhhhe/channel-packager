@@ -13,7 +13,14 @@ import type {
   StoreSnapshot,
   TemplateFile,
 } from '../shared/types/store'
-import type { TaskInput, TaskProgressEvent, TaskStartResult, WalleShowResult } from '../shared/types/task'
+import type {
+  SignMode,
+  SourceCheckResult,
+  TaskInput,
+  TaskProgressEvent,
+  TaskStartResult,
+  WalleShowResult,
+} from '../shared/types/task'
 import type {
   ChannelExportResult,
   ChannelListPreview,
@@ -99,6 +106,10 @@ const api: RendererApi = {
 
   showChannel(apkPath: string): Promise<WalleShowResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.walleShow, apkPath)
+  },
+
+  checkSource(apkPath: string, jksId: string, signMode: SignMode): Promise<SourceCheckResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.taskCheckSource, apkPath, jksId, signMode)
   },
 
   exportChannels(

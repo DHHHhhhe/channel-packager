@@ -1,10 +1,27 @@
 /** 出包任务的输入与结果契约。主进程与渲染层共用，改动需两边同步。 */
 
+import type { ChannelEntry } from './store'
+
 export type SignMode = 'sign' | 'skip'
 
+/**
+ * 出包输入。渠道来源有两条路，二选一：
+ *
+ * - 有 `jksId`：签名凭据与渠道列表都来自那个 jks（原来唯一的一条路）。
+ * - 没有 `jksId`：跳过签名、直接用已签好的包写渠道，渠道列表由
+ *   `channelInfoList` 带过来。只写渠道不需要私钥，所以这条路上不该强制
+ *   使用者先去造一个用不上的 jks。
+ *
+ * 条目直接带过来而不是给一个文件路径：使用者可能在预览框里改过内容，
+ * 再从磁盘读一遍等于把改动丢掉。
+ */
 export interface TaskInput {
   apkPath: string
-  jksId: string
+  jksId?: string
+  /** 没有 jks 时的渠道条目；与 jksId 二选一 */
+  channelInfoList?: ChannelEntry[]
+  /** 没有 jks 时写进 defaultExtraInfo.app 的应用名 */
+  app?: string
   channelCodes: string[]
   signMode: SignMode
   outputDir: string
@@ -23,6 +40,8 @@ export type TaskStage =
   | 'channel-json'
   | 'walle'
   | 'check'
+  /** 跳过签名时核对产物的签名证书是否还是输入包那一个 */
+  | 'check-sign'
   | 'publish'
   | 'done'
   | 'failed'
@@ -92,4 +111,23 @@ export interface WalleShowResult {
   channel?: string
   /** walle show -e 读回的额外信息原始输出 */
   extraInfo?: string
+}
+
+/**
+ * 「这个输入包能不能按当前设置出包」的提前判断。
+ *
+ * 出包流水线自己也会查一遍（那是权威的），这里是为了让人在点「开始出包」
+ * 之前就看见 —— 尤其是包是别人签的、手上没有对应私钥的时候。
+ */
+export interface SourceCheckResult {
+  /** 按当前签名模式，这个输入包能不能继续 */
+  ok: boolean
+  /** 输入包的签名证书 SHA-256（小写十六进制）；空串表示读不出 */
+  apkDigest: string
+  /** 输入包有没有 v2 签名 —— walle 写渠道的硬要求；认不出时为 undefined */
+  v2?: boolean
+  /** 选了 jks 时它的证书 SHA-256；读不出就没有这个字段 */
+  jksDigest?: string
+  /** 给人看的一句话 */
+  message: string
 }

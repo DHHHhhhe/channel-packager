@@ -1,7 +1,18 @@
+import fs from 'node:fs'
 import { BrowserWindow, ipcMain } from 'electron'
 import { IPC_CHANNELS } from '../../shared/constants/channels'
-import type { TaskInput, TaskProgressEvent, TaskStartResult, WalleShowResult } from '../../shared/types/task'
+import type {
+  SignMode,
+  SourceCheckResult,
+  TaskInput,
+  TaskProgressEvent,
+  TaskStartResult,
+  WalleShowResult,
+} from '../../shared/types/task'
 import { newTaskId, runPipeline } from '../pipeline'
+import { resolveInData } from '../paths'
+import { probeKeystoreCertificate, readApkSignature } from '../signer'
+import { readJksFile } from '../store'
 import { walleShowChannel, walleShowExtraInfo } from '../walle'
 
 /**
@@ -73,4 +84,105 @@ export function registerTaskIpc(): void {
       }
     },
   )
+
+  /*
+   * 只读：出包表单上「这个包能不能这么出」的提前判断。
+   * 真正的权威校验在流水线里（那里失败会中止出包），这里只是让人在点按钮
+   * 之前就看见 —— 尤其是包是别人签的、手上没有对应私钥的时候。
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.taskCheckSource,
+    async (_event, apkPath: string, jksId: string, signMode: SignMode): Promise<SourceCheckResult> => {
+      return describeSource(apkPath, jksId, signMode)
+    },
+  )
+}
+
+function shortDigest(digest: string): string {
+  return `${digest.slice(0, 16)}…`
+}
+
+async function describeSource(
+  apkPath: string,
+  jksId: string,
+  signMode: SignMode,
+): Promise<SourceCheckResult> {
+  const target = apkPath.trim()
+  if (target === '') {
+    return { ok: false, apkDigest: '', message: '还没有选 APK。' }
+  }
+  if (!fs.existsSync(target)) {
+    return { ok: false, apkDigest: '', message: '这个路径下没有文件。' }
+  }
+
+  const apk = await readApkSignature(target)
+  const base: SourceCheckResult = { ok: true, apkDigest: apk.digest, v2: apk.v2, message: '' }
+
+  /*
+   * 重签名这条路不受输入包原签名影响：zipalign + apksigner 会重新签一份，
+   * 所以 v1-only 也好、没签名也好，都能走下去 —— 这里只做说明，不拦。
+   */
+  if (signMode === 'sign') {
+    return {
+      ...base,
+      message:
+        apk.digest === ''
+          ? '这个包没有可读的签名证书；因为会重新签名，不影响出包。'
+          : `这个包由证书 ${shortDigest(apk.digest)} 签署；因为会重新签名，它原本的证书不影响结果。`,
+    }
+  }
+
+  if (apk.digest === '') {
+    return { ...base, ok: false, message: '这个包读不出签名证书（没签名或文件损坏），跳过签名会得到装不上的包。' }
+  }
+  if (apk.v2 === false) {
+    return {
+      ...base,
+      ok: false,
+      message:
+        '这个包只有 v1 签名。walle 要把渠道写进 APK Signing Block，只认 v2 —— ' +
+        '得先用 apksigner 重签一次，或者改用「重签名」模式。',
+    }
+  }
+
+  const id = jksId.trim()
+  if (id === '') {
+    return {
+      ...base,
+      message: `这个包由证书 ${shortDigest(apk.digest)} 签署；没有选 jks，所以只写渠道、不重签名。`,
+    }
+  }
+
+  const item = readJksFile().items.find((entry) => entry.id === id)
+  if (!item) {
+    return { ...base, message: `找不到 jks「${id}」。` }
+  }
+  if (item.alias.trim() === '' || item.storePassword === '') {
+    return { ...base, message: `jks「${id}」还缺别名或口令，先到「签名配置」补上。` }
+  }
+  const keystorePath = resolveInData(item.keystoreFile)
+  if (!fs.existsSync(keystorePath)) {
+    return { ...base, message: `jks「${id}」的副本不存在，先到「签名配置」重新导入。` }
+  }
+
+  let keystoreDigest = ''
+  try {
+    const keystore = await probeKeystoreCertificate(keystorePath, item.alias, item.storePassword)
+    keystoreDigest = keystore.digest
+  } catch {
+    return { ...base, message: `读 jks「${id}」里的证书失败，多半是口令不对 —— 先到「签名配置」校验一下。` }
+  }
+
+  const head = `这个包由证书 ${shortDigest(apk.digest)} 签署`
+  if (keystoreDigest === apk.digest) {
+    return { ...base, jksDigest: keystoreDigest, message: `${head}，与 jks「${id}」一致。` }
+  }
+  return {
+    ...base,
+    jksDigest: keystoreDigest,
+    ok: false,
+    message:
+      `${head}，和 jks「${id}」的证书 ${shortDigest(keystoreDigest)} 不一样。` +
+      '跳过签名会把签名对不上的包发出去，已被拦下 —— 要么换用对得上的包，要么改用「重签名」。',
+  }
 }

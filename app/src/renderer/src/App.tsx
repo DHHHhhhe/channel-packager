@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { TriangleAlert } from 'lucide-react'
 import RuntimeBanner from '@/components/RuntimeBanner'
 import StoreProblemBanner from '@/components/StoreProblemBanner'
@@ -8,6 +7,7 @@ import { JksScreen } from '@/screens/JksScreen'
 import { PackScreen } from '@/screens/PackScreen'
 import { TemplateScreen } from '@/screens/TemplateScreen'
 import { AppStoreProvider, useAppStore } from '@/store/app-store'
+import { NavProvider, useNav } from '@/store/nav'
 
 function CurrentView({ view }: { view: AppView }) {
   switch (view) {
@@ -23,7 +23,7 @@ function CurrentView({ view }: { view: AppView }) {
 }
 
 function Shell() {
-  const [view, setView] = useState<AppView>('pack')
+  const { view, go: setView } = useNav()
   const store = useAppStore()
 
   return (
@@ -75,7 +75,9 @@ function Shell() {
 export default function App() {
   return (
     <AppStoreProvider>
-      <Shell />
+      <NavProvider>
+        <Shell />
+      </NavProvider>
     </AppStoreProvider>
   )
 }

@@ -10,7 +10,14 @@ import type {
   StoreSnapshot,
   TemplateFile,
 } from './store'
-import type { TaskInput, TaskProgressEvent, TaskStartResult, WalleShowResult } from './task'
+import type {
+  SignMode,
+  SourceCheckResult,
+  TaskInput,
+  TaskProgressEvent,
+  TaskStartResult,
+  WalleShowResult,
+} from './task'
 import type {
   ChannelExportResult,
   ChannelListPreview,
@@ -78,6 +85,13 @@ export interface RendererApi {
 
   /** 用 walle show 查看某个 APK 的渠道信息 */
   showChannel(apkPath: string): Promise<WalleShowResult>
+
+  /**
+   * 只读地看一眼「这个包按当前设置能不能出」—— 出包表单用来提前告知，
+   * 真正的权威校验仍在流水线里（那里失败会中止出包）。
+   * jksId 传空串表示不重签名、只写渠道。
+   */
+  checkSource(apkPath: string, jksId: string, signMode: SignMode): Promise<SourceCheckResult>
 
   /**
    * 导出渠道 JSON。导出的是**界面上**的列表（含尚未保存的修改），

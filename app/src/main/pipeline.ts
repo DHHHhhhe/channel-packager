@@ -6,7 +6,15 @@ import { createTaskLogger } from './logger'
 import { resolveInData } from './paths'
 import { StepFailure } from './proc'
 import { readChannels, readJksFile } from './store'
-import { assertSignedByKeystore, signApk, verifyApk, zipalign, type StepContext } from './signer'
+import {
+  assertSignedByKeystore,
+  assertSkippableApk,
+  readApkSignature,
+  signApk,
+  verifyApk,
+  zipalign,
+  type StepContext,
+} from './signer'
 import { walleBatch2, walleShowChannel } from './walle'
 
 /**
@@ -41,8 +49,15 @@ interface Prepared {
   /** 不带扩展名的原包名，walle 的产物名与 3d/3e 都以它为准 */
   apkBase: string
   apkDir: string
-  item: JksItem
-  keystorePath: string
+  /**
+   * 有 jks 时才有签名凭据。没有 jks 的输入只能跳过签名 —— 重签名需要私钥，
+   * 而「拿别人签好的包只写渠道」这件事本来就不需要私钥。
+   */
+  sign?: { item: JksItem; keystorePath: string }
+  /** 渠道来源的人话描述，进日志 */
+  sourceLabel: string
+  /** 写进 defaultExtraInfo.app 的应用名 */
+  app: string
   pickedEntries: ChannelEntry[]
   outputDir: string
 }
@@ -62,35 +77,64 @@ function prepare(input: TaskInput): Prepared {
     throw new Error('输入文件的后缀不是 .apk')
   }
 
-  const item = readJksFile().items.find((entry) => entry.id === input.jksId)
-  if (!item) {
-    throw new Error(`找不到 jks：${input.jksId}`)
-  }
-  if (item.alias.trim() === '') {
-    throw new Error(`jks「${item.id}」还没有别名，请先到「签名配置」补上`)
-  }
-  if (item.storePassword === '') {
-    throw new Error(`jks「${item.id}」还没有口令，请先到「签名配置」补上`)
-  }
+  const jksId = input.jksId?.trim() ?? ''
+  let sign: Prepared['sign']
+  let app: string
+  let sourceLabel: string
+  let sourceEntries: ChannelEntry[]
 
-  // R21：签名只用 data/keystores/ 下的副本，sourcePath 仅用于显示与比对
-  const keystorePath = resolveInData(item.keystoreFile)
-  if (!fs.existsSync(keystorePath)) {
-    throw new Error(`jks 副本不存在（${item.keystoreFile}），请到「签名配置」重新导入`)
+  if (jksId !== '') {
+    const item = readJksFile().items.find((entry) => entry.id === jksId)
+    if (!item) {
+      throw new Error(`找不到 jks：${jksId}`)
+    }
+    if (item.alias.trim() === '') {
+      throw new Error(`jks「${item.id}」还没有别名，请先到「签名配置」补上`)
+    }
+    if (item.storePassword === '') {
+      throw new Error(`jks「${item.id}」还没有口令，请先到「签名配置」补上`)
+    }
+
+    // R21：签名只用 data/keystores/ 下的副本，sourcePath 仅用于显示与比对
+    const keystorePath = resolveInData(item.keystoreFile)
+    if (!fs.existsSync(keystorePath)) {
+      throw new Error(`jks 副本不存在（${item.keystoreFile}），请到「签名配置」重新导入`)
+    }
+
+    sign = { item, keystorePath }
+    app = item.app
+    sourceLabel = `jks「${item.id}」（别名 ${item.alias}）`
+    sourceEntries = readChannels(item.id, item.app).channelInfoList
+  } else {
+    /*
+     * 没有 jks：只写渠道，不重签名。这条路上连 jks 的别名与口令都不需要 ——
+     * 那两样是签名用的，跟渠道列表没有关系。
+     */
+    if (input.signMode !== 'skip') {
+      throw new Error(
+        '没有选 jks 就只能跳过签名 —— 重签名需要私钥。请选一个 jks，或把签名模式改成「跳过签名」。',
+      )
+    }
+    const entries = input.channelInfoList ?? []
+    if (entries.length === 0) {
+      throw new Error('没有可用的渠道条目：请选一个 jks，或导入一份渠道 JSON。')
+    }
+    app = input.app?.trim() ?? ''
+    sourceLabel = '临时渠道列表（没有 jks）'
+    sourceEntries = entries
   }
 
   if (input.channelCodes.length === 0) {
     throw new Error('尚未勾选任何渠道')
   }
-  const config = readChannels(item.id, item.app)
   const wanted = new Set(input.channelCodes)
   const missing = input.channelCodes.filter(
-    (code) => !config.channelInfoList.some((entry) => entry.channel === code),
+    (code) => !sourceEntries.some((entry) => entry.channel === code),
   )
   if (missing.length > 0) {
-    throw new Error(`这些渠道不在该 jks 的渠道列表里：${missing.join('、')}`)
+    throw new Error(`这些渠道不在可用的渠道列表里：${missing.join('、')}`)
   }
-  const pickedEntries = config.channelInfoList.filter((entry) => wanted.has(entry.channel))
+  const pickedEntries = sourceEntries.filter((entry) => wanted.has(entry.channel))
   if (pickedEntries.length === 0) {
     throw new Error('筛选后没有可用的渠道条目')
   }
@@ -104,8 +148,9 @@ function prepare(input: TaskInput): Prepared {
     apkPath,
     apkBase: stripSignedStemSuffix(path.basename(apkPath, path.extname(apkPath))),
     apkDir: path.dirname(apkPath),
-    item,
-    keystorePath,
+    sign,
+    sourceLabel,
+    app,
     pickedEntries,
     outputDir,
   }
@@ -156,7 +201,7 @@ export async function runPipeline(
     const p = prepare(input)
     outputDir = p.outputDir
     log.info(`输入 APK：${p.apkPath}`)
-    log.info(`jks：${p.item.id}（别名 ${p.item.alias}）`)
+    log.info(`渠道来源：${p.sourceLabel}`)
     log.info(`签名模式：${input.signMode}`)
     log.info(`渠道（${p.pickedEntries.length}）：${p.pickedEntries.map((e) => e.channel).join('、')}`)
 
@@ -185,19 +230,26 @@ export async function runPipeline(
       /*
        * 跳过签名 = 直接拿输入包去写渠道，输出包的签名完全由输入包决定。
        * 所以先核对它是不是所选的 jks 签的，别到安装或覆盖更新时才发现签名对不上。
+       *
+       * 没选 jks 时没有可比对的对象（手上没有那把私钥），那就只查那两件不需要
+       * 私钥的事：包读得出证书、有 v2 签名。产物写完之后还会再核一遍证书一致。
        */
       progress('check-source', '核对输入包的签名证书')
       log.info('signMode = skip，跳过 3a–3e')
-      await assertSignedByKeystore(
-        p.apkPath,
-        {
-          keystorePath: p.keystorePath,
-          alias: p.item.alias,
-          storePassword: p.item.storePassword,
-          jksId: p.item.id,
-        },
-        ctx,
-      )
+      if (p.sign) {
+        await assertSignedByKeystore(
+          p.apkPath,
+          {
+            keystorePath: p.sign.keystorePath,
+            alias: p.sign.item.alias,
+            storePassword: p.sign.item.storePassword,
+            jksId: p.sign.item.id,
+          },
+          ctx,
+        )
+      } else {
+        await assertSkippableApk(p.apkPath, ctx)
+      }
 
       /*
        * walle 按「输入包名 + 别名」命名产物，而输入包名里可能还带着上一轮留下的
@@ -211,6 +263,11 @@ export async function runPipeline(
         log.info(`输入包名带「已签名未写渠道」标记，已复制为：${restored}`)
       }
     } else {
+      const sign = p.sign
+      if (!sign) {
+        // prepare 已经拦过一次，这里是给类型收窄；真到这儿说明调用方绕过了校验
+        throw new Error('重签名需要 jks，请选一个 jks 或改用「跳过签名」。')
+      }
       const aligned = path.join(workDir, 'aligned.apk')
       const signed = path.join(workDir, 'signed.apk')
 
@@ -222,9 +279,9 @@ export async function runPipeline(
         {
           inputApk: aligned,
           outputApk: signed,
-          keystorePath: p.keystorePath,
-          alias: p.item.alias,
-          storePassword: p.item.storePassword,
+          keystorePath: sign.keystorePath,
+          alias: sign.item.alias,
+          storePassword: sign.item.storePassword,
         },
         ctx,
       )
@@ -261,8 +318,11 @@ export async function runPipeline(
 
     progress('channel-json', '写渠道配置')
     const config: ChannelConfig = {
-      defaultExtraInfo: { app: p.item.app },
+      defaultExtraInfo: { app: p.app },
       channelInfoList: p.pickedEntries,
+    }
+    if (p.app === '') {
+      warnings.push('这次出包没有应用名（defaultExtraInfo.app 是空的）')
     }
     const configFile = path.join(workDir, 'channel.json')
     fs.writeFileSync(configFile, JSON.stringify(config, null, 2), 'utf8')
@@ -309,6 +369,30 @@ export async function runPipeline(
             : 'walle show 未能读出渠道号',
       })
       log.info(`校验 ${fileName} → ${shown.channel || '(空)'}${verified ? ' ✓' : ' ✗'}`)
+    }
+
+    /*
+     * 跳过签名时，产物的签名完全来自输入包 —— 所以再核一遍证书是否还是同一个。
+     * 这比「输入包是不是某个 jks 签的」更强：它直接验证跳过签名没把签名改坏。
+     * （walle 是把渠道塞进 APK Signing Block，理论上不动 v2 覆盖的区域，但
+     * 补齐对齐那段历史上出过问题，所以实测一遍比推断可靠。）
+     */
+    if (input.signMode === 'skip') {
+      progress('check-sign', '核对产物的签名证书')
+      const source = await readApkSignature(p.apkPath, ctx)
+      for (const artifact of artifacts) {
+        const out = await readApkSignature(artifact.path, ctx)
+        if (source.digest === '' || out.digest === source.digest) {
+          continue
+        }
+        artifact.verified = false
+        artifact.note = '签名证书与输入包不一致'
+        const note =
+          `${artifact.fileName}：签名证书与输入包不一致` +
+          `（包 ${out.digest.slice(0, 16)}…，输入包 ${source.digest.slice(0, 16)}…），这个包装不上或盖不住原应用`
+        warnings.push(note)
+        log.error(note)
+      }
     }
 
     progress('publish', '移动到输出目录')

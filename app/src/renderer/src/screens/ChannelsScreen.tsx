@@ -22,6 +22,7 @@ import { mergeImportedRows } from '@/lib/channels-import'
 import { findDuplicates } from '@/lib/duplicates'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { useAppStore } from '@/store/app-store'
+import { useNav } from '@/store/nav'
 
 /** 编辑器里的行 → 落盘/导出用的条目；别名为空时不写这个字段 */
 function toChannelEntries(rows: PairRow[]): ChannelEntry[] {
@@ -33,6 +34,7 @@ function toChannelEntries(rows: PairRow[]): ChannelEntry[] {
 
 export function ChannelsScreen() {
   const { jksItems, template, getChannels, saveChannels } = useAppStore()
+  const { go } = useNav()
   const [selectedId, setSelectedId] = useState('')
   const [rows, setRows] = useState<PairRow[]>([])
   const [dirty, setDirty] = useState(false)
@@ -259,8 +261,27 @@ export function ChannelsScreen() {
         <Card>
           <CardHeader>
             <CardTitle>还没有 jks</CardTitle>
-            <CardDescription>渠道列表挂在 jks 上，请先到「签名配置」新增一个 jks。</CardDescription>
+            <CardDescription>
+              这个页面把渠道列表按 jks 分开存放，所以得先有一个 jks。
+            </CardDescription>
           </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <p className="text-sm text-muted-foreground">
+              jks 在这两件事上各有一个用途：出包时当签名凭据（要重签名才需要），
+              以及给渠道列表当存放位置（只写渠道也走这里）。所以想让渠道列表有个固定的家，
+              就得先新增一个 jks。
+            </p>
+            <p className="text-sm text-muted-foreground">
+              如果这次只是临时出一批渠道包、手上还没有 jks：出包页把 jks 选成「不用 jks」，
+              直接导入一份渠道 JSON 就能出包，不必为此专门造一个 jks。
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => go('jks')}>去「签名配置」新增 jks</Button>
+              <Button variant="outline" onClick={() => go('pack')}>
+                去「出包」用「不用 jks」
+              </Button>
+            </div>
+          </CardContent>
         </Card>
       </div>
     )

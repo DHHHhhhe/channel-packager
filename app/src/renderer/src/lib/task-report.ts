@@ -13,6 +13,7 @@ export const STAGE_LABELS: Record<TaskStage, string> = {
   'channel-json': '写渠道配置',
   walle: 'walle 写渠道',
   check: '校验产物渠道号',
+  'check-sign': '核对产物签名证书',
   publish: '移动到输出目录',
   done: '完成',
   failed: '失败',
