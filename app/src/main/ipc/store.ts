@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import { IPC_CHANNELS } from '../../shared/constants/channels'
+import type { ThemeChoice } from '../../shared/types/settings'
 import type {
   ChannelConfig,
   GroupMutation,
@@ -13,6 +14,7 @@ import type {
 } from '../../shared/types/store'
 import { addKeystore, refreshFromSource, removeJksItem, updateJksItem } from '../keystore'
 import { getDataDir, isUsingFallbackDataDir } from '../paths'
+import { saveTheme } from '../theme'
 import {
   applyGroupMutation,
   drainStoreProblems,
@@ -96,5 +98,13 @@ export function registerStoreIpc(): void {
       writeTemplate(template)
       return readTemplate()
     },
+  )
+
+  /**
+   * 切主题。主进程是唯一真源：写 settings.json 并改 nativeTheme，
+   * 渲染层的 prefers-color-scheme 会跟着变，`.dark` 类由渲染层自己同步。
+   */
+  ipcMain.handle(IPC_CHANNELS.storeSaveTheme, (_event, choice: ThemeChoice): ThemeChoice =>
+    saveTheme(choice),
   )
 }

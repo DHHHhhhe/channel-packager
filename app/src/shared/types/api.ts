@@ -1,4 +1,5 @@
 import type { RuntimeCheckResult } from './runtime'
+import type { ThemeChoice } from './settings'
 import type {
   ChannelConfig,
   ChannelEntry,
@@ -43,6 +44,17 @@ export interface RendererApi {
 
   /** 检查内置运行时（java / keytool / zipalign / apksigner / walle）是否齐备 */
   checkRuntime(): Promise<RuntimeCheckResult>
+
+  /**
+   * 启动时生效的主题选择。
+   *
+   * 走的是主进程建窗口时注入的启动参数，**同步**可读 —— 渲染层必须在第一帧
+   * 之前就把 `.dark` 挂上，否则会先亮一下再变暗。主进程那边还有一份落盘的真值。
+   */
+  readonly initialTheme: ThemeChoice
+
+  /** 切换主题。主进程落盘并改 nativeTheme，返回实际生效的选择 */
+  setTheme(choice: ThemeChoice): Promise<ThemeChoice>
 
   /** 取存储快照：jks 列表、模板、数据目录。界面启动时调一次 */
   loadStore(): Promise<StoreSnapshot>

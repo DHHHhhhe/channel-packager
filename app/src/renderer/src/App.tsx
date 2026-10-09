@@ -9,6 +9,7 @@ import { PackScreen } from '@/screens/PackScreen'
 import { TemplateScreen } from '@/screens/TemplateScreen'
 import { AppStoreProvider, useAppStore } from '@/store/app-store'
 import { NavProvider, useNav } from '@/store/nav'
+import { ThemeProvider } from '@/store/theme'
 
 function CurrentView({ view }: { view: AppView }) {
   switch (view) {
@@ -79,10 +80,12 @@ function Shell() {
 
 export default function App() {
   return (
-    <AppStoreProvider>
-      <NavProvider>
-        <Shell />
-      </NavProvider>
-    </AppStoreProvider>
+    <ThemeProvider>
+      <AppStoreProvider>
+        <NavProvider>
+          <Shell />
+        </NavProvider>
+      </AppStoreProvider>
+    </ThemeProvider>
   )
 }

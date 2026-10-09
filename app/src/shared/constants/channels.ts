@@ -17,6 +17,9 @@ export const IPC_CHANNELS = {
   /** 取走并清空「读到坏文件」的记录；读不到的文件不存在时不算坏 */
   storeTakeProblems: 'store:takeProblems',
 
+  /** 切换主题（跟随系统 / 浅色 / 深色）。主进程负责落盘并改 nativeTheme */
+  storeSaveTheme: 'store:saveTheme',
+
   /** 选文件 + 解析，只读；返回文件里的条目供用户预览与编辑 */
   channelsImport: 'channels:import',
   /** 导出渠道 JSON：导的是**界面上**的列表，含尚未保存的修改 */

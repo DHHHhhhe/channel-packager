@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'ele
 import { IPC_CHANNELS } from '../shared/constants/channels'
 import type { RendererApi } from '../shared/types/api'
 import type { RuntimeCheckResult } from '../shared/types/runtime'
+import { parseThemeChoice, type ThemeChoice } from '../shared/types/settings'
 import type {
   ChannelConfig,
   ChannelEntry,
@@ -34,6 +35,18 @@ import type {
 } from '../shared/types/pack'
 
 /**
+ * 主进程建窗口时通过 webPreferences.additionalArguments 注入的启动参数前缀。
+ * 走启动参数而不是 IPC，是为了让渲染层**同步**拿到 —— 首帧之前就得挂上 `.dark`。
+ */
+const THEME_ARG_PREFIX = '--dsh-theme='
+
+/** 取不到或认不出都当「跟随系统」，主进程那边还有一份落盘的真值兜底 */
+function readInitialTheme(): ThemeChoice {
+  const arg = process.argv.find((value) => value.startsWith(THEME_ARG_PREFIX))
+  return parseThemeChoice(arg?.slice(THEME_ARG_PREFIX.length))
+}
+
+/**
  * 渲染进程触达宿主的唯一入口。
  * contextIsolation 打开后渲染层拿不到 Node 与 Electron 的任何对象，
  * 只能用到这里显式暴露的方法 —— 通道名集中在 shared/constants/channels.ts。
@@ -50,6 +63,12 @@ const api: RendererApi = {
 
   checkRuntime(): Promise<RuntimeCheckResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.runtimeCheck)
+  },
+
+  initialTheme: readInitialTheme(),
+
+  setTheme(choice: ThemeChoice): Promise<ThemeChoice> {
+    return ipcRenderer.invoke(IPC_CHANNELS.storeSaveTheme, choice)
   },
 
   loadStore(): Promise<StoreSnapshot> {

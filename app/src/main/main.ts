@@ -8,6 +8,8 @@ import { registerTaskIpc } from './ipc/task'
 import { registerPackIpc } from './ipc/pack'
 import { registerShellIpc } from './ipc/shell'
 import { initPaths } from './paths'
+import { currentBackgroundColor, initTheme } from './theme'
+import type { ThemeChoice } from '../shared/types/settings'
 
 /** dev 时由 vite-plugin-electron 注入；打包后不存在 */
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
@@ -23,7 +25,7 @@ try {
   app.exit(1)
 }
 
-function createWindow(): void {
+function createWindow(theme: ThemeChoice): void {
   const win = new BrowserWindow({
     width: 1280,
     height: 840,
@@ -31,13 +33,16 @@ function createWindow(): void {
     minHeight: 680,
     show: false,
     autoHideMenuBar: true,
-    backgroundColor: '#ffffff',
+    // 跟当前主题一致，否则深色下首帧之前会闪一下白
+    backgroundColor: currentBackgroundColor(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       // preload 用 CJS require('electron') 取 webUtils，沙箱下拿不到
       sandbox: false,
+      // 渲染层要在第一帧之前就知道选的是哪一档，异步问一遍来不及
+      additionalArguments: [`--dsh-theme=${theme}`],
     },
   })
 
@@ -88,11 +93,14 @@ app.whenReady().then(() => {
   registerClipboardIpc()
   registerShellIpc()
 
-  createWindow()
+  // 建窗口之前定下主题：底色与渲染层的 prefers-color-scheme 都取它
+  const theme = initTheme()
+
+  createWindow(theme)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
+      createWindow(initTheme())
     }
   })
 })

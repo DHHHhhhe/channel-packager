@@ -1,4 +1,5 @@
 import { FolderOpen, KeyRound, ListTree, Package, ScrollText } from 'lucide-react'
+import { ThemeToggle } from '@/components/ThemeToggle'
 import { cn } from '@/lib/utils'
 
 export type AppView = 'pack' | 'jks' | 'channels' | 'template'
@@ -71,6 +72,10 @@ export function AppSidebar({
       </nav>
 
       <div className="shrink-0 border-t p-3">
+        <div className="flex items-center justify-between gap-2 pb-2">
+          <span className="text-xs text-muted-foreground">主题</span>
+          <ThemeToggle />
+        </div>
         <div className="flex items-start gap-2 text-xs text-muted-foreground">
           <FolderOpen className="mt-0.5 size-3.5 shrink-0" />
           <div className="min-w-0">

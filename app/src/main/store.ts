@@ -11,16 +11,19 @@ import type {
   StoreProblem,
   TemplateFile,
 } from '../shared/types/store'
+import { parseThemeChoice, type ThemeChoice } from '../shared/types/settings'
 import { allocateId, toFileId } from '../shared/utils/ids'
 import { getChannelsDir, getDataDir } from './paths'
 
 export const JKS_FILE_VERSION = 2
 export const TEMPLATE_FILE_VERSION = 1
 export const GROUPS_FILE_VERSION = 1
+export const SETTINGS_FILE_VERSION = 1
 
 const JKS_FILE_NAME = 'jks.json'
 const TEMPLATE_FILE_NAME = 'template.json'
 const GROUPS_FILE_NAME = 'groups.json'
+const SETTINGS_FILE_NAME = 'settings.json'
 
 /** 攒下这一轮读到的问题，由 IPC 层取走。同一个文件只报一次 */
 const pendingProblems: StoreProblem[] = []
@@ -121,6 +124,29 @@ export function templateFilePath(): string {
  */
 export function groupsFilePath(): string {
   return path.join(getDataDir(), GROUPS_FILE_NAME)
+}
+
+/**
+ * 界面偏好。目前只有主题一项，单独放一个文件而不是塞进 jks.json ——
+ * 它跟出包数据没有关系，配置包也不该把它带走（换了台机器，主题跟着人走没意义）。
+ */
+export function settingsFilePath(): string {
+  return path.join(getDataDir(), SETTINGS_FILE_NAME)
+}
+
+/**
+ * 读主题设置。文件不在、读不出来、内容不认识，一律退回「跟随系统」。
+ *
+ * 与其余 store 读法不同：这里**不报 StoreProblem**。主题偏好坏掉不该在界面上
+ * 弹一条「配置坏了」，用户按一下开关就覆盖回去了，报了反而吓人。
+ */
+export function readSettings(): { theme: ThemeChoice } {
+  const { value } = readJson<{ theme?: unknown }>(settingsFilePath(), SETTINGS_FILE_NAME)
+  return { theme: parseThemeChoice(value?.theme) }
+}
+
+export function writeSettings(theme: ThemeChoice): void {
+  writeJsonAtomic(settingsFilePath(), { version: SETTINGS_FILE_VERSION, theme })
 }
 
 /** 渠道文件的键是**分组 id**（迁移来的分组直接复用原 jks id，所以老路径一字不变） */
