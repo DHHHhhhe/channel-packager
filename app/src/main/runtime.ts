@@ -12,11 +12,11 @@ interface ComponentSpec {
 
 const COMPONENT_SPECS: readonly ComponentSpec[] = [
   { key: 'java', label: 'Java 运行时', relativePath: 'jre/bin/java.exe' },
-  { key: 'keytool', label: 'keytool', relativePath: 'jre/bin/keytool.exe' },
-  { key: 'jar', label: 'jar（配置包打包用）', relativePath: 'jre/bin/jar.exe' },
-  { key: 'zipalign', label: 'zipalign', relativePath: 'zipalign.exe' },
-  { key: 'apksigner', label: 'apksigner', relativePath: 'apksigner.jar' },
-  { key: 'walle', label: 'walle-cli', relativePath: 'walle-cli-all.jar' },
+  { key: 'keytool', label: '密钥库工具', relativePath: 'jre/bin/keytool.exe' },
+  { key: 'jar', label: '配置包打包工具', relativePath: 'jre/bin/jar.exe' },
+  { key: 'zipalign', label: '安装包对齐工具', relativePath: 'zipalign.exe' },
+  { key: 'apksigner', label: '签名工具', relativePath: 'apksigner.jar' },
+  { key: 'walle', label: '渠道写入工具', relativePath: 'walle-cli-all.jar' },
 ]
 
 /**

@@ -13,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Spinner } from '@/components/ui/spinner'
 import {
   Select,
   SelectContent,
@@ -86,7 +87,10 @@ export function PackScreen() {
   const [signMode, setSignMode] = useState<SignMode>('sign')
   /** 出包表单上的提前判断：这个包能不能按当前设置出 */
   const [sourceCheck, setSourceCheck] = useState<SourceCheckResult | null>(null)
-  const [status, setStatus] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
+  /** ok = 全成；warning = 部分失败（可继续，但要留意）；error = 整批没成 */
+  const [status, setStatus] = useState<{ kind: 'ok' | 'warning' | 'error'; text: string } | null>(
+    null,
+  )
   /** 「查看渠道」的结果，非 null 时弹窗展示 */
   const [showResult, setShowResult] = useState<WalleShowResult | null>(null)
   const [showTarget, setShowTarget] = useState('')
@@ -532,10 +536,10 @@ export function PackScreen() {
       list.push('尚未选择 APK')
     }
     if (!noJks && !selectedJks) {
-      list.push('尚未选择 jks')
+      list.push('尚未选择签名文件')
     }
     if (groups.length === 0) {
-      list.push('还没有分组 —— 渠道得先有个地方放')
+      list.push('还没有分组')
     } else if (!selectedGroup) {
       list.push('尚未选择分组')
     } else if (channels.length === 0) {
@@ -574,12 +578,12 @@ export function PackScreen() {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       params,
       apkName: baseNameOf(params.apkPath),
-      jksName: noJks ? '不用 jks' : (selectedJks?.displayName ?? jksId),
+      jksName: noJks ? '不用签名文件' : (selectedJks?.displayName ?? jksId),
       groupName: selectedGroup?.name ?? '',
       status: 'pending',
     }
     setQueue((previous) => [...previous, item])
-    setStatus({ kind: 'ok', text: `已加入队列（第 ${queue.length + 1} 项），点「开始队列」一起出包。` })
+    setStatus({ kind: 'ok', text: `已加入队列（第 ${queue.length + 1} 项），点「开始队列」可批量出包。` })
   }
 
   /*
@@ -640,7 +644,7 @@ export function PackScreen() {
         setQueue((previous) =>
           previous.map((row) =>
             row.id === item.id
-              ? { ...row, status: 'failed', error: failureText || '没拿到这次出包的结果' }
+              ? { ...row, status: 'failed', error: failureText || '未能取得本次出包的结果' }
               : row,
           ),
         )
@@ -664,10 +668,11 @@ export function PackScreen() {
     // 队列的逐项结果在队列卡片里看，别让最后一项又占一张单次出包的结果卡片
     setResult(null)
     setStatus({
-      kind: bad === 0 ? 'ok' : 'error',
+      // 全成走 ok；一项都没成是 error；成了一些是 warning（可继续，但要留意）
+      kind: bad === 0 ? 'ok' : ok === 0 ? 'error' : 'warning',
       text:
-        `队列跑完：成功 ${ok} 项，失败 ${bad} 项。` +
-        (bad > 0 ? '失败的那几项点「详情」看诊断信息。' : ''),
+        `队列执行完毕：成功 ${ok} 项，失败 ${bad} 项。` +
+        (bad > 0 ? '失败项可点「详情」查看诊断信息。' : ''),
     })
   }
 
@@ -682,12 +687,12 @@ export function PackScreen() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader description="一个 APK 配一套渠道，勾选后生成渠道包，产物名为 <原包名>_<别名>.apk。渠道来自「渠道配置」里的分组 —— 手上只有别人签好的包、没有私钥时，把 jks 选成「不用 jks」就只写渠道、不重签名。" />
+      <PageHeader description="勾选渠道后生成渠道包，产物名为 <原包名>_<别名>.apk。渠道来自「渠道配置」中的分组；手上只有别人签好的包、没有私钥时，签名选「不用签名文件」即可只写渠道、不重新签名。" />
 
       <Card>
         <CardHeader>
           <CardTitle>输入 APK</CardTitle>
-          <CardDescription>拖进来，或点右侧按钮选择</CardDescription>
+          <CardDescription>拖入文件，或使用右侧按钮选择。</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <div
@@ -708,7 +713,7 @@ export function PackScreen() {
             }
           >
             <Package className="size-6 text-muted-foreground" />
-            <p className="text-sm">把 APK 拖到这里</p>
+            <p className="text-sm">将 APK 拖到此处。</p>
             <label className="cursor-pointer">
               <span className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium hover:bg-muted">
                 <Upload className="size-4" />
@@ -742,7 +747,7 @@ export function PackScreen() {
                 variant="outline"
                 onClick={handleShowChannel}
                 disabled={showing}
-                title="用 walle show 读这个包的渠道号"
+                title="读取这个包的渠道号"
               >
                 <Eye />
                 查看渠道
@@ -768,22 +773,22 @@ export function PackScreen() {
           <CardTitle>签名与渠道</CardTitle>
           <CardDescription>
             {noJks
-              ? '不用 jks：只把渠道写进包里，签名保持原样。'
+              ? '不使用签名文件：只写入渠道信息，签名保持原样。'
               : selectedJks
-                ? `别名 ${selectedJks.alias}`
-                : '请选择一个 jks'}
+                ? `签名文件别名 ${selectedJks.alias}`
+                : '请选择一个签名文件。'}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="pack-jks">jks</Label>
+              <Label htmlFor="pack-jks">签名文件</Label>
               <Select value={noJks ? NO_JKS : jksId} onValueChange={handlePickJks}>
                 <SelectTrigger id="pack-jks">
-                  <SelectValue placeholder="请选择 jks" />
+                  <SelectValue placeholder="请选择签名文件" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={NO_JKS}>不用 jks（只写渠道，不重签名）</SelectItem>
+                  <SelectItem value={NO_JKS}>不用签名文件（只写渠道，不重新签名）</SelectItem>
                   {jksItems.map((item) => (
                     <SelectItem key={item.id} value={item.id}>
                       {item.displayName}（{item.id}）
@@ -801,9 +806,9 @@ export function PackScreen() {
                 <SelectContent>
                   {/* 没有 jks 就没有私钥，重签名这一项选不了；jks 下拉里选回一个就会解开 */}
                   <SelectItem value="sign" disabled={jksItems.length === 0}>
-                    重签名（zipalign + apksigner）
+                    重新签名（对齐安装包并重新签名）
                   </SelectItem>
-                  <SelectItem value="skip">跳过签名（不重签名，先核对包的签名）</SelectItem>
+                  <SelectItem value="skip">跳过签名（不重新签名，仅核对原包签名）</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -841,8 +846,8 @@ export function PackScreen() {
             </div>
             <p className="text-xs text-muted-foreground">
               {groups.length === 0
-                ? '还没有分组。渠道列表按分组存，先去「渠道配置」建一个。'
-                : `写进包的 defaultExtraInfo.app = ${selectedGroup?.app ?? ''}。换 jks 时会回到这个 jks 上次用的分组。`}
+                ? '还没有分组。渠道列表按分组存储，请先到「渠道配置」创建一个。'
+                : `写入包的英文应用名：${selectedGroup?.app ?? ''}。切换签名文件时，会回到该签名文件上次使用的分组。`}
             </p>
           </div>
 
@@ -920,7 +925,11 @@ export function PackScreen() {
       {status ? (
         <p
           className={
-            status.kind === 'error' ? 'text-sm text-destructive' : 'text-sm text-muted-foreground'
+            status.kind === 'error'
+              ? 'text-sm text-destructive'
+              : status.kind === 'warning'
+                ? 'text-sm text-warning'
+                : 'text-sm text-success'
           }
         >
           {status.text}
@@ -931,6 +940,7 @@ export function PackScreen() {
 
       <div className="flex flex-wrap items-center gap-3">
         <Button onClick={() => void handleStart()} disabled={!canStart}>
+          {running ? <Spinner /> : null}
           {running ? '出包中…' : '开始出包'}
         </Button>
         <Button variant="outline" onClick={handleEnqueue} disabled={!canStart}>
@@ -989,19 +999,22 @@ export function PackScreen() {
           <DialogHeader>
             <DialogTitle>查看渠道</DialogTitle>
             <DialogDescription>
-              {showTarget ? `读取 ${baseNameOf(showTarget)} 的渠道信息` : '读取包的渠道信息'}
+              {showTarget ? `读取 ${baseNameOf(showTarget)} 的渠道信息。` : '读取包的渠道信息。'}
             </DialogDescription>
           </DialogHeader>
 
           {showing ? (
-            <p className="text-sm text-muted-foreground">读取中…</p>
+            <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              <Spinner />
+              读取中…
+            </p>
           ) : showResult === null ? null : !showResult.ok ? (
             <p className="text-sm text-destructive">
-              没能读出渠道信息：{showResult.message}
+              读取渠道信息失败：{showResult.message}
             </p>
           ) : (showResult.channel ?? '') === '' && !showResult.extraInfo ? (
             <p className="text-sm text-muted-foreground">
-              这个包里没有渠道信息，说明它还没被写过渠道。
+              这个包没有渠道信息，说明尚未写入过渠道。
             </p>
           ) : (
             <div className="flex flex-col gap-3 text-sm">

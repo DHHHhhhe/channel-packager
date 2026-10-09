@@ -54,7 +54,7 @@ export async function walleBatch2(
   )
   if (result.code !== 0) {
     throw new StepFailure(
-      `walle 写渠道失败（退出码 ${result.code}）`,
+      `写入渠道失败（退出码 ${result.code}）`,
       result.code,
       tailLineList(result.stdout + result.stderr),
     )

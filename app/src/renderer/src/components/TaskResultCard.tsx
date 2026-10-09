@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Copy, FileText, FolderOpen, RotateCcw } from 'lucide-react'
+import { Copy, FileText, FolderOpen, RotateCcw, TriangleAlert } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -63,12 +63,12 @@ export function TaskResultCard({
       <CardHeader>
         <CardTitle>
           {heading ?? (result.ok ? '出包完成' : '出包失败')}
-          {result.ok ? <Badge variant="outline">{result.artifacts.length} 个包</Badge> : null}
+          {result.ok ? <Badge variant="success">{result.artifacts.length} 个包</Badge> : null}
         </CardTitle>
         <CardDescription>
           {result.message}
-          {result.appName ? ` ｜ 应用名：${result.appName}` : ''}
-          {result.outputDir ? ` ｜ 输出目录：${result.outputDir}` : ''}
+          {result.appName ? ` · 应用名：${result.appName}` : ''}
+          {result.outputDir ? ` · 输出目录：${result.outputDir}` : ''}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
@@ -88,7 +88,7 @@ export function TaskResultCard({
                 重跑本次
               </Button>
               <span className="text-xs text-muted-foreground">
-                「重跑本次」只把参数填回上面的表单，不会立刻开跑
+                「重跑本次」只把参数填回上面的表单，不会立刻开跑。
               </span>
             </>
           ) : null}
@@ -115,7 +115,7 @@ export function TaskResultCard({
                     <TableCell>{artifact.alias ?? '—'}</TableCell>
                     <TableCell>
                       {artifact.verified ? (
-                        <Badge variant="outline">通过</Badge>
+                        <Badge variant="success">通过</Badge>
                       ) : (
                         <Badge variant="destructive">{artifact.note ?? '未通过'}</Badge>
                       )}
@@ -128,11 +128,17 @@ export function TaskResultCard({
         ) : null}
 
         {result.warnings.length > 0 ? (
-          <ul className="flex list-disc flex-col gap-1 pl-5 text-sm text-muted-foreground">
-            {result.warnings.map((warning) => (
-              <li key={warning}>{warning}</li>
-            ))}
-          </ul>
+          <div className="flex flex-col gap-2 rounded-lg border border-warning/40 bg-warning/5 p-3">
+            <div className="flex items-center gap-1.5 text-sm font-medium text-warning">
+              <TriangleAlert className="size-4 shrink-0" />
+              提醒 {result.warnings.length} 条
+            </div>
+            <ul className="flex list-disc flex-col gap-1 pl-5 text-sm text-muted-foreground">
+              {result.warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          </div>
         ) : null}
 
         {failure ? (
@@ -178,8 +184,8 @@ export function TaskResultCard({
                 {copyError !== ''
                   ? `复制失败：${copyError}`
                   : copied
-                    ? '已复制，路径里的家目录已换成 %USERPROFILE%'
-                    : '复制的内容里，路径的家目录会换成 %USERPROFILE%'}
+                    ? '已复制。路径里的用户目录已替换成 %USERPROFILE%'
+                    : '复制的内容里，路径的用户目录会替换成 %USERPROFILE%'}
               </span>
             </div>
 

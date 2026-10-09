@@ -88,19 +88,19 @@ function prepare(input: TaskInput): Prepared {
   if (jksId !== '') {
     const item = readJksFile().items.find((entry) => entry.id === jksId)
     if (!item) {
-      throw new Error(`找不到 jks：${jksId}`)
+      throw new Error(`找不到签名文件：${jksId}`)
     }
     if (item.alias.trim() === '') {
-      throw new Error(`jks「${item.id}」还没有别名，请先到「签名配置」补上`)
+      throw new Error(`签名文件「${item.id}」还没有别名，请先到「签名配置」补上`)
     }
     if (item.storePassword === '') {
-      throw new Error(`jks「${item.id}」还没有口令，请先到「签名配置」补上`)
+      throw new Error(`签名文件「${item.id}」还没有密码，请先到「签名配置」补上`)
     }
 
     // R21：签名只用 data/keystores/ 下的副本，sourcePath 仅用于显示与比对
     const keystorePath = resolveInData(item.keystoreFile)
     if (!fs.existsSync(keystorePath)) {
-      throw new Error(`jks 副本不存在（${item.keystoreFile}），请到「签名配置」重新导入`)
+      throw new Error(`签名文件副本不存在（${item.keystoreFile}），请到「签名配置」重新导入`)
     }
 
     sign = { item, keystorePath }
@@ -110,7 +110,7 @@ function prepare(input: TaskInput): Prepared {
      * 那两样是签名用的，跟渠道列表没有关系。
      */
     throw new Error(
-      '没有选 jks 就只能跳过签名 —— 重签名需要私钥。请选一个 jks，或把签名模式改成「跳过签名」。',
+      '没有选签名文件就只能跳过签名 —— 重签名需要私钥。请选一个签名文件，或把签名模式改成「跳过签名」。',
     )
   }
 
@@ -284,15 +284,15 @@ export async function runPipeline(
       const sign = p.sign
       if (!sign) {
         // prepare 已经拦过一次，这里是给类型收窄；真到这儿说明调用方绕过了校验
-        throw new Error('重签名需要 jks，请选一个 jks 或改用「跳过签名」。')
+        throw new Error('重签名需要签名文件，请选一个签名文件或改用「跳过签名」。')
       }
       const aligned = path.join(workDir, 'aligned.apk')
       const signed = path.join(workDir, 'signed.apk')
 
-      progress('align', 'zipalign 对齐')
+      progress('align', '对齐安装包')
       await zipalign(p.apkPath, aligned, ctx)
 
-      progress('sign', 'apksigner 重签名')
+      progress('sign', '重新签名')
       await signApk(
         {
           inputApk: aligned,
@@ -340,7 +340,7 @@ export async function runPipeline(
       channelInfoList: p.pickedEntries,
     }
     if (p.app === '') {
-      warnings.push('这次出包没有应用名（defaultExtraInfo.app 是空的）')
+      warnings.push('这次出包没有英文应用名，包里的应用标识是空的')
     }
     const configFile = path.join(workDir, 'channel.json')
     fs.writeFileSync(configFile, JSON.stringify(config, null, 2), 'utf8')
@@ -349,7 +349,7 @@ export async function runPipeline(
     const outDir = path.join(workDir, 'out')
     fs.mkdirSync(outDir, { recursive: true })
 
-    progress('walle', 'walle 写渠道')
+    progress('walle', '注入渠道信息')
     await walleBatch2(configFile, sourceApk, outDir, ctx)
 
     /*
@@ -360,7 +360,7 @@ export async function runPipeline(
     progress('check', '校验产物渠道号')
     const produced = fs.readdirSync(outDir).filter((name) => name.toLowerCase().endsWith('.apk'))
     if (produced.length === 0) {
-      throw new Error('walle 没有产出任何渠道包')
+      throw new Error('没有产出任何渠道包')
     }
     if (produced.length !== p.pickedEntries.length) {
       warnings.push(`勾选 ${p.pickedEntries.length} 个渠道，实际产出 ${produced.length} 个包`)
@@ -384,7 +384,7 @@ export async function runPipeline(
           ? undefined
           : shown.ok
             ? '读回的渠道号不在勾选列表里'
-            : 'walle show 未能读出渠道号',
+            : '未能读出渠道号',
       })
       log.info(`校验 ${fileName} → ${shown.channel || '(空)'}${verified ? ' ✓' : ' ✗'}`)
     }
@@ -407,7 +407,7 @@ export async function runPipeline(
         artifact.note = '签名证书与输入包不一致'
         const note =
           `${artifact.fileName}：签名证书与输入包不一致` +
-          `（包 ${out.digest.slice(0, 16)}…，输入包 ${source.digest.slice(0, 16)}…），这个包装不上或盖不住原应用`
+          `（包 ${out.digest.slice(0, 16)}…，输入包 ${source.digest.slice(0, 16)}…），这样的包无法安装或覆盖原应用`
         warnings.push(note)
         log.error(note)
       }

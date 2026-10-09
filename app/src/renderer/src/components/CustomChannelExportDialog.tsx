@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Spinner } from '@/components/ui/spinner'
 import { findDuplicates } from '@/lib/duplicates'
 import { useAppStore } from '@/store/app-store'
 import { parseChannelConfig } from '@shared/utils/channels'
@@ -210,8 +211,8 @@ export function CustomChannelExportDialog({
         <DialogHeader>
           <DialogTitle>自定义渠道出包</DialogTitle>
           <DialogDescription>
-            临时配一份渠道列表，确认后直接用它出包。这份列表默认不落盘 ——
-            只有勾了「存入分组」的条目会追加进所选分组。
+            临时配一份渠道列表，确认后直接用它出包。这份列表默认不保存，只有勾选
+            「存入分组」的条目会追加进所选分组。
           </DialogDescription>
         </DialogHeader>
 
@@ -232,7 +233,7 @@ export function CustomChannelExportDialog({
             />
           </label>
           <span className="text-xs text-muted-foreground">
-            {importName !== '' ? `已读 ${importName}` : '或直接在下面手写渠道号'}
+            {importName !== '' ? `已读取 ${importName}` : '或直接在下面手写渠道号'}
           </span>
         </div>
 
@@ -249,10 +250,10 @@ export function CustomChannelExportDialog({
             id="custom-app"
             value={app}
             onChange={(event) => setApp(event.target.value)}
-            placeholder="写入 defaultExtraInfo.app，例如 demo"
+            placeholder="例如 demo"
           />
           <p className="text-xs text-muted-foreground">
-            写进包的 defaultExtraInfo.app。App 里按这个名字取值，所以是英文标识，不是给人看的名字。
+            会写进安装包，App 里按这个名字读取渠道，所以要用代码认得的英文标识。
           </p>
         </div>
 
@@ -336,7 +337,7 @@ export function CustomChannelExportDialog({
         {hasEmpty ? (
           <p className="flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
             <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
-            <span>有渠道号还空着的行，补全或删掉才能确认。</span>
+            <span>有渠道号还空着的行，补全或删除后才能确认。</span>
           </p>
         ) : null}
 
@@ -351,7 +352,7 @@ export function CustomChannelExportDialog({
           <span className="text-sm text-muted-foreground">勾了「存入分组」的条目</span>
           {noGroups ? (
             <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-              <span>还没有分组，这次出包不会落盘。</span>
+              <span>还没有分组，这次出包的结果不会保存下来。</span>
               <Button variant="outline" size="sm" onClick={onGoChannels} disabled={busy}>
                 去「渠道配置」
               </Button>
@@ -384,7 +385,7 @@ export function CustomChannelExportDialog({
                 {targetGroup ? (
                   <span className="text-muted-foreground">
                     {' '}
-                    ｜ 追加进「{targetGroup.name}」，同渠道号跳过、不动原别名
+                    · 追加进「{targetGroup.name}」，同渠道号跳过，不改动原有别名
                   </span>
                 ) : null}
               </p>
@@ -400,7 +401,8 @@ export function CustomChannelExportDialog({
             onClick={() => onConfirm({ channels, app: app.trim(), groupId: targetGroupId, rowsToSave })}
             disabled={!canConfirm}
           >
-            {busy ? '处理中…' : '确认并用它出包'}
+            {busy ? <Spinner /> : null}
+            {busy ? '正在出包…' : '确认并用它出包'}
           </Button>
         </DialogFooter>
       </DialogContent>

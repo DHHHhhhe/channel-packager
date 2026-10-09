@@ -11,10 +11,10 @@ export interface NavItem {
 }
 
 export const NAV_ITEMS: readonly NavItem[] = [
-  { view: 'pack', label: '出包', hint: '选 APK 与渠道，开始分包', icon: Package },
-  { view: 'jks', label: '签名配置', hint: '每个 jks 的签名凭据', icon: KeyRound },
-  { view: 'channels', label: '渠道配置', hint: '每个分组的渠道列表', icon: ListTree },
-  { view: 'template', label: '渠道模板', hint: '新增 jks 时可套用的后缀表', icon: ScrollText },
+  { view: 'pack', label: '出包', hint: '选 APK 与渠道，开始出包', icon: Package },
+  { view: 'jks', label: '签名配置', hint: '管理签名文件与密码', icon: KeyRound },
+  { view: 'channels', label: '渠道配置', hint: '维护分组与渠道列表', icon: ListTree },
+  { view: 'template', label: '模板与配置包', hint: '后缀模板、导入导出配置', icon: ScrollText },
 ]
 
 export function viewTitle(view: AppView): string {
@@ -26,9 +26,16 @@ interface AppSidebarProps {
   onSelect: (view: AppView) => void
   dataDir: string
   jksCount: number
+  groupCount: number
 }
 
-export function AppSidebar({ active, onSelect, dataDir, jksCount }: AppSidebarProps) {
+export function AppSidebar({
+  active,
+  onSelect,
+  dataDir,
+  jksCount,
+  groupCount,
+}: AppSidebarProps) {
   return (
     <aside className="flex w-[var(--sidebar-width)] shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground">
       <div className="flex h-[var(--topbar-height)] shrink-0 items-center gap-2 border-b px-4">
@@ -67,7 +74,9 @@ export function AppSidebar({ active, onSelect, dataDir, jksCount }: AppSidebarPr
         <div className="flex items-start gap-2 text-xs text-muted-foreground">
           <FolderOpen className="mt-0.5 size-3.5 shrink-0" />
           <div className="min-w-0">
-            <div>已配置 {jksCount} 个 jks</div>
+            <div>
+              {jksCount} 个签名文件 · {groupCount} 个分组
+            </div>
             <div className="truncate" title={dataDir}>
               {dataDir || '数据目录未就绪'}
             </div>

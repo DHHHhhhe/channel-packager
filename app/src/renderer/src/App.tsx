@@ -2,6 +2,7 @@ import { TriangleAlert } from 'lucide-react'
 import RuntimeBanner from '@/components/RuntimeBanner'
 import StoreProblemBanner from '@/components/StoreProblemBanner'
 import { AppSidebar, viewTitle, type AppView } from '@/components/AppSidebar'
+import { Spinner } from '@/components/ui/spinner'
 import { ChannelsScreen } from '@/screens/ChannelsScreen'
 import { JksScreen } from '@/screens/JksScreen'
 import { PackScreen } from '@/screens/PackScreen'
@@ -33,6 +34,7 @@ function Shell() {
         onSelect={setView}
         dataDir={store.dataDir}
         jksCount={store.jksItems.length}
+        groupCount={store.groups.length}
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -54,14 +56,17 @@ function Shell() {
             {store.usedFallback ? (
               <div className="flex items-start gap-2 rounded-lg border px-3 py-2 text-sm text-muted-foreground">
                 <TriangleAlert className="mt-0.5 size-4 shrink-0" />
-                <span>程序目录不可写，数据已改存到用户目录，便携性不再成立。</span>
+                <span>程序目录不可写，数据已改存到用户目录，换个位置时数据不会跟着走。</span>
               </div>
             ) : null}
 
             <StoreProblemBanner />
 
             {store.loading && !store.initialized ? (
-              <p className="text-sm text-muted-foreground">正在读取本地配置…</p>
+              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Spinner />
+                正在读取本地配置…
+              </p>
             ) : (
               <CurrentView view={view} />
             )}

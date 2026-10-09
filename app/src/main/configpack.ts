@@ -467,7 +467,7 @@ export async function importConfigPack(input: PackImportInput): Promise<PackImpo
   const { dir, manifest } = await extractAndVerify(input.packPath)
   const notes: string[] = []
   if (manifest.credentialFree) {
-    notes.push('这份包不含签名凭据（只有渠道模板），jks 需要你自己新增')
+    notes.push('这份包不含签名凭据（只有渠道模板），签名文件需自行新增')
   }
   try {
     const incoming = parseIncomingJks(fs.readFileSync(safeJoin(dir, JKS_NAME), 'utf8'))

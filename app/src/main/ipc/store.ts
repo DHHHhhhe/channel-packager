@@ -65,7 +65,7 @@ export function registerStoreIpc(): void {
           return removeJksItem(mutation.id)
         default:
           // 联合类型已穷尽，这里只防渲染层传进未知 action 时静默成功
-          throw new Error(`未知的 jks 操作：${JSON.stringify(mutation)}`)
+          throw new Error(`未知的签名文件操作：${JSON.stringify(mutation)}`)
       }
     },
   )

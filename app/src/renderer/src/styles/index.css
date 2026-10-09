@@ -54,6 +54,17 @@
     var(--border);
   --color-destructive:
     var(--destructive);
+  /*
+   * 状态语义色：shadcn 只给 destructive，成功与提醒原先无处表达（完成与待出包都是灰的）。
+   * 取 Tailwind 调色板里的 700（浅色主题）/ 400（深色主题），保证小字在浅底上仍有足够对比度。
+   * 用法固定为浅底 + 同色字：bg-success/10 text-success。
+   */
+  --color-success:
+    var(--success);
+  --color-warning:
+    var(--warning);
+  --color-info:
+    var(--info);
   --color-accent-foreground:
     var(--accent-foreground);
   --color-accent:
@@ -134,6 +145,13 @@
     oklch(0.205 0 0);
   --destructive:
     oklch(0.577 0.245 27.325);
+  /* emerald-700 / amber-700 / blue-700 */
+  --success:
+    oklch(0.508 0.118 165.612);
+  --warning:
+    oklch(0.555 0.163 48.998);
+  --info:
+    oklch(0.488 0.243 264.376);
   --border:
     oklch(0.922 0 0);
   --input:
@@ -203,6 +221,13 @@
     oklch(0.985 0 0);
   --destructive:
     oklch(0.704 0.191 22.216);
+  /* emerald-400 / amber-400 / blue-400 */
+  --success:
+    oklch(0.765 0.177 163.223);
+  --warning:
+    oklch(0.828 0.189 84.429);
+  --info:
+    oklch(0.707 0.165 254.624);
   --border:
     oklch(1 0 0 / 10%);
   --input:

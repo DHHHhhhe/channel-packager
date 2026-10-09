@@ -22,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Spinner } from '@/components/ui/spinner'
 import type { ChannelListPreview } from '@shared/types/pack'
 import type { ChannelConfig, CredentialField, JksItem } from '@shared/types/store'
 import { buildChannelsFromTemplate } from '@shared/utils/channels'
@@ -192,8 +193,8 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
       setFeedback({
         kind: 'error',
         text: lower.endsWith('.json')
-          ? '这是 JSON 渠道文件，不是 jks；请用下面「渠道数据」里的「选择文件」。'
-          : `只认 .jks / .keystore 文件，这个是「${file.name}」。`,
+          ? '这是渠道 JSON 文件，不是签名文件；请用下面「渠道数据」里的「选择文件」。'
+          : `只认 .jks / .keystore 格式的签名文件，这个是「${file.name}」。`,
       })
       return
     }
@@ -268,14 +269,14 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
     try {
       const parsed = JSON.parse(await file.text()) as Partial<ChannelConfig>
       if (!Array.isArray(parsed.channelInfoList)) {
-        setFeedback({ kind: 'error', text: '这份 JSON 里没有 channelInfoList 数组。' })
+        setFeedback({ kind: 'error', text: '这份 JSON 里没有渠道列表。' })
         return
       }
       const invalid = parsed.channelInfoList.some(
         (entry) => typeof entry?.channel !== 'string' || entry.channel.trim() === '',
       )
       if (invalid) {
-        setFeedback({ kind: 'error', text: 'channelInfoList 里有条目缺少 channel 字段。' })
+        setFeedback({ kind: 'error', text: '渠道列表里有条目缺少渠道号。' })
         return
       }
       /*
@@ -286,7 +287,7 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
       const fileApp = parsed.defaultExtraInfo?.app?.trim()
       if (fileApp && fileApp !== app.trim()) {
         notes.push(
-          `文件里的 defaultExtraInfo.app 是「${fileApp}」，保存时按表单里的「${app.trim() || '空'}」写。`,
+          `文件里的英文名是「${fileApp}」，保存时按表单里的「${app.trim() || '空'}」写。`,
         )
       }
       setJsonPreview({
@@ -434,7 +435,7 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
 
   const handleSubmit = async () => {
     if (!isEdit && !sourcePath) {
-      failWith('请先选择 jks 文件。', 'keystore')
+      failWith('请先选择签名文件。', 'keystore')
       return
     }
     if (!alias.trim()) {
@@ -442,11 +443,11 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
       return
     }
     if (!password) {
-      failWith('口令不能为空。', 'password')
+      failWith('密码不能为空。', 'password')
       return
     }
     if (isEdit && item && jksItems.length === 0) {
-      failWith('jks 列表为空，无法保存。')
+      failWith('签名文件列表为空，无法保存。')
       return
     }
     if (draftChannels.some((row) => row.key.trim() === '')) {
@@ -481,11 +482,11 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{isEdit ? `编辑 ${item?.displayName}` : '新增 jks'}</DialogTitle>
+          <DialogTitle>{isEdit ? `编辑 ${item?.displayName}` : '新增签名文件'}</DialogTitle>
           <DialogDescription>
             {isEdit
-              ? '修改后会按 data/keystores/ 下的副本做一次校验，通过才保存。'
-              : '选择 jks 文件后会自动带出别名与口令，可手工改。保存前会用内置 keytool 校验一次。'}
+              ? '修改后会按本工具内的副本做一次校验，通过后才保存。'
+              : '选择签名文件后会自动带出别名与密码，可以手工修改。保存前会校验一次。'}
           </DialogDescription>
         </DialogHeader>
 
@@ -506,7 +507,7 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
                     : 'flex flex-col gap-1.5 rounded-lg border border-dashed border-border p-3'
               }
             >
-              <Label htmlFor="jks-source">jks 文件</Label>
+              <Label htmlFor="jks-source">签名文件</Label>
               <div className="flex items-center gap-2">
                 <Input
                   id="jks-source"
@@ -516,7 +517,7 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
                     setSourcePath(event.target.value)
                     clearFieldError('keystore')
                   }}
-                  placeholder="把 .jks 拖到这里，或点右侧按钮选择"
+                  placeholder="把签名文件拖到这里，或点右侧按钮选择"
                 />
                 <Button
                   variant="outline"
@@ -541,7 +542,7 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
                 也可以把文件直接拖到本对话框的任意位置。
               </p>
               <p className="text-xs text-muted-foreground">
-                副本会复制到 data/keystores/，之后签名只用副本；原文件移走也不影响出包。
+                会复制一份到本工具的数据目录，之后签名只用这份副本；原文件移走也不影响出包。
               </p>
             </div>
           ) : (
@@ -584,7 +585,7 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="jks-password">口令</Label>
+              <Label htmlFor="jks-password">密码</Label>
               <div className="relative">
                 <Input
                   id="jks-password"
@@ -604,8 +605,8 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
                   type="button"
                   className="absolute top-1/2 right-0.5 -translate-y-1/2"
                   onClick={() => setShowPassword((value) => !value)}
-                  aria-label={showPassword ? '隐藏口令' : '查看口令明文'}
-                  title={showPassword ? '隐藏口令' : '查看口令明文'}
+                  aria-label={showPassword ? '隐藏密码' : '查看密码明文'}
+                  title={showPassword ? '隐藏密码' : '查看密码明文'}
                 >
                   {showPassword ? <EyeOff /> : <Eye />}
                 </Button>
@@ -617,11 +618,11 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
                 id="jks-app"
                 value={app}
                 onChange={(event) => setApp(event.target.value)}
-                placeholder="写入 defaultExtraInfo.app，例如 demo"
+                placeholder="例如 demo"
               />
               <p className="text-xs text-muted-foreground">
-                写进包的 <code>defaultExtraInfo.app</code>。新增时下面配的渠道会存进一个同 id
-                的分组，分组的英文名就取这里；分组建好之后以分组上的为准。
+                会写进安装包，App 里按这个名字读取渠道。新增时下面配的渠道会存进一个同名分组，
+                分组的英文名取这里；分组建好之后以分组上的为准。
               </p>
             </div>
           </div>
@@ -635,7 +636,7 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
                 <span className="text-sm font-medium">渠道数据</span>
                 <span className="text-xs text-muted-foreground">
                   {noJks
-                    ? '先在上面选择 jks 文件'
+                    ? '先在上面选择签名文件'
                     : `共 ${draftChannels.length} 条，下面就是最终保存的内容，可直接改`}
                 </span>
               </div>
@@ -658,7 +659,7 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
                       id="jks-prefix"
                       value={prefix}
                       onChange={(event) => setPrefix(event.target.value)}
-                      placeholder="默认等于 jks 文件名"
+                      placeholder="默认等于签名文件名"
                       className="w-64"
                       disabled={noJks}
                     />
@@ -706,7 +707,7 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
                     }}
                   />
                   <p className="text-xs text-muted-foreground">
-                    沿用 channelConfig.json 的结构，渠道名原样导入，不做前缀替换。
+                    沿用渠道 JSON 的格式，渠道名原样导入，不做前缀替换。
                   </p>
                 </div>
               ) : null}
@@ -727,12 +728,12 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
                 disabled={noJks}
                 emptyHint={
                   noJks
-                    ? '选择 jks 文件后，这里就能编辑渠道了。'
+                    ? '选择签名文件后，这里就能编辑渠道了。'
                     : channelMode === 'empty'
                       ? '还没有渠道条目。点下面的「添加一行」就能直接给它加渠道。'
                       : channelMode === 'template'
                         ? '模板为空，生成不出条目。可改用「不套用模板」手工添加。'
-                        : '还没读到渠道。选一份 channelConfig.json 就会出现在这里。'
+                        : '还没读到渠道。选一份渠道 JSON 文件就会出现在这里。'
                 }
               />
             </div>
@@ -741,7 +742,11 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
           {feedback ? (
             <p
               className={
-                feedback.kind === 'error' ? 'text-sm text-destructive' : 'text-sm text-muted-foreground'
+                feedback.kind === 'error'
+                  ? 'text-sm text-destructive'
+                  : feedback.kind === 'ok'
+                    ? 'text-sm text-success'
+                    : 'text-sm text-muted-foreground'
               }
             >
               {feedback.text}
@@ -754,7 +759,8 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
             取消
           </Button>
           <Button onClick={handleSubmit} disabled={busy}>
-            {busy ? '处理中…' : isEdit ? '保存修改' : '新增并校验'}
+            {busy ? <Spinner /> : null}
+            {busy ? '保存中…' : isEdit ? '保存修改' : '新增并校验'}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -130,7 +130,7 @@ export function channelsFilePath(id: string): string {
 
 export function readJksFile(): JksFile {
   const filePath = jksFilePath()
-  const { value, problem } = readJson<JksFile>(filePath, 'jks 列表')
+  const { value, problem } = readJson<JksFile>(filePath, '签名文件列表')
   if (problem) {
     noteProblem(problem)
     return { version: JKS_FILE_VERSION, items: [] }
@@ -140,7 +140,7 @@ export function readJksFile(): JksFile {
     return { version: JKS_FILE_VERSION, items: [] }
   }
   if (!Array.isArray(value.items)) {
-    noteProblem(makeProblem('jks 列表', filePath, '结构不对：缺少 items 数组'))
+    noteProblem(makeProblem('签名文件列表', filePath, '结构不对：缺少 items 数组'))
     return { version: JKS_FILE_VERSION, items: [] }
   }
   return { version: JKS_FILE_VERSION, items: value.items }

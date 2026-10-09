@@ -38,7 +38,7 @@ function runKeytool(args: string[], password: string): Promise<KeytoolRun> {
         // 退出码是数字说明 keytool 跑起来了并返回了失败；其它情况是进程根本没起来
         const exitCode = error ? (error as { code?: unknown }).code : 0
         if (error && typeof exitCode !== 'number') {
-          reject(new Error(`无法执行 keytool：${error.message}`))
+          reject(new Error(`无法执行签名校验程序：${error.message}`))
           return
         }
         resolve({ code: typeof exitCode === 'number' ? exitCode : 0, output })
@@ -70,16 +70,16 @@ function extractKeytoolError(output: string): string | null {
  */
 function describeFailure(raw: string): { message: string; field: CredentialField } {
   if (/password was incorrect|Keystore was tampered with/i.test(raw)) {
-    return { message: '口令不正确', field: 'password' }
+    return { message: '密码不正确', field: 'password' }
   }
   if (/Keystore file does not exist/i.test(raw)) {
     return { message: '副本文件不存在', field: 'keystore' }
   }
   if (/UnrecoverableKeyException/i.test(raw)) {
-    return { message: '密钥口令不正确', field: 'password' }
+    return { message: '密钥密码不正确', field: 'password' }
   }
   if (/Invalid keystore format|not a keystore|Unrecognized keystore/i.test(raw)) {
-    return { message: '不是有效的 keystore 文件', field: 'keystore' }
+    return { message: '不是有效的签名文件', field: 'keystore' }
   }
   return {
     message: raw.length > 200 ? `${raw.slice(0, 200)}…` : raw,
@@ -98,10 +98,10 @@ export async function verifyCredentials(
 ): Promise<CredentialVerifyResult> {
   const item = readJksFile().items.find((entry) => entry.id === id)
   if (!item) {
-    throw new Error(`找不到 jks：${id}`)
+    throw new Error(`找不到签名文件：${id}`)
   }
   if (!password) {
-    return { ok: false, aliases: [], message: '口令不能为空', field: 'password' }
+    return { ok: false, aliases: [], message: '密码不能为空', field: 'password' }
   }
 
   const keystorePath = resolveInData(item.keystoreFile)
@@ -130,7 +130,7 @@ export async function verifyCredentials(
     return {
       ok: false,
       aliases,
-      message: '口令正确，但没有从 keytool 输出里读到任何别名',
+      message: '密码正确，但没有从签名文件里读到任何别名',
       field: 'keystore',
     }
   }
@@ -153,7 +153,7 @@ export async function verifyCredentials(
     aliases,
     field: 'alias',
     message: wanted
-      ? `口令正确，但库中没有别名「${wanted}」；现有条目：${aliases.join('、')}`
-      : `口令正确，但库中有多个条目，需要指定别名：${aliases.join('、')}`,
+      ? `密码正确，但没有别名「${wanted}」；现有条目：${aliases.join('、')}`
+      : `密码正确，但签名文件里有多个条目，需要指定别名：${aliases.join('、')}`,
   }
 }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { TriangleAlert } from 'lucide-react'
 import { PairListEditor, newPairRow, type PairRow } from '@/components/PairListEditor'
 import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 import {
   Dialog,
   DialogContent,
@@ -151,7 +152,7 @@ export function ChannelListPreviewDialog({
         {hasEmpty ? (
           <p className="flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
             <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
-            <span>有渠道名还空着的行，补全或删掉才能确认。</span>
+            <span>有渠道名还空着的行，补全或删除后才能确认。</span>
           </p>
         ) : null}
 
@@ -186,7 +187,8 @@ export function ChannelListPreviewDialog({
             取消
           </Button>
           <Button onClick={() => onConfirm(edited)} disabled={!canConfirm}>
-            {busy ? '处理中…' : showMode ? (overwrite ? '覆盖导入' : '追加导入') : '确认导入'}
+            {busy ? <Spinner /> : null}
+            {busy ? '导入中…' : showMode ? (overwrite ? '覆盖导入' : '追加导入') : '确认导入'}
           </Button>
         </DialogFooter>
       </DialogContent>

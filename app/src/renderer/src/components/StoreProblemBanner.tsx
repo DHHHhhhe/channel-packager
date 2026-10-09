@@ -8,7 +8,7 @@ import { useAppStore } from '@/store/app-store'
  * 「配置文件在、但读不出来」的提示条。
  *
  * 文件不存在不算问题（那是「还没有」），所以这里出现的每一条都值得用户处理 ——
- * 以前这种情况会静默当成空列表，界面只显示「已配置 0 个 jks」，看起来像配置整个丢了。
+ * 以前这种情况会静默当成空列表，界面只显示「0 个签名文件」，看起来像配置整个丢了。
  */
 export default function StoreProblemBanner(): JSX.Element | null {
   const { problems, dataDir } = useAppStore()
@@ -34,7 +34,7 @@ export default function StoreProblemBanner(): JSX.Element | null {
         <TriangleAlert className="mt-0.5 size-4 shrink-0" />
         <span>
           有 {visible.length} 个配置文件读不出来，已按空列表继续。
-          原文件没有改动，坏掉的内容另外备份了一份；修好或删掉之后重新打开即可。
+          原文件没有改动，损坏的内容已另行备份；修复或删除后重新打开即可。
         </span>
       </div>
 

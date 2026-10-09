@@ -16,6 +16,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import type { JksItem } from '@shared/types/store'
 import { ipcErrorMessage } from '@/lib/ipc-error'
+import { Spinner } from '@/components/ui/spinner'
 import { useAppStore } from '@/store/app-store'
 
 export function JksScreen() {
@@ -41,14 +42,14 @@ export function JksScreen() {
     try {
       const result = await refreshJks(item.id)
       if (result.status === 'unchanged') {
-        setStatus({ kind: 'ok', text: `${item.id}：原文件与副本一致，无需处理。` })
+        setStatus({ kind: 'ok', text: `${item.id}：原文件与本工具内的副本一致，无需处理。` })
       } else if (result.status === 'changed') {
         setStatus({
           kind: 'error',
-          text: `${item.id}：原文件已变化（SHA256 ${result.sourceSha256?.slice(0, 8)}），副本未自动同步。如需更新，请删除后重新新增。`,
+          text: `${item.id}：原文件已变化（SHA256 ${result.sourceSha256?.slice(0, 8)}），副本未同步。如需更新，请删除后重新新增。`,
         })
       } else {
-        setStatus({ kind: 'error', text: `${item.id}：${result.message ?? '原文件不可访问'}` })
+        setStatus({ kind: 'error', text: `${item.id}：${result.message ?? '原文件不可访问。'}` })
       }
     } catch (error) {
       setStatus({ kind: 'error', text: ipcErrorMessage(error) })
@@ -64,7 +65,7 @@ export function JksScreen() {
       await saveJks({ action: 'remove', id: deleting.id })
       setStatus({
         kind: 'ok',
-        text: `已删除 ${deleting.id}，data/keystores/ 下的副本已清除。分组与渠道列表不受影响。`,
+        text: `已删除 ${deleting.id}，本工具内的副本已清除。分组与渠道列表不受影响。`,
       })
       setDeleting(undefined)
     } catch (error) {
@@ -77,11 +78,11 @@ export function JksScreen() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
-        description="每个 jks 只保存签名要用的别名与口令。签名与校验一律只用 data/keystores/ 下的副本。渠道列表按分组管理，见「渠道配置」。"
+        description="每个签名文件只保存签名要用的别名与密码。签名与校验只使用本工具内的副本。"
         actions={
           <Button onClick={openAdd}>
             <Plus />
-            新增 jks
+            新增签名文件
           </Button>
         }
       />
@@ -89,7 +90,11 @@ export function JksScreen() {
       {status ? (
         <p
           className={
-            status.kind === 'error' ? 'text-sm text-destructive' : 'text-sm text-muted-foreground'
+            status.kind === 'error'
+              ? 'text-sm text-destructive'
+              : status.kind === 'ok'
+                ? 'text-sm text-success'
+                : 'text-sm text-muted-foreground'
           }
         >
           {status.text}
@@ -98,13 +103,13 @@ export function JksScreen() {
 
       <Card>
         <CardHeader>
-          <CardTitle>已配置的 jks</CardTitle>
+          <CardTitle>已配置的签名文件</CardTitle>
           <CardDescription>共 {jksItems.length} 个</CardDescription>
         </CardHeader>
         <CardContent>
           {jksItems.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              还没有 jks。点右上角「新增 jks」选择文件，别名与口令会按文件名自动带出。
+              还没有签名文件。点右上角「新增签名文件」选择文件，别名与密码会按文件名自动带出。
             </p>
           ) : (
             <div className="overflow-hidden rounded-lg border">
@@ -191,7 +196,7 @@ export function JksScreen() {
           <DialogHeader>
             <DialogTitle>删除 {deleting?.displayName}</DialogTitle>
             <DialogDescription>
-              只会删除 data/keystores/ 下的副本，无法撤销。分组与渠道列表不受影响，原文件也不受影响。
+              只会删除本工具内的副本，无法撤销。分组与渠道列表不受影响，原文件也不受影响。
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -199,6 +204,7 @@ export function JksScreen() {
               取消
             </Button>
             <Button variant="destructive" onClick={handleDelete} disabled={busy}>
+              {busy ? <Spinner /> : null}
               {busy ? '删除中…' : '确认删除'}
             </Button>
           </DialogFooter>

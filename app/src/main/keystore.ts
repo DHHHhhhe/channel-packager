@@ -81,7 +81,7 @@ export function updateJksItem(item: JksItem): JksMutationResult {
   const file = readJksFile()
   const index = file.items.findIndex((existing) => existing.id === item.id)
   if (index < 0) {
-    throw new Error(`找不到 jks：${item.id}`)
+    throw new Error(`找不到签名文件：${item.id}`)
   }
   file.items[index] = item
   writeJksFile(file)
@@ -96,7 +96,7 @@ export function removeJksItem(id: string): JksMutationResult {
   const file = readJksFile()
   const target = file.items.find((item) => item.id === id)
   if (!target) {
-    throw new Error(`找不到 jks：${id}`)
+    throw new Error(`找不到签名文件：${id}`)
   }
 
   // 先解析副本路径：越界就直接失败，不要先改了列表再报错
@@ -116,7 +116,7 @@ export function removeJksItem(id: string): JksMutationResult {
 export function refreshFromSource(id: string): RefreshResult {
   const item = readJksFile().items.find((entry) => entry.id === id)
   if (!item) {
-    throw new Error(`找不到 jks：${id}`)
+    throw new Error(`找不到签名文件：${id}`)
   }
 
   let sha256: string

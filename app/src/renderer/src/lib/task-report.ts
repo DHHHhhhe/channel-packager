@@ -1,19 +1,24 @@
 import type { TaskResult, TaskStage } from '@shared/types/task'
 
-/** 阶段的中文名。进度面板、失败诊断、复制出去的文本都用这一份，别各写各的 */
+/**
+ * 阶段的中文名。进度面板、失败诊断、复制出去的文本都用这一份，别各写各的。
+ *
+ * 一律写成「动词 + 宾语」的中文，不带命令行工具名（zipalign / apksigner / walle）——
+ * 界面是给用工具的人看的，不是给读日志的人看的。
+ */
 export const STAGE_LABELS: Record<TaskStage, string> = {
-  validate: '校验输入',
+  validate: '检查输入',
   prepare: '准备工作目录',
-  'check-source': '核对输入包签名',
-  align: 'zipalign 对齐',
-  sign: 'apksigner 重签名',
-  'verify-sign': '校验签名',
-  rename: '还原为原包名',
-  'resigned-copy': '另存已签名未写渠道的包',
-  'channel-json': '写渠道配置',
-  walle: 'walle 写渠道',
-  check: '校验产物渠道号',
-  'check-sign': '核对产物签名证书',
+  'check-source': '检查输入包签名',
+  align: '对齐安装包',
+  sign: '重新签名',
+  'verify-sign': '验证签名',
+  rename: '还原原始文件名',
+  'resigned-copy': '另存未写渠道的签名包',
+  'channel-json': '生成渠道配置',
+  walle: '注入渠道信息',
+  check: '验证产物渠道号',
+  'check-sign': '验证产物签名证书',
   publish: '移动到输出目录',
   done: '完成',
   failed: '失败',
@@ -39,7 +44,7 @@ export function buildDiagnostic(result: TaskResult): string {
     lines.push(`退出码：${failure.exitCode}`)
   }
   if (failure?.timedOut) {
-    lines.push('该步骤没有输出后被杀掉：等满超时时间仍未结束，已强制终止进程')
+    lines.push('该步骤一直没有输出，等满超时时间后被强制结束')
   }
   if (failure && failure.outputTail && failure.outputTail.length > 0) {
     lines.push(`该步骤输出末尾 ${failure.outputTail.length} 行：`)

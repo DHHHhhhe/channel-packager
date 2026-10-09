@@ -125,7 +125,7 @@ export function runProcess(
 
     const timeoutError = (): StepFailure =>
       new StepFailure(
-        `子进程超过 ${describeDuration(idleMs)}没有任何输出，已强制结束`,
+        `超过 ${describeDuration(idleMs)}没有任何输出，已强制结束`,
         undefined,
         tailLineList(stdout + stderr),
         true,

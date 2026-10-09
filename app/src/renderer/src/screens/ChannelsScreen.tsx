@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Spinner } from '@/components/ui/spinner'
 import {
   Select,
   SelectContent,
@@ -162,7 +163,7 @@ export function ChannelsScreen() {
         kind: 'ok',
         text: `已导出 ${result.count ?? 0} 条渠道：${result.path}${
           dirty ? '（含尚未保存的修改）' : ''
-        }，可直接给 walle 的 batch2 -f 用。`,
+        }。可直接用于批量写入渠道。`,
       })
     } catch (error) {
       setStatus({ kind: 'error', text: ipcErrorMessage(error) })
@@ -242,7 +243,7 @@ export function ChannelsScreen() {
     }
     if (duplicates.length > 0) {
       setFilterResetToken((value) => value + 1)
-      setStatus({ kind: 'error', text: `渠道名重复：${duplicates.join('、')}` })
+      setStatus({ kind: 'error', text: `渠道名重复：${duplicates.join('、')}。` })
       return
     }
     setSaving(true)
@@ -318,7 +319,7 @@ export function ChannelsScreen() {
         onOpenChange={setConfirmDelete}
         title="删除分组？"
         description={`会删掉「${selected?.name ?? ''}」以及它名下的渠道列表。`}
-        warning="渠道列表文件会一并删掉，删了就没了。"
+        warning="渠道列表会一并删除，无法恢复。"
         confirmText="删除分组"
         destructive
         onConfirm={handleDeleteGroup}
@@ -329,21 +330,20 @@ export function ChannelsScreen() {
   if (groups.length === 0) {
     return (
       <div className="flex flex-col gap-4">
-        <PageHeader description="一个分组一份渠道列表，导出后可直接给 walle 的 batch2 -f 使用。" />
+        <PageHeader description="一个分组一份渠道列表，导出后可直接用于批量写入渠道。" />
         <Card>
           <CardHeader>
             <CardTitle>还没有分组</CardTitle>
             <CardDescription>
-              分组是渠道列表的家，跟 jks 没关系 —— 没有 jks 也能建。
+              分组是渠道列表的家，与签名文件无关，没有签名文件也能建。
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <p className="text-sm text-muted-foreground">
-              一个分组代表一个应用：中文应用名给人看，英文名写进包的{' '}
-              <code>defaultExtraInfo.app</code>。出包时选中哪个分组，就按哪个分组的渠道列表出包。
+              一个分组代表一个应用：中文应用名只在本工具里显示，英文名会写进安装包。出包时选中哪个分组，就按哪个分组的渠道列表出包。
             </p>
             <p className="text-sm text-muted-foreground">
-              jks 从此只管签名：要重签名才需要它，只写渠道时可以完全不选。
+              签名文件只负责签名：需要重签名时才要用到，只写渠道时可以完全不选。
             </p>
             <div className="flex flex-wrap gap-2">
               <Button onClick={() => setGroupForm({ open: true, editing: null })}>
@@ -361,7 +361,7 @@ export function ChannelsScreen() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
-        description="一个分组一份渠道列表，导出后可直接给 walle 的 batch2 -f 使用。"
+        description="一个分组一份渠道列表，导出后可直接用于批量写入渠道。"
         actions={
           <>
             {dirty ? <span className="text-xs text-muted-foreground">有未保存的修改</span> : null}
@@ -381,6 +381,7 @@ export function ChannelsScreen() {
               导出 JSON
             </Button>
             <Button onClick={handleSave} disabled={saving || loading || !dirty}>
+              {saving ? <Spinner /> : null}
               {saving ? '保存中…' : '保存渠道列表'}
             </Button>
           </>
@@ -392,10 +393,10 @@ export function ChannelsScreen() {
           <CardTitle>选择分组</CardTitle>
           <CardDescription>
             {selected
-              ? `英文名 defaultExtraInfo.app = ${selected.app}${
+              ? `英文名 ${selected.app}${
                   selected.appLabel ? `　中文应用名 ${selected.appLabel}` : ''
                 }`
-              : '请选择一个分组'}
+              : '请选择一个分组。'}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -467,7 +468,7 @@ export function ChannelsScreen() {
           </div>
           <p className="text-xs text-muted-foreground">
             生成规则：渠道名 = 前缀 + &quot;_&quot; + 后缀。生成的是独立副本，之后再改模板也不会影响这里。
-            列表里还有没保存的改动时，会先问一声再覆盖。
+            列表里还有未保存的改动时，会先确认再覆盖。
           </p>
           <p className="text-xs text-muted-foreground">
             「导出示例 JSON」只在渠道列表为空时可用，导出的是一份可编辑的起点（条目取自「渠道模板」页的模板）；
@@ -483,7 +484,11 @@ export function ChannelsScreen() {
       {status ? (
         <p
           className={
-            status.kind === 'error' ? 'text-sm text-destructive' : 'text-sm text-muted-foreground'
+            status.kind === 'error'
+              ? 'text-sm text-destructive'
+              : status.kind === 'ok'
+                ? 'text-sm text-success'
+                : 'text-sm text-muted-foreground'
           }
         >
           {status.text}
@@ -528,8 +533,8 @@ export function ChannelsScreen() {
         open={confirmTemplate}
         onOpenChange={setConfirmTemplate}
         title="按模板生成？"
-        description={`会按当前前缀「${prefix.trim() || '（空）'}」重算一份列表，替换掉下面现有的 ${rows.length} 条。`}
-        warning="这份列表里有还没保存的改动，覆盖后就没了。"
+        description={`会按当前前缀「${prefix.trim() || '（空）'}」重算一份列表，替换掉现有的 ${rows.length} 条。`}
+        warning="列表里有未保存的改动，覆盖后将丢失。"
         confirmText="覆盖生成"
         onConfirm={() => {
           setConfirmTemplate(false)

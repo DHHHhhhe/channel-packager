@@ -19,7 +19,7 @@ interface ConfirmDialogProps {
   warning?: string
   confirmText?: string
   cancelText?: string
-  /** 确认按钮用危险色（默认 false） */
+  /** 确认按钮用危险色（默认 false）。warning 块也跟着它决定用危险色还是警示色 */
   destructive?: boolean
   onConfirm: () => void
 }
@@ -36,7 +36,7 @@ export function ConfirmDialog({
   title,
   description,
   warning,
-  confirmText = '继续',
+  confirmText = '确定',
   cancelText = '取消',
   destructive = false,
   onConfirm,
@@ -50,7 +50,13 @@ export function ConfirmDialog({
         </DialogHeader>
 
         {warning ? (
-          <p className="flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          <p
+            className={
+              destructive
+                ? 'flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive'
+                : 'flex items-start gap-1.5 rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs text-warning'
+            }
+          >
             <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
             <span>{warning}</span>
           </p>

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
+import { Spinner } from '@/components/ui/spinner'
 import type { PackImportResult, PackPreviewResult } from '@shared/types/pack'
 import { findDuplicates } from '@/lib/duplicates'
 import { ipcErrorMessage } from '@/lib/ipc-error'
@@ -44,7 +45,7 @@ export function TemplateScreen() {
       return
     }
     if (duplicates.length > 0) {
-      setStatus({ kind: 'error', text: `后缀重复：${duplicates.join('、')}` })
+      setStatus({ kind: 'error', text: `后缀重复：${duplicates.join('、')}。` })
       return
     }
     setSaving(true)
@@ -118,11 +119,12 @@ export function TemplateScreen() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
-        description="新增 jks 时套用的渠道后缀表。模板独立于任何 jks，改它不会动到已有副本。"
+        description="新增签名文件时套用的后缀表。模板独立于签名文件，改动不影响已有副本。"
         actions={
           <>
             {dirty ? <span className="text-xs text-muted-foreground">有未保存的修改</span> : null}
             <Button onClick={handleSave} disabled={saving || !dirty}>
+              {saving ? <Spinner /> : null}
               {saving ? '保存中…' : '保存模板'}
             </Button>
           </>
@@ -130,7 +132,15 @@ export function TemplateScreen() {
       />
 
       {status ? (
-        <p className={status.kind === 'error' ? 'text-sm text-destructive' : 'text-sm text-muted-foreground'}>
+        <p
+          className={
+            status.kind === 'error'
+              ? 'text-sm text-destructive'
+              : status.kind === 'ok'
+                ? 'text-sm text-success'
+                : 'text-sm text-muted-foreground'
+          }
+        >
           {status.text}
         </p>
       ) : null}
@@ -149,7 +159,7 @@ export function TemplateScreen() {
             keyLabel="后缀"
             keyPlaceholder="例如 gf"
             aliasPlaceholder="例如 官方"
-            emptyHint="模板为空。新增 jks 时勾选套用模板将得到空渠道列表。"
+            emptyHint="模板为空。新增签名文件时勾选套用模板将得到空渠道列表。"
             selectable
             filterable
           />
@@ -160,7 +170,7 @@ export function TemplateScreen() {
         <CardHeader>
           <CardTitle>配置包</CardTitle>
           <CardDescription>
-            把整套配置（jks 副本、凭据、渠道列表、模板）打成一个 zip；换台机器导入即可直接出包。
+            把整套配置（签名文件副本、凭据、渠道列表、模板）打成一个 zip，便于换机器导入后直接出包。
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
@@ -182,15 +192,15 @@ export function TemplateScreen() {
               disabled={packBusy}
             />
             <Label htmlFor="pack-credential-free" className="text-sm font-normal">
-              导出时不带签名凭据（只给渠道模板，对方自己补 jks）
+              导出时不带签名凭据（只给渠道模板，签名文件由对方自行补充）
             </Label>
           </div>
           {credentialFree ? (
             <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
               <Info className="mt-0.5 size-3.5 shrink-0" />
               <span>
-                这份包里只有渠道模板，没有私钥、密码，也没有分组与渠道列表。适合发给同事当初始配置，对方导入后自己新增
-                jks 再套用模板。
+                这份包里只有渠道模板，没有私钥、密码，也没有分组与渠道列表。适合发给同事作为初始配置，对方导入后自行新增
+                签名文件并套用模板。
               </span>
             </p>
           ) : (

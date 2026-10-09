@@ -25,7 +25,7 @@ export function ProgressPanel({ stage, lines }: ProgressPanelProps) {
       <div className="max-h-64 min-h-24 overflow-y-auto px-3 pb-3">
         {idle ? (
           <p className="text-sm text-muted-foreground">
-            开始出包后，这里会显示当前阶段与 walle / apksigner 的原始输出。
+            开始出包后，这里会显示当前阶段与每一步的原始输出。
           </p>
         ) : (
           <pre className="font-mono text-xs whitespace-pre-wrap">{lines.join('\n')}</pre>

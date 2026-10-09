@@ -8,7 +8,7 @@ export function PlaintextPasswordNotice() {
   return (
     <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
       <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
-      <span>口令以明文保存在 data/jks.json，与 jks 副本同目录。请勿把 data 目录外发。</span>
+      <span>密码以明文保存在本地数据目录中，与签名文件同处一个目录。请勿将数据目录整体外发。</span>
     </p>
   )
 }

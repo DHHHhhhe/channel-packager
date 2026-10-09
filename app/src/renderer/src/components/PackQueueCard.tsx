@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Spinner } from '@/components/ui/spinner'
 import { TaskResultCard } from '@/components/TaskResultCard'
 import type { TaskInput, TaskResult } from '@shared/types/task'
 
@@ -36,10 +37,14 @@ const STATUS_LABELS: Record<QueueStatus, string> = {
   failed: '失败',
 }
 
-const STATUS_VARIANTS: Record<QueueStatus, 'outline' | 'secondary' | 'destructive'> = {
+/*
+ * 待出包留中性、进行中走 info、完成走 success、失败走 destructive。
+ * 原来 done 与 pending 都是 outline，扫一眼分不出跑没跑过。
+ */
+const STATUS_VARIANTS: Record<QueueStatus, 'outline' | 'info' | 'success' | 'destructive'> = {
   pending: 'outline',
-  running: 'secondary',
-  done: 'outline',
+  running: 'info',
+  done: 'success',
   failed: 'destructive',
 }
 
@@ -56,7 +61,8 @@ function summaryOf(item: QueueItem): string {
   if (item.result) {
     return item.result.message
   }
-  return item.status === 'running' ? '正在出包…' : ''
+  // 进行中不另写一句「正在出包…」—— 状态徽标已经说了，重复一遍只是噪音
+  return ''
 }
 
 interface PackQueueCardProps {
@@ -97,21 +103,21 @@ export function PackQueueCard({
           <Badge variant="outline">{items.length} 项</Badge>
         </CardTitle>
         <CardDescription>
-          串行执行，一项失败不影响后面的。待出包 {pendingCount} 项。
+          一项接一项执行，某一项失败不会影响后面的。待出包 {pendingCount} 项。
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <Button onClick={onStart} disabled={running || pendingCount === 0}>
-            <Play />
-            {running ? '队列出包中…' : '开始队列'}
+            {running ? <Spinner /> : <Play />}
+            {running ? '正在出包…' : '开始队列'}
           </Button>
           <Button variant="outline" onClick={onClear} disabled={running}>
             <Trash2 />
             清空队列
           </Button>
           <span className="text-xs text-muted-foreground">
-            「加入队列」只把当前表单的参数记下来，点「开始队列」才真正出包
+            「加入队列」只把当前表单的参数记下来，点「开始队列」才真正出包。
           </span>
         </div>
 
@@ -121,7 +127,7 @@ export function PackQueueCard({
               <TableRow>
                 <TableHead className="w-10">#</TableHead>
                 <TableHead>APK</TableHead>
-                <TableHead>jks</TableHead>
+                <TableHead>签名文件</TableHead>
                 <TableHead>渠道分组</TableHead>
                 <TableHead>签名</TableHead>
                 <TableHead>状态</TableHead>
@@ -139,13 +145,14 @@ export function PackQueueCard({
                     {item.jksName}
                   </TableCell>
                   <TableCell className="max-w-[14rem] truncate" title={item.groupName}>
-                    {item.groupName !== '' ? item.groupName : '自定义'} ｜{' '}
-                    {item.params.channelCodes.length} 个
+                    {item.groupName !== '' ? item.groupName : '自定义'} ·{' '}
+                    {item.params.channelCodes.length} 个渠道
                   </TableCell>
                   <TableCell>{SIGN_MODE_LABELS[item.params.signMode]}</TableCell>
                   <TableCell>
                     <div className="flex flex-col items-start gap-1">
                       <Badge variant={STATUS_VARIANTS[item.status]}>
+                        {item.status === 'running' ? <Spinner /> : null}
                         {STATUS_LABELS[item.status]}
                       </Badge>
                       {summaryOf(item) !== '' ? (

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Info, ShieldAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Spinner } from '@/components/ui/spinner'
 import {
   Dialog,
   DialogContent,
@@ -39,7 +40,7 @@ interface ConfigPackDialogProps {
 const STRATEGY_LABELS: Record<ConflictStrategy, string> = {
   'keep-both': '保留两份（自动加后缀）',
   skip: '跳过冲突项',
-  overwrite: '覆盖本机同 id 条目',
+  overwrite: '覆盖本机同名条目',
 }
 
 function shortHash(value: string): string {
@@ -93,7 +94,7 @@ export function ConfigPackDialog({ preview, onClose, onImported }: ConfigPackDia
           <DialogDescription>
             {preview?.credentialFree
               ? '这是一份不含签名凭据的初始包，只有渠道模板'
-              : `包内 ${preview?.jksCount ?? 0} 个 jks、${preview?.channelCount ?? 0} 份渠道文件`}
+              : `包内 ${preview?.jksCount ?? 0} 个签名文件、${preview?.channelCount ?? 0} 份渠道列表`}
             {preview?.exportedAt ? `，导出于 ${preview.exportedAt.slice(0, 19).replace('T', ' ')}` : ''}。
             校验已通过。
           </DialogDescription>
@@ -103,8 +104,8 @@ export function ConfigPackDialog({ preview, onClose, onImported }: ConfigPackDia
           <p className="flex items-start gap-1.5 rounded-md border px-3 py-2 text-xs text-muted-foreground">
             <Info className="mt-0.5 size-3.5 shrink-0" />
             <span>
-              这份包里没有私钥、密码，也没有渠道列表，本机的 jks 与渠道数据一条都不会被动到。
-              导入后自己新增 jks 即可套用模板。
+              这份包里没有私钥与密码，也没有渠道列表，本机的签名文件与渠道数据不会受到任何影响。
+              导入后新增签名文件即可套用模板。
             </span>
           </p>
         ) : (
@@ -118,12 +119,12 @@ export function ConfigPackDialog({ preview, onClose, onImported }: ConfigPackDia
 
         {credentialFree ? null : conflicts.length > 0 ? (
           <div className="flex flex-col gap-2">
-            <Label>以下 {conflicts.length} 个 id 在本机已存在且内容不同</Label>
+            <Label>以下 {conflicts.length} 项在本机已存在且内容不同</Label>
             <div className="overflow-hidden rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>id</TableHead>
+                    <TableHead>条目</TableHead>
                     <TableHead>本机 SHA256</TableHead>
                     <TableHead>包内 SHA256</TableHead>
                   </TableRow>
@@ -179,7 +180,7 @@ export function ConfigPackDialog({ preview, onClose, onImported }: ConfigPackDia
             </span>
           </label>
         ) : (
-          <p className="text-sm text-muted-foreground">包内没有 template.json，模板不受影响。</p>
+          <p className="text-sm text-muted-foreground">包内没有模板文件，模板不受影响。</p>
         )}
 
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
@@ -189,6 +190,7 @@ export function ConfigPackDialog({ preview, onClose, onImported }: ConfigPackDia
             取消
           </Button>
           <Button onClick={handleApply} disabled={busy}>
+            {busy ? <Spinner /> : null}
             {busy ? '导入中…' : '确认导入'}
           </Button>
         </DialogFooter>

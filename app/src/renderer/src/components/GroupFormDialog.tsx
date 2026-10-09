@@ -68,12 +68,12 @@ export function GroupFormDialog({
   const handleSubmit = () => {
     const nextApp = app.trim()
     if (nextApp === '') {
-      setError('英文名不能为空 —— 它会写进包的 defaultExtraInfo.app，App 里就按这个名字取值。')
+      setError('英文名不能为空 —— 它会写进安装包，App 按这个名字读取渠道。')
       return
     }
     const nextName = resolvedName.trim()
     if (nextName === '') {
-      setError('分组名不能为空 —— 渠道列表里要有个名字才认得出来。')
+      setError('分组名不能为空 —— 渠道列表要用它区分。')
       return
     }
     setError('')
@@ -86,7 +86,7 @@ export function GroupFormDialog({
         <DialogHeader>
           <DialogTitle>{group ? '编辑分组' : '新建分组'}</DialogTitle>
           <DialogDescription>
-            一个分组就是一份渠道列表的家，跟 jks 没关系 —— 没有 jks 也能建。
+            一个分组对应一份渠道列表。分组与签名文件无关，没有签名文件也能建。
           </DialogDescription>
         </DialogHeader>
 
@@ -103,7 +103,7 @@ export function GroupFormDialog({
               placeholder="例如 沐爱"
             />
             <p className="text-xs text-muted-foreground">
-              只出现在这个工具里，渠道列表按它认。新建时默认跟着中文应用名走，可以改。
+              只在本工具里显示，渠道列表用它区分。新建时默认跟随中文应用名，可以修改。
             </p>
           </div>
 
@@ -115,7 +115,7 @@ export function GroupFormDialog({
               onChange={(event) => setAppLabel(event.target.value)}
               placeholder="例如 沐爱"
             />
-            <p className="text-xs text-muted-foreground">只给自己看，不会写进包。</p>
+            <p className="text-xs text-muted-foreground">只在本工具里显示，不会写进安装包。</p>
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -127,9 +127,7 @@ export function GroupFormDialog({
               placeholder="例如 demo"
             />
             <p className="text-xs text-muted-foreground">
-              会写进包的 <code>defaultExtraInfo.app</code>，App 里用
-              <code> WalleChannelReader.get(context, &quot;app&quot;) </code>
-              取值，所以要用代码认得的英文标识。分组 id 也从它来，决定了渠道文件名。
+              会写进安装包，App 里按这个名字读取渠道，所以要用代码认得的英文标识。渠道文件名也由它决定。
             </p>
           </div>
 

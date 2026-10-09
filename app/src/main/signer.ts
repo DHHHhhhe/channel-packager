@@ -51,7 +51,7 @@ export async function zipalign(
   )
   if (result.code !== 0) {
     throw new StepFailure(
-      `zipalign 失败（退出码 ${result.code}）`,
+      `APK 对齐失败（退出码 ${result.code}）`,
       result.code,
       tailLineList(result.stdout + result.stderr),
     )
@@ -60,7 +60,7 @@ export async function zipalign(
   // 这条刻意不给退出码 —— 它本来就是 0，摆出来只会让人以为工具坏了，输出末尾才是线索。
   if (!fs.existsSync(outputApk)) {
     throw new StepFailure(
-      'zipalign 报告成功但没有产出文件，已中止',
+      'APK 对齐报告成功但没有产出文件，已中止',
       undefined,
       tailLineList(result.stdout + result.stderr),
     )
@@ -105,14 +105,14 @@ export async function signApk(params: SignParams, ctx: StepContext): Promise<voi
   )
   if (result.code !== 0) {
     throw new StepFailure(
-      `apksigner 签名失败（退出码 ${result.code}）`,
+      `签名失败（退出码 ${result.code}）`,
       result.code,
       tailLineList(result.stdout + result.stderr),
     )
   }
   if (!fs.existsSync(params.outputApk)) {
     throw new StepFailure(
-      'apksigner 报告成功但没有产出文件，已中止',
+      '签名报告成功但没有产出文件，已中止',
       undefined,
       tailLineList(result.stdout + result.stderr),
     )
@@ -128,7 +128,7 @@ export async function verifyApk(apkPath: string, ctx: StepContext): Promise<void
   )
   if (result.code !== 0) {
     throw new StepFailure(
-      `apksigner 校验未通过（退出码 ${result.code}）`,
+      `签名校验未通过（退出码 ${result.code}）`,
       result.code,
       tailLineList(result.stdout + result.stderr),
     )
@@ -247,8 +247,8 @@ export async function probeKeystoreCertificate(
   if (result.code !== 0 || !pem) {
     throw new StepFailure(
       result.code === 0
-        ? 'keytool 没有输出证书，已中止'
-        : `读 jks 里的证书失败（退出码 ${result.code}）`,
+        ? '没能从签名文件里读出证书，已中止'
+        : `读签名文件里的证书失败（退出码 ${result.code}）`,
       result.code === 0 ? undefined : result.code,
       tailLineList(output),
     )
@@ -274,8 +274,8 @@ function assertSkippable(apk: ApkSignature): void {
   }
   if (apk.v2 === false) {
     throw new StepFailure(
-      '这个包只有 v1 签名，没有 v2 签名。walle 要把渠道写进 APK Signing Block，只认 v2 —— ' +
-        '先用 apksigner 重签一次再拿过来，或者改用「重签名」模式。',
+      '这个包只有 v1 签名，没有 v2 签名。渠道要写进 APK Signing Block，只认 v2 —— ' +
+        '先重新签名一次再拿过来，或者改用「重签名」模式。',
       undefined,
       apk.tail,
     )
@@ -307,9 +307,9 @@ export async function assertSignedByKeystore(
     // 完整指纹进日志，界面上只给前 16 位 —— 足够区分证书，又不至于把卡片撑满
     ctx.log.error(`证书不一致：输入包 ${apk.digest} ≠ jks ${keystore.digest}`)
     throw new Error(
-      `这个包不是用 jks「${params.jksId}」签的（包里证书 ${apk.digest.slice(0, 16)}…，` +
-        `jks 里证书 ${keystore.digest.slice(0, 16)}…），跳过签名会签出签名对不上的包，已中止。` +
-        '跳过签名只适用于同一个 jks 签出来的包，也就是上次出包时另存的那份「已签名未写渠道」包。',
+      `这个包不是用签名文件「${params.jksId}」签的（包里证书 ${apk.digest.slice(0, 16)}…，` +
+        `签名文件里证书 ${keystore.digest.slice(0, 16)}…），跳过签名会签出签名对不上的包，已中止。` +
+        '跳过签名只适用于同一个签名文件签出来的包，也就是上次出包时另存的那份「已签名未写渠道」包。',
     )
   }
   ctx.log.info('证书一致，可以跳过签名')

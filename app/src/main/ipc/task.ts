@@ -77,7 +77,7 @@ export function registerTaskIpc(): void {
       const extra = await walleShowExtraInfo(apkPath)
       return {
         ok: channel.ok,
-        message: channel.ok ? '' : channel.raw || 'walle 没能读出渠道信息',
+        message: channel.ok ? '' : channel.raw || '没能读出渠道信息',
         channel: channel.channel,
         // 空串表示包里没写额外信息，跟「读到但为空」不是一回事，这里统一成 undefined
         extraInfo: extra.ok ? extra.raw || undefined : undefined,
@@ -140,8 +140,8 @@ async function describeSource(
       ...base,
       ok: false,
       message:
-        '这个包只有 v1 签名。walle 要把渠道写进 APK Signing Block，只认 v2 —— ' +
-        '得先用 apksigner 重签一次，或者改用「重签名」模式。',
+        '这个包只有 v1 签名。渠道要写进 APK Signing Block，只认 v2 —— ' +
+        '得先重新签名一次，或者改用「重签名」模式。',
     }
   }
 
@@ -149,20 +149,20 @@ async function describeSource(
   if (id === '') {
     return {
       ...base,
-      message: `这个包由证书 ${shortDigest(apk.digest)} 签署；没有选 jks，所以只写渠道、不重签名。`,
+      message: `这个包由证书 ${shortDigest(apk.digest)} 签署；没有选签名文件，所以只写渠道、不重签名。`,
     }
   }
 
   const item = readJksFile().items.find((entry) => entry.id === id)
   if (!item) {
-    return { ...base, message: `找不到 jks「${id}」。` }
+    return { ...base, message: `找不到签名文件「${id}」。` }
   }
   if (item.alias.trim() === '' || item.storePassword === '') {
-    return { ...base, message: `jks「${id}」还缺别名或口令，先到「签名配置」补上。` }
+    return { ...base, message: `签名文件「${id}」还缺别名或密码，先到「签名配置」补上。` }
   }
   const keystorePath = resolveInData(item.keystoreFile)
   if (!fs.existsSync(keystorePath)) {
-    return { ...base, message: `jks「${id}」的副本不存在，先到「签名配置」重新导入。` }
+    return { ...base, message: `签名文件「${id}」的副本不存在，先到「签名配置」重新导入。` }
   }
 
   let keystoreDigest = ''
@@ -170,19 +170,19 @@ async function describeSource(
     const keystore = await probeKeystoreCertificate(keystorePath, item.alias, item.storePassword)
     keystoreDigest = keystore.digest
   } catch {
-    return { ...base, message: `读 jks「${id}」里的证书失败，多半是口令不对 —— 先到「签名配置」校验一下。` }
+    return { ...base, message: `读签名文件「${id}」里的证书失败，多半是密码不对 —— 先到「签名配置」校验一下。` }
   }
 
   const head = `这个包由证书 ${shortDigest(apk.digest)} 签署`
   if (keystoreDigest === apk.digest) {
-    return { ...base, jksDigest: keystoreDigest, message: `${head}，与 jks「${id}」一致。` }
+    return { ...base, jksDigest: keystoreDigest, message: `${head}，与签名文件「${id}」一致。` }
   }
   return {
     ...base,
     jksDigest: keystoreDigest,
     ok: false,
     message:
-      `${head}，和 jks「${id}」的证书 ${shortDigest(keystoreDigest)} 不一样。` +
+      `${head}，和签名文件「${id}」的证书 ${shortDigest(keystoreDigest)} 不一样。` +
       '跳过签名会把签名对不上的包发出去，已被拦下 —— 要么换用对得上的包，要么改用「重签名」。',
   }
 }
