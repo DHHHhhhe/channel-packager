@@ -146,6 +146,7 @@ export function TemplateScreen() {
             aliasPlaceholder="例如 官方"
             emptyHint="模板为空。新增 jks 时勾选套用模板将得到空渠道列表。"
             selectable
+            filterable
           />
         </CardContent>
       </Card>

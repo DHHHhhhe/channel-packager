@@ -46,6 +46,8 @@ export function ChannelsScreen() {
   const [importMode, setImportMode] = useState<ChannelImportMode>('overwrite')
   /** 「按模板生成」会整表替换，有未保存改动时先问一声 */
   const [confirmTemplate, setConfirmTemplate] = useState(false)
+  /** 递增一下就让渠道列表把搜索清掉 —— 保存被拦下时，问题行可能正被搜索藏着 */
+  const [filterResetToken, setFilterResetToken] = useState(0)
 
   const selected = jksItems.find((item) => item.id === selectedId)
 
@@ -225,10 +227,13 @@ export function ChannelsScreen() {
       return
     }
     if (hasEmpty) {
-      setStatus({ kind: 'error', text: '渠道名不能为空。' })
+      // 空行可能正被搜索藏起来，先把筛选清掉再报错，免得用户找不到
+      setFilterResetToken((value) => value + 1)
+      setStatus({ kind: 'error', text: '渠道名不能为空，空行已经标红。' })
       return
     }
     if (duplicates.length > 0) {
+      setFilterResetToken((value) => value + 1)
       setStatus({ kind: 'error', text: `渠道名重复：${duplicates.join('、')}` })
       return
     }
@@ -371,7 +376,8 @@ export function ChannelsScreen() {
         <CardHeader>
           <CardTitle>渠道列表</CardTitle>
           <CardDescription>
-            渠道必填、别名选填。共 {rows.length} 条{loading ? '（读取中…）' : ''}
+            渠道必填、别名选填。保存写的是整份列表，与搜索无关。
+            {loading ? ' 读取中…' : ''}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -383,6 +389,8 @@ export function ChannelsScreen() {
             aliasPlaceholder="例如 官方"
             emptyHint="还没有渠道条目。可手工添加，或用上面的「按模板生成」。"
             selectable
+            filterable
+            resetFilterToken={filterResetToken}
           />
         </CardContent>
       </Card>

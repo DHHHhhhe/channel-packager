@@ -656,6 +656,52 @@ pnpm 那条是实测确认的（pnpm 11.8.0）：
 
 没有代码改动，因此不重建 exe。
 
+## 后续增强：渠道列表搜索与排序（2026-10-09）
+
+审计 P2 清单里的 P2-1「渠道列表搜索与排序」，风险一栏写的是「过滤状态下保存容易漏条目」。
+
+三处口径：
+
+| 问题 | 结论 |
+|---|---|
+| 搜索与排序放哪 | 放进 `PairListEditor` 组件内部。四个调用点里三个是「键 + 别名」同形列表，组件内部过滤后 `onChange` 仍吐**完整列表**，调用点零改动就得到正确语义；反过来在外层过滤再把子集传进去，就得在每个调用点重写一遍「可见行编辑合并回全表」 |
+| 排序动不动 `rows` | 不动。`rows` 是保存内容的唯一来源，按别名排序若写回 `rows`，等于顺手改掉了文件里的行序 |
+| 怎么堵「过滤状态下保存漏条目」 | 三层：① 工具条下一行写明「搜索与排序只改显示，保存的仍是全部 N 项」；② 计数变成「显示 X / 共 N 项」；③ **保存被校验拦下时（空渠道名 / 渠道名重复）自动清掉搜索** —— 否则出问题的那一行可能正被搜索藏着，用户只会看到「保存没反应」 |
+
+其它细节：
+
+- **`pickedIds` 按 `visibleRows` 过滤而不是 `rows`**：被搜索藏起来的行若还留在选中集合里，一点「删除选中」就会连看不见的行一起删掉。换搜索词/排序时同时清空选中，避免「清掉搜索后旧选择又冒回来」。
+- **表头全选只选显示中的行**，筛选时 `title` 改成「全选显示中的行」。
+- **整表被替换时自动清掉搜索**：判据是「旧 rowId 一个都不在了」而不是「rows 变了」—— 逐字改一行、删一行时 rowId 大多还在，不该把用户正用着的搜索词清掉。
+- **「添加一行」后清掉搜索**：新行是空的，多半匹配不上当前搜索词，不露出来会让人以为没加上。
+- **别名排序时空别名沉底**：别名是选填的，否则一屏全是空行，排好序的那半截反而看不见。
+- **导入预览框（`ChannelListPreviewDialog`）刻意不开 `filterable`**：刚导入完要的是逐条核对，过滤只会让人漏看。
+
+改动：
+
+| 文件 | 内容 |
+|---|---|
+| `app/src/renderer/src/lib/row-view.ts` | **新增**。`RowSort = 'none' \| 'key' \| 'alias'`；`Intl.Collator('zh-Hans-CN', { numeric: true, sensitivity: 'base' })` 做比较（中文按拼音、渠道号里的数字按大小）；`compareByKey` / `compareByAlias`（单侧空则空的排后，两侧空回退按渠道号）；`viewPairRows(rows, query, sort)` —— 查询串去空白转小写后对 `key` 与 `alias` 做 `includes`，`'none'` 表示保持原行序 |
+| `app/src/renderer/src/components/PairListEditor.tsx` | 新增 `filterable?: boolean` 与 `resetFilterToken?: number` 两个 prop；工具条（带放大镜图标的搜索框 `aria-label="搜索条目"`、`aria-label="排序方式"` 的下拉、筛选时的「清空」）；表体渲染 `visibleRows`，空态区分「本来就没有」与「没有匹配」；计数行渲染条件放宽成 `selectable \|\| filterable` |
+| `app/src/renderer/src/screens/ChannelsScreen.tsx` | 加 `filterable`；`handleSave` 两个拦截分支前递增 `filterResetToken`；`CardDescription` 改成「保存写的是整份列表，与搜索无关」（条数交给组件自己的计数行） |
+| `app/src/renderer/src/screens/TemplateScreen.tsx` | 加 `filterable` |
+| `app/src/renderer/src/components/JksFormDialog.tsx` | 加 `filterable` 与 `resetFilterToken`；`handleSubmit` 两个拦截分支前递增 |
+
+实测（开发构建 + CDP 驱动，夹具 6 条渠道含一条无别名，页面错误 `[]`）：
+
+| 场景 | 结果 |
+|---|---|
+| 搜别名「华为」/ 搜渠道号「hw」 | 都是 `显示 1 / 共 6 项`，只剩 `t19_hw` —— 渠道号与别名都参与匹配，大小写不敏感 |
+| 搜「zzz」 | `显示 0 / 共 6 项` + 「没有匹配「zzz」的条目。换个词，或点「清空」。」 |
+| 按渠道号排序 | `gf, hw, oppo, vivo, xm, zz` |
+| 按别名排序 | `阿里, 官方, 华为, 小米, OPPO, (空)` —— 拼音序正确，空别名沉底 |
+| 回「按原顺序」 | 恢复文件里的原行序 |
+| 过滤后全选 + 删除选中 | 只删掉显示中的那 1 条，其余 4 行一条没动 |
+| 空行被搜索藏起来后点保存 | 状态行报「渠道名不能为空，空行已经标红。」，同时搜索被清空、空行重新可见 |
+| 搜索状态下点「添加一行」 | 搜索清空，新行可见 |
+| 搜索状态下点「按模板生成」（整表替换） | 搜索清空，13 行模板渠道 |
+| 渠道模板页 / 新增 jks 弹窗 | 工具条同样存在；弹窗未选 jks 文件时搜索框随 `noJks` 一起禁用 |
+
 ## 风险与回滚点
 
 | 风险 | 触发点 | 回滚/对策 |

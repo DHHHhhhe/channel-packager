@@ -66,6 +66,8 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
   const [handEdited, setHandEdited] = useState(false)
   /** 「按模板重新生成」的确认框 */
   const [confirmRegenerate, setConfirmRegenerate] = useState(false)
+  /** 递增一下就让渠道草稿列表把搜索清掉 —— 保存被拦下时，问题行可能正被搜索藏着 */
+  const [filterResetToken, setFilterResetToken] = useState(0)
   const [showPassword, setShowPassword] = useState(false)
   const [feedback, setFeedback] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
@@ -399,11 +401,14 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
       return
     }
     if (draftChannels.some((row) => row.key.trim() === '')) {
-      setFeedback({ kind: 'error', text: '渠道名不能为空，请补全或删掉空行。' })
+      // 空行可能正被搜索藏起来，先把筛选清掉再报错，免得用户找不到
+      setFilterResetToken((value) => value + 1)
+      setFeedback({ kind: 'error', text: '渠道名不能为空，空行已经标红。' })
       return
     }
     const duplicated = findDuplicates(draftChannels.map((row) => row.key))
     if (duplicated.length > 0) {
+      setFilterResetToken((value) => value + 1)
       setFeedback({ kind: 'error', text: `渠道名重复：${duplicated.join('、')}` })
       return
     }
@@ -642,6 +647,8 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
                 keyPlaceholder="例如 sample_gf"
                 aliasPlaceholder="例如 官方"
                 selectable
+                filterable
+                resetFilterToken={filterResetToken}
                 disabled={noJks}
                 emptyHint={
                   noJks
