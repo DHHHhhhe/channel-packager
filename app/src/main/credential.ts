@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import fs from 'node:fs'
-import type { CredentialVerifyResult } from '../shared/types/store'
+import type { CredentialField, CredentialVerifyResult } from '../shared/types/store'
 import { resolveInData } from './paths'
 import { resolveRuntimeComponentPath } from './runtime'
 import { readJksFile } from './store'
@@ -64,21 +64,27 @@ function extractKeytoolError(output: string): string | null {
   return match ? match[1].trim() : null
 }
 
-/** 把 keytool 的英文报错翻成使用者能直接照做的说法 */
-function describeFailure(raw: string): string {
+/**
+ * 把 keytool 的英文报错翻成使用者能直接照做的说法，并指出该回去查哪一项。
+ * 界面只负责把 `field` 对应的输入框标红，不必去猜文案里有没有「口令」两个字。
+ */
+function describeFailure(raw: string): { message: string; field: CredentialField } {
   if (/password was incorrect|Keystore was tampered with/i.test(raw)) {
-    return '口令不正确'
+    return { message: '口令不正确', field: 'password' }
   }
   if (/Keystore file does not exist/i.test(raw)) {
-    return '副本文件不存在'
+    return { message: '副本文件不存在', field: 'keystore' }
   }
   if (/UnrecoverableKeyException/i.test(raw)) {
-    return '密钥口令不正确'
+    return { message: '密钥口令不正确', field: 'password' }
   }
   if (/Invalid keystore format|not a keystore|Unrecognized keystore/i.test(raw)) {
-    return '不是有效的 keystore 文件'
+    return { message: '不是有效的 keystore 文件', field: 'keystore' }
   }
-  return raw.length > 200 ? `${raw.slice(0, 200)}…` : raw
+  return {
+    message: raw.length > 200 ? `${raw.slice(0, 200)}…` : raw,
+    field: 'keystore',
+  }
 }
 
 /**
@@ -95,12 +101,17 @@ export async function verifyCredentials(
     throw new Error(`找不到 jks：${id}`)
   }
   if (!password) {
-    return { ok: false, aliases: [], message: '口令不能为空' }
+    return { ok: false, aliases: [], message: '口令不能为空', field: 'password' }
   }
 
   const keystorePath = resolveInData(item.keystoreFile)
   if (!fs.existsSync(keystorePath)) {
-    return { ok: false, aliases: [], message: `副本文件不存在：${keystorePath}` }
+    return {
+      ok: false,
+      aliases: [],
+      message: `副本文件不存在：${keystorePath}`,
+      field: 'keystore',
+    }
   }
 
   const { code, output } = await runKeytool(
@@ -110,12 +121,18 @@ export async function verifyCredentials(
 
   if (code !== 0) {
     const reason = extractKeytoolError(output) ?? output.trim()
-    return { ok: false, aliases: [], message: describeFailure(reason) }
+    const { message, field } = describeFailure(reason)
+    return { ok: false, aliases: [], message, field }
   }
 
   const aliases = extractAliases(output)
   if (aliases.length === 0) {
-    return { ok: false, aliases, message: '口令正确，但没有从 keytool 输出里读到任何别名' }
+    return {
+      ok: false,
+      aliases,
+      message: '口令正确，但没有从 keytool 输出里读到任何别名',
+      field: 'keystore',
+    }
   }
 
   const wanted = expectedAlias?.trim()
@@ -134,6 +151,7 @@ export async function verifyCredentials(
   return {
     ok: false,
     aliases,
+    field: 'alias',
     message: wanted
       ? `口令正确，但库中没有别名「${wanted}」；现有条目：${aliases.join('、')}`
       : `口令正确，但库中有多个条目，需要指定别名：${aliases.join('、')}`,

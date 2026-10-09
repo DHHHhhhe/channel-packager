@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { ChannelListPreview } from '@shared/types/pack'
-import type { ChannelConfig, JksItem } from '@shared/types/store'
+import type { ChannelConfig, CredentialField, JksItem } from '@shared/types/store'
 import { buildChannelsFromTemplate } from '@shared/utils/channels'
 import { deriveAlias, derivePassword } from '@shared/utils/credentials'
 import { findDuplicates } from '@/lib/duplicates'
@@ -70,6 +70,8 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
   const [filterResetToken, setFilterResetToken] = useState(0)
   const [showPassword, setShowPassword] = useState(false)
   const [feedback, setFeedback] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
+  /** 被判定有问题的字段，界面上标红。用户一改动该项就清掉 */
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<CredentialField, boolean>>>({})
   const [busy, setBusy] = useState(false)
   /** 正有文件被拖在对话框上方，用来高亮投放区 */
   const [dragging, setDragging] = useState(false)
@@ -99,6 +101,7 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
     setConfirmRegenerate(false)
     setShowPassword(false)
     setFeedback(null)
+    setFieldErrors({})
     setBusy(false)
     setDragging(false)
     dragDepth.current = 0
@@ -112,6 +115,35 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
    * 文件都没选就先让人编渠道，编完也无处可落，只能白填。
    */
   const noJks = !isEdit && sourcePath.trim() === ''
+
+  /*
+   * 校验失败时把出问题的那一项标红，但**不重置任何字段** ——
+   * 用户填了半天的东西不该因为一次口令打错就清空。
+   * 主进程会告诉我们该查哪一项（`CredentialVerifyResult.field`），
+   * 界面不靠匹配提示文案来猜。
+   */
+  const failWith = (text: string, field?: CredentialField): void => {
+    setFeedback({ kind: 'error', text })
+    setFieldErrors(field ? { [field]: true } : {})
+  }
+
+  /** 成功提示：顺手把红框全清掉 */
+  const succeedWith = (text: string): void => {
+    setFeedback({ kind: 'ok', text })
+    setFieldErrors({})
+  }
+
+  /** 用户一改动某项就撤掉它的红框，免得改完了还红着 */
+  const clearFieldError = (field: CredentialField): void => {
+    setFieldErrors((current) => {
+      if (!current[field]) {
+        return current
+      }
+      const next = { ...current }
+      delete next[field]
+      return next
+    })
+  }
 
   /** 按模板 + 前缀算出一份新的草稿行 */
   const templateDraft = (value: string): PairRow[] =>
@@ -178,6 +210,8 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
     setApp(base)
     setPrefix(base)
     setFeedback(null)
+    // 换了文件，之前那个「先选择 jks 文件」的红框自然该撤掉
+    clearFieldError('keystore')
   }
 
   /*
@@ -278,7 +312,7 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
   const handleConfirmJson = (imported: PairRow[]) => {
     applyDraft(imported)
     setJsonPreview(null)
-    setFeedback({ kind: 'ok', text: `已导入 ${imported.length} 条渠道，可在下方直接改。` })
+    succeedWith(`已导入 ${imported.length} 条渠道，可在下方直接改。`)
   }
 
   /**
@@ -301,7 +335,7 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
     // 编辑走副本校验，通过了才落库
     const result = await verifyCredentials(target.id, password, alias)
     if (!result.ok) {
-      setFeedback({ kind: 'error', text: `凭据校验未通过：${result.message ?? '原因未知'}` })
+      failWith(`凭据校验未通过：${result.message ?? '原因未知'}`, result.field)
       return false
     }
     const finalAlias = result.alias ?? alias.trim()
@@ -317,7 +351,7 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
       },
     })
     if (finalAlias !== alias.trim()) {
-      setFeedback({ kind: 'ok', text: `别名已按 keystore 实际内容修正为「${finalAlias}」。` })
+      succeedWith(`别名已按 keystore 实际内容修正为「${finalAlias}」。`)
     }
     return true
   }
@@ -332,12 +366,12 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
       app: app.trim() || undefined,
     })
     if (added.status === 'duplicate') {
-      setFeedback({ kind: 'error', text: added.message ?? '该文件已存在。' })
+      failWith(added.message ?? '该文件已存在。', 'keystore')
       return false
     }
     const created = added.item
     if (!created) {
-      setFeedback({ kind: 'error', text: '新增后没有拿到条目信息。' })
+      failWith('新增后没有拿到条目信息。')
       return false
     }
 
@@ -349,10 +383,10 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
     const result = await verifyCredentials(created.id, password, alias)
     if (!result.ok) {
       await saveJks({ action: 'remove', id: created.id })
-      setFeedback({
-        kind: 'error',
-        text: `凭据校验未通过，已撤销本次新增：${result.message ?? '原因未知'}`,
-      })
+      failWith(
+        `凭据校验未通过，已撤销本次新增：${result.message ?? '原因未知'}`,
+        result.field,
+      )
       return false
     }
 
@@ -385,43 +419,44 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
 
   const handleSubmit = async () => {
     if (!isEdit && !sourcePath) {
-      setFeedback({ kind: 'error', text: '请先选择 jks 文件。' })
+      failWith('请先选择 jks 文件。', 'keystore')
       return
     }
     if (!alias.trim()) {
-      setFeedback({ kind: 'error', text: '别名不能为空。' })
+      failWith('别名不能为空。', 'alias')
       return
     }
     if (!password) {
-      setFeedback({ kind: 'error', text: '口令不能为空。' })
+      failWith('口令不能为空。', 'password')
       return
     }
     if (isEdit && item && jksItems.length === 0) {
-      setFeedback({ kind: 'error', text: 'jks 列表为空，无法保存。' })
+      failWith('jks 列表为空，无法保存。')
       return
     }
     if (draftChannels.some((row) => row.key.trim() === '')) {
       // 空行可能正被搜索藏起来，先把筛选清掉再报错，免得用户找不到
       setFilterResetToken((value) => value + 1)
-      setFeedback({ kind: 'error', text: '渠道名不能为空，空行已经标红。' })
+      failWith('渠道名不能为空，空行已经标红。')
       return
     }
     const duplicated = findDuplicates(draftChannels.map((row) => row.key))
     if (duplicated.length > 0) {
       setFilterResetToken((value) => value + 1)
-      setFeedback({ kind: 'error', text: `渠道名重复：${duplicated.join('、')}` })
+      failWith(`渠道名重复：${duplicated.join('、')}`)
       return
     }
 
     setBusy(true)
     setFeedback(null)
+    setFieldErrors({})
     try {
       const saved = isEdit && item ? await handleEditSave(item) : await handleCreate()
       if (saved) {
         onOpenChange(false)
       }
     } catch (error) {
-      setFeedback({ kind: 'error', text: ipcErrorMessage(error) })
+      failWith(ipcErrorMessage(error))
     } finally {
       setBusy(false)
     }
@@ -451,7 +486,9 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
               className={
                 dragging
                   ? 'flex flex-col gap-1.5 rounded-lg border border-dashed border-primary bg-primary/5 p-3'
-                  : 'flex flex-col gap-1.5 rounded-lg border border-dashed border-border p-3'
+                  : fieldErrors.keystore
+                    ? 'flex flex-col gap-1.5 rounded-lg border border-dashed border-destructive bg-destructive/5 p-3'
+                    : 'flex flex-col gap-1.5 rounded-lg border border-dashed border-border p-3'
               }
             >
               <Label htmlFor="jks-source">jks 文件</Label>
@@ -459,7 +496,11 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
                 <Input
                   id="jks-source"
                   value={sourcePath}
-                  onChange={(event) => setSourcePath(event.target.value)}
+                  aria-invalid={fieldErrors.keystore === true}
+                  onChange={(event) => {
+                    setSourcePath(event.target.value)
+                    clearFieldError('keystore')
+                  }}
                   placeholder="把 .jks 拖到这里，或点右侧按钮选择"
                 />
                 <Button
@@ -491,7 +532,14 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
           ) : (
             <div className="flex flex-col gap-1.5">
               <Label>来源路径</Label>
-              <p className="truncate text-sm text-muted-foreground" title={item?.sourcePath}>
+              <p
+                className={
+                  fieldErrors.keystore
+                    ? 'truncate rounded-md border border-destructive px-2.5 py-1.5 text-sm text-muted-foreground'
+                    : 'truncate text-sm text-muted-foreground'
+                }
+                title={item?.sourcePath}
+              >
                 {item?.sourcePath}
               </p>
             </div>
@@ -512,7 +560,11 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
               <Input
                 id="jks-alias"
                 value={alias}
-                onChange={(event) => setAlias(event.target.value)}
+                aria-invalid={fieldErrors.alias === true}
+                onChange={(event) => {
+                  setAlias(event.target.value)
+                  clearFieldError('alias')
+                }}
                 placeholder="sample"
               />
             </div>
@@ -523,7 +575,11 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
                   id="jks-password"
                   type={showPassword ? 'text' : 'password'}
                   value={password}
-                  onChange={(event) => setPassword(event.target.value)}
+                  aria-invalid={fieldErrors.password === true}
+                  onChange={(event) => {
+                    setPassword(event.target.value)
+                    clearFieldError('password')
+                  }}
                   placeholder="sample@123"
                   className="pr-11"
                 />

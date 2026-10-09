@@ -751,6 +751,47 @@ pnpm 那条是实测确认的（pnpm 11.8.0）：
 
 验证手法上的一条教训：核对磁盘文件内容时用 `[System.IO.File]::ReadAllBytes` + `[System.Text.Encoding]::UTF8.GetString` 直接打印字节数与原文，别用 `"…$((Get-Content $p -Raw))…"` 这种嵌套引号插值 —— 后者一度打出空串，让人误以为备份文件是空的。
 
+## 后续增强：新增 jks 失败时保住表单（2026-10-09 九续）
+
+审计 P2 清单里的 P2-4「新增 jks 校验失败后保留已填表单，只高亮出错项」，风险一栏写的是「需确认回滚确实删掉了副本与条目」。
+
+现状核对（改之前）：弹窗本来就不会关（`handleSubmit` 只在 `saved` 为真时才 `onOpenChange(false)`），字段也是组件 state、不会被重置 —— 也就是说「保留表单」这半边其实已经成立，缺的是**只高亮出错项**，以及「回滚到底删干净没有」这件事从来没有被验证过。
+
+三处口径：
+
+| 问题 | 结论 |
+|---|---|
+| 谁来判断该标红哪一项 | 主进程。`CredentialVerifyResult` 新增 `field?: CredentialField`（`'keystore' \| 'alias' \| 'password'`），由 `describeFailure` 与各条失败分支直接给出；界面只负责把 `field` 对应的控件标红，**不去匹配提示文案里有没有「口令」两个字** |
+| 校验失败要不要清空字段 | 不要。用户填了半天的东西不该因为一次口令打错就白填 |
+| 红框什么时候撤 | 用户一改动那一项就撤（`clearFieldError`），换 jks 文件也撤；下一次提交前统一清空 |
+
+其它细节：
+
+- 标红用现成的 `aria-invalid` —— `ui/input.tsx` 里已经带了 `aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20`，不必另加 class。投放区（虚线框）与编辑模式下的「来源路径」是普通 div/p，单独加了 `border-destructive` 分支。
+- 新增 `succeedWith()`：成功提示顺手清掉全部红框，免得改对了还红着。
+- 回滚路径没动 —— `removeJksItem` 本来就是「条目、`keystores/<id>.jks` 副本、`channels/<id>.json` 三样一起删」，这次只是把它验证了一遍。
+
+改动：
+
+| 文件 | 内容 |
+|---|---|
+| `app/src/shared/types/store.ts` | 新增 `CredentialField = 'keystore' \| 'alias' \| 'password'`；`CredentialVerifyResult` 增加 `field?` |
+| `app/src/main/credential.ts` | `describeFailure` 返回 `{ message, field }`；「口令不能为空」「副本文件不存在」「读不到别名」「库中没有别名」「库中有多个条目」等失败分支分别给出 `password` / `keystore` / `alias` |
+| `app/src/renderer/src/components/JksFormDialog.tsx` | 新增 `fieldErrors` state、`failWith(text, field)`、`succeedWith(text)`、`clearFieldError(field)`；全部失败提示改走 `failWith`；`#jks-source` / `#jks-alias` / `#jks-password` 接 `aria-invalid` 并在 `onChange` 里清红框；投放区与「来源路径」按 `fieldErrors.keystore` 换边框色 |
+
+实测（开发构建 + CDP 驱动，页面错误 `[]`）：
+
+| 场景 | 结果 |
+|---|---|
+| 没选文件就点「新增并校验」 | 弹窗不关；提示「请先选择 jks 文件。」；`#jks-source` 的 `aria-invalid=true`，投放区虚线框变红 |
+| 选入 jks | 自动带出别名与口令，红框全部撤掉 |
+| 清空别名再提交 | 提示「别名不能为空。」，只有 `#jks-alias` 变红 |
+| 口令填错再提交 | 提示「凭据校验未通过，已撤销本次新增：口令不正确」，只有 `#jks-password` 变红；**文件路径、别名、口令、应用名与已加的渠道草稿行全部原样保留** |
+| 改一下口令框 | `#jks-password` 的 `aria-invalid` 立刻回到 false，其余字段不动 |
+| 改回正确口令再提交 | 通过、弹窗关闭，`keystores/t23.jks` 与 `channels/t23.json` 正常写出（渠道内容与草稿一致） |
+| 双别名库 + 不存在的别名 | 提示「…口令正确，但库中没有别名「nothere」；现有条目：alpha、beta」，只有 `#jks-alias` 变红 |
+| **回滚核对** | 失败那一次之后：`keystores/` 里没有新副本、`channels/` 里没有新文件、`jks.json` 里也没有新条目（只剩先前成功的那条） |
+
 ## 风险与回滚点
 
 | 风险 | 触发点 | 回滚/对策 |

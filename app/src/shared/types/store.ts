@@ -115,6 +115,12 @@ export interface RefreshResult {
 }
 
 /**
+ * 校验失败时最该被检查的那一项，供界面把对应字段标红。
+ * 由主进程判定 —— 界面不该去猜「口令不正确」这句话里有没有「口令」两个字。
+ */
+export type CredentialField = 'keystore' | 'alias' | 'password'
+
+/**
  * 凭据校验结果。
  * `ok` 为 true 的语义是「口令正确，且能确定唯一可用的别名」——
  * 口令对但库里有多个条目、又对不上用户填的别名时，仍然算不通过，需要用户指定。
@@ -127,4 +133,6 @@ export interface CredentialVerifyResult {
   aliases: string[]
   /** 给用户看的原因或提示 */
   message?: string
+  /** ok 为 false 时建议重点检查的字段 */
+  field?: CredentialField
 }
