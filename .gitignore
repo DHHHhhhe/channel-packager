@@ -15,12 +15,19 @@ data/
 
 # 构建产物与依赖
 app/node_modules/
-app/resources/bin/
+# resources/bin 整体由 prepare:runtime 生成（光 JRE 就 30+ MB），不整目录入库；
+# 但下面这两个小工具（合计约 2 MB）随仓库分发，让没装 Android SDK 的人也能构建
+app/resources/bin/*
+!app/resources/bin/zipalign.exe
+!app/resources/bin/apksigner.jar
 app/dist/
 app/release/
 app/out/
 app/dist-electron/
 app/*.exe
+
+# Trellis 工作流：本地保留即可，不入库（内含本项目的任务记录与规范）
+.trellis/
 
 # 临时工作目录与日志
 .channel_work/

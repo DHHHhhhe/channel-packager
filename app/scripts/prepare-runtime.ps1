@@ -5,8 +5,8 @@
 .DESCRIPTION
     目标机器不保证装有 Java 与 Android SDK，因此运行时全部随包分发：
       jre/                由 Temurin JDK 17 经 jlink 裁剪产出（不从本机任何安装复制）
-      zipalign.exe        取自本机 SDK build-tools
-      apksigner.jar       取自本机 SDK build-tools
+      zipalign.exe        本机 SDK build-tools 有就从那里取，没有就沿用仓库自带的那份
+      apksigner.jar       同上
       walle-cli-all.jar   取自仓库根目录
 
     幂等：产物存在且体积与上次记录一致时跳过；-Force 强制重建。
@@ -29,6 +29,10 @@ $AppDir   = Split-Path -Parent $PSScriptRoot
 $RepoRoot = Split-Path -Parent $AppDir
 $BinDir   = Join-Path $AppDir 'resources\bin'
 $Manifest = Join-Path $BinDir '.manifest.json'
+
+# zipalign.exe 与 apksigner.jar 随仓库分发（见根目录 .gitignore 的例外），
+# 所以下面找不到 SDK 时不直接失败，先看 bin 里有没有现成的
+$SdkBuildToolsRoot = Join-Path $env:LOCALAPPDATA 'Android\Sdk\build-tools'
 
 $JdkMajor     = 17
 $JlinkModules = 'java.base,java.sql,java.logging,jdk.crypto.ec,jdk.jartool'
@@ -78,16 +82,16 @@ function Save-Manifest {
 }
 
 function Get-SdkBuildTools {
-    $sdkRoot = Join-Path $env:LOCALAPPDATA 'Android\Sdk\build-tools'
-    if (-not (Test-Path $sdkRoot)) {
-        throw "未找到 Android SDK build-tools：$sdkRoot。zipalign.exe 与 apksigner.jar 需要从这里取，请安装 Android SDK 或手工放入 app\resources\bin。"
+    # 找不到就返回 $null，由调用方决定是沿用仓库自带的还是报错
+    if (-not (Test-Path $SdkBuildToolsRoot)) {
+        return $null
     }
     # 只接受形如 37.0.0 的纯版本目录，忽略 36.1.0-rc1 之类的预发布名
-    $candidates = Get-ChildItem $sdkRoot -Directory |
+    $candidates = Get-ChildItem $SdkBuildToolsRoot -Directory |
         Where-Object { $_.Name -match '^\d+(\.\d+)+$' } |
         Sort-Object { [version]$_.Name } -Descending
     if (-not $candidates) {
-        throw "Android SDK build-tools 下没有可用的版本目录：$sdkRoot"
+        return $null
     }
     return $candidates | Select-Object -First 1
 }
@@ -192,11 +196,22 @@ $sizes = @{}
 $sizes['jre'] = Build-Jre
 
 $bt = Get-SdkBuildTools
-Write-Step "SDK build-tools：$($bt.Name)"
-$sizes['zipalign'] = Copy-Component -Source (Join-Path $bt.FullName 'zipalign.exe') `
-    -Destination (Join-Path $BinDir 'zipalign.exe') -Label 'zipalign.exe'
-$sizes['apksigner'] = Copy-Component -Source (Join-Path $bt.FullName 'lib\apksigner.jar') `
-    -Destination (Join-Path $BinDir 'apksigner.jar') -Label 'apksigner.jar'
+if ($null -eq $bt) {
+    $haveBoth = (Test-Path (Join-Path $BinDir 'zipalign.exe')) -and
+        (Test-Path (Join-Path $BinDir 'apksigner.jar'))
+    if (-not $haveBoth) {
+        throw "未找到 Android SDK build-tools：$SdkBuildToolsRoot，且 $BinDir 里也没有现成的 zipalign.exe 与 apksigner.jar。请安装 Android SDK，或手工把这两个文件放进去。"
+    }
+    Write-Note '未找到 Android SDK build-tools，沿用仓库自带的 zipalign.exe 与 apksigner.jar'
+    $sizes['zipalign']  = Get-FileSizeMB (Join-Path $BinDir 'zipalign.exe')
+    $sizes['apksigner'] = Get-FileSizeMB (Join-Path $BinDir 'apksigner.jar')
+} else {
+    Write-Step "SDK build-tools：$($bt.Name)"
+    $sizes['zipalign'] = Copy-Component -Source (Join-Path $bt.FullName 'zipalign.exe') `
+        -Destination (Join-Path $BinDir 'zipalign.exe') -Label 'zipalign.exe'
+    $sizes['apksigner'] = Copy-Component -Source (Join-Path $bt.FullName 'lib\apksigner.jar') `
+        -Destination (Join-Path $BinDir 'apksigner.jar') -Label 'apksigner.jar'
+}
 
 $walleSource = Join-Path $RepoRoot 'walle-cli-all.jar'
 $sizes['walle'] = Copy-Component -Source $walleSource `
