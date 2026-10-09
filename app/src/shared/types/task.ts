@@ -5,12 +5,12 @@ import type { ChannelEntry } from './store'
 export type SignMode = 'sign' | 'skip'
 
 /**
- * 出包输入。渠道来源有两条路，二选一：
+ * 出包输入。签名与渠道来源是两件正交的事：
  *
- * - 有 `jksId`：签名凭据与渠道列表都来自那个 jks（原来唯一的一条路）。
- * - 没有 `jksId`：跳过签名、直接用已签好的包写渠道，渠道列表由
- *   `channelInfoList` 带过来。只写渠道不需要私钥，所以这条路上不该强制
- *   使用者先去造一个用不上的 jks。
+ * - `jksId` 只管签名：给了就用它重签名（`signMode = 'sign'`），不给就只能跳过签名。
+ *   它不再决定渠道从哪来 —— 渠道的归属是「分组」。
+ * - 渠道来源二选一：`groupId`（「渠道配置」里的分组）或 `channelInfoList`
+ *   （出包页「自定义渠道导出」临时给的那份列表，与 `app` 一起用）。
  *
  * 条目直接带过来而不是给一个文件路径：使用者可能在预览框里改过内容，
  * 再从磁盘读一遍等于把改动丢掉。
@@ -18,9 +18,11 @@ export type SignMode = 'sign' | 'skip'
 export interface TaskInput {
   apkPath: string
   jksId?: string
-  /** 没有 jks 时的渠道条目；与 jksId 二选一 */
+  /** 渠道来源 A：分组 id，渠道条目与 defaultExtraInfo.app 都取这个分组 */
+  groupId?: string
+  /** 渠道来源 B：临时带过来的渠道条目；与 groupId 二选一 */
   channelInfoList?: ChannelEntry[]
-  /** 没有 jks 时写进 defaultExtraInfo.app 的应用名 */
+  /** 渠道来源 B 写进 defaultExtraInfo.app 的应用名 */
   app?: string
   channelCodes: string[]
   signMode: SignMode
@@ -96,6 +98,12 @@ export interface TaskResult {
   artifacts: TaskArtifact[]
   /** 不中止流程但需要让人知道的问题 */
   warnings: string[]
+  /**
+   * 这次写进包的 `defaultExtraInfo.app`。结果卡片上回显它，是为了让人一眼看出
+   * 产物里的应用名对不对 —— 它是 App 侧 WalleChannelReader.get(context, "app")
+   * 的取值键，写错了渠道号读得对、应用名读不出来。
+   */
+  appName?: string
   /** 只有 ok === false 时存在 */
   failure?: TaskFailure
 }

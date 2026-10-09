@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Eye, FileUp, ListPlus, Package, Upload } from 'lucide-react'
+import { Eye, ListPlus, Package, Upload } from 'lucide-react'
+import {
+  CustomChannelExportDialog,
+  type CustomChannelExportPayload,
+} from '@/components/CustomChannelExportDialog'
 import { PageHeader } from '@/components/PageHeader'
 import { PackQueueCard, type QueueItem } from '@/components/PackQueueCard'
 import { ProgressPanel } from '@/components/ProgressPanel'
@@ -26,8 +30,8 @@ import {
 } from '@/components/ui/dialog'
 import type { ChannelEntry } from '@shared/types/store'
 import type { SignMode, SourceCheckResult, TaskInput, TaskResult, WalleShowResult } from '@shared/types/task'
-import { parseChannelConfig } from '@shared/utils/channels'
 import { ipcErrorMessage } from '@/lib/ipc-error'
+import { NO_JKS_KEY, readLastGroup, writeLastGroup } from '@/lib/last-group'
 import { STAGE_LABELS } from '@/lib/task-report'
 import { useAppStore } from '@/store/app-store'
 import { useNav } from '@/store/nav'
@@ -59,21 +63,23 @@ function baseNameOf(filePath: string): string {
 const NO_JKS = '__none__'
 
 export function PackScreen() {
-  const { jksItems, getChannels, initialized } = useAppStore()
+  const { groups, jksItems, getChannels, saveChannels, initialized } = useAppStore()
   const { go } = useNav()
   const [apkPath, setApkPath] = useState('')
   const [dragging, setDragging] = useState(false)
   const [jksId, setJksId] = useState('')
   /*
-   * true = 不用 jks，只写渠道。渠道条目改为从一份渠道 JSON 现读进来。
+   * true = 不用 jks 签名，只把渠道写进包（签名保持原样）。
    *
    * 用独立状态而不是把 jksId 置空：下面「自动选中第一个 jks」那条 effect 会把
    * 空 jksId 立刻填回去，置空的写法根本站不住。
    */
   const [noJks, setNoJks] = useState(false)
-  const [channelApp, setChannelApp] = useState('')
-  /** 临时渠道列表来自哪个文件（只用于显示；条目本身在 channels 里） */
-  const [channelFileName, setChannelFileName] = useState('')
+  /*
+   * 渠道一律来自分组（A′）。分组与 jks 没有绑定关系：jks 只管签名，
+   * 出包时选哪个分组是这一次的事，选过的那个记在本地当下次默认。
+   */
+  const [groupId, setGroupId] = useState('')
   const [channels, setChannels] = useState<ChannelEntry[]>([])
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [outputDir, setOutputDir] = useState('')
@@ -97,6 +103,14 @@ export function PackScreen() {
   const [queueRunning, setQueueRunning] = useState(false)
   /** 上一次出包是不是「开始队列」发起的 —— 决定结果卡片归谁渲染 */
   const [ranQueue, setRanQueue] = useState(false)
+  /** 「自定义渠道导出」弹窗 */
+  const [customOpen, setCustomOpen] = useState(false)
+  const [customBusy, setCustomBusy] = useState(false)
+  /** 「重跑本次」时把上次那份自定义列表放回弹窗；null = 从空开始 */
+  const [customInitial, setCustomInitial] = useState<{
+    channels: ChannelEntry[]
+    app: string
+  } | null>(null)
   // null 表示「本界面还没启动过任务」；此时到达的进度一定属于本次启动
   const taskIdRef = useRef<string | null>(null)
   // 队列在等这一项的最终结果。进度事件带 result 时把它叫醒，循环才往下走；
@@ -155,18 +169,39 @@ export function PackScreen() {
     }
   }, [initialized, jksItems, jksId, noJks])
 
+  /*
+   * 选中的分组不能用了（首次进入、或它刚在「渠道配置」里被删掉）就退到一个能用的：
+   * 该签名身份上次用过的那个，没有就用第一个。
+   *
+   * 只在「当前这个不能用了」时才动它 —— 切「不用 jks」不该把已经挑好的分组换掉，
+   * 签名与渠道来源是两件事。
+   */
   useEffect(() => {
-    // 「不用 jks」时渠道来自导入的 JSON，这里不动它
-    if (noJks) {
+    if (!initialized) {
       return
     }
-    if (!jksId) {
+    if (groups.length === 0) {
+      if (groupId !== '') {
+        setGroupId('')
+      }
+      return
+    }
+    if (groups.some((item) => item.id === groupId)) {
+      return
+    }
+    const remembered = readLastGroup(noJks ? NO_JKS_KEY : jksId)
+    const target = groups.find((item) => item.id === remembered) ?? groups[0]
+    setGroupId(target.id)
+  }, [initialized, groups, groupId, noJks, jksId])
+
+  useEffect(() => {
+    if (groupId === '') {
       setChannels([])
       setPicked(new Set())
       return
     }
     let cancelled = false
-    getChannels(jksId)
+    getChannels(groupId)
       .then((config) => {
         if (cancelled) {
           return
@@ -178,7 +213,7 @@ export function PackScreen() {
           setPicked(new Set(codes))
           return
         }
-        // 「重跑本次」恢复的勾选：只留这个 jks 里还存在的渠道，
+        // 「重跑本次」恢复的勾选：只留这个分组里还存在的渠道，
         // 上一次跑完到现在的这段时间里渠道可能已经被删掉了。
         pendingPickedRef.current = null
         const available = new Set(codes)
@@ -192,7 +227,7 @@ export function PackScreen() {
     return () => {
       cancelled = true
     }
-  }, [noJks, jksId, getChannels])
+  }, [groupId, getChannels])
 
   /*
    * 提前把「这个包能不能按当前设置出」问出来。
@@ -231,20 +266,17 @@ export function PackScreen() {
   }, [apkPath, noJks, jksId, signMode])
 
   const selectedJks = jksItems.find((item) => item.id === jksId)
+  const selectedGroup = groups.find((item) => item.id === groupId)
 
   /*
-   * 切「不用 jks」时把 jks 带来的渠道清掉 —— 那是上一个来源的残留，
-   * 留着会让人以为渠道已经选好了。切回去时下面读渠道列表的 effect 会重新读。
+   * 切「不用 jks」只换签名方式，渠道不动 —— 渠道来自哪个分组与用不用 jks 无关。
+   * 清单里的勾选也就都还站得住，没必要清掉让人重挑一遍。
    */
   const switchToNoJks = () => {
     setNoJks(true)
     setJksId('')
     // 没有私钥就只能跳过签名，这里顺手改掉，省得人以为还能重签名
     setSignMode('skip')
-    setChannels([])
-    setPicked(new Set())
-    setChannelApp('')
-    setChannelFileName('')
   }
 
   const handlePickJks = (value: string) => {
@@ -254,6 +286,18 @@ export function PackScreen() {
     }
     setNoJks(false)
     setJksId(value)
+    // 换签名身份就回到这个 jks 上次配的那套渠道；没记过就用第一个
+    const remembered = readLastGroup(value)
+    const target = groups.find((item) => item.id === remembered) ?? groups[0]
+    if (target) {
+      setGroupId(target.id)
+    }
+  }
+
+  /** 选分组，顺手记下来当作换回这个签名身份时的默认值 */
+  const handlePickGroup = (value: string) => {
+    setGroupId(value)
+    writeLastGroup(noJks ? NO_JKS_KEY : jksId, value)
   }
 
   /*
@@ -271,29 +315,6 @@ export function PackScreen() {
       return
     }
     setNoJks(false)
-  }
-
-  /*
-   * 「不用 jks」时的渠道来源：现读一份渠道 JSON。
-   * 只填界面，不出包、不落盘 —— 与「渠道配置」页导入 JSON 的口径一致。
-   */
-  const handleChannelJson = async (file: File | undefined) => {
-    if (!file) {
-      return
-    }
-    try {
-      const parsed = parseChannelConfig(await file.text(), file.name)
-      setChannels(parsed.channelInfoList)
-      setChannelApp(parsed.app ?? '')
-      setChannelFileName(file.name)
-      setPicked(new Set(parsed.channelInfoList.map((entry) => entry.channel)))
-      setStatus(null)
-    } catch (error) {
-      setStatus({
-        kind: 'error',
-        text: error instanceof Error ? error.message : '这份渠道 JSON 读不出来。',
-      })
-    }
   }
 
   const handleApk = (file: File | undefined) => {
@@ -356,16 +377,16 @@ export function PackScreen() {
       channelCodes: [...picked],
       signMode,
       outputDir: outputDir.trim(),
+      // 渠道按分组取，这里只给 id：条目由主进程回磁盘读，分组文件才是权威，
+      // 界面上的那份可能已经过期（渠道配置页刚改过）。
+      groupId,
     }
-    if (noJks) {
-      // 不带 jks 就只能跳过签名；渠道条目直接带上，别让主进程再回磁盘读一遍
-      // —— 那会把人在导入预览里改过的内容丢掉。
-      return { ...base, signMode: 'skip', channelInfoList: channels, app: channelApp }
-    }
-    return { ...base, jksId }
+    // 不带 jks 就只能跳过签名（switchToNoJks 已经把 signMode 落成 skip）
+    return noJks ? { ...base, signMode: 'skip' } : { ...base, jksId }
   }
 
-  const handleStart = async () => {
+  /** 用一份明确给定的参数出包。表单那条路与「自定义渠道导出」那条路共用 */
+  const startWith = async (params: TaskInput): Promise<void> => {
     setLines([])
     setResult(null)
     setStatus(null)
@@ -374,7 +395,6 @@ export function PackScreen() {
     taskIdRef.current = null
     setRunning(true)
     // 先记下这次用的参数，跑完能在结果卡片上「重跑本次」
-    const params = currentParams()
     setLastRun(params)
     try {
       const started = await window.api.runTask(params)
@@ -386,42 +406,103 @@ export function PackScreen() {
     }
   }
 
+  const handleStart = async (): Promise<void> => {
+    await startWith(currentParams())
+  }
+
+  /*
+   * 自定义渠道导出：确认后拿弹窗里那份列表直接出包。
+   *
+   * 两条独立的动作，顺序不能反：先把勾中的条目并进分组，再出包。反过来的话，
+   * 分组写失败就会留下一个「包已经出了、但没落盘」的错觉 —— 而落盘失败是必须
+   * 让人看见的。
+   *
+   * 注意这里绕开了表单的 blockers：没有分组、分组里没条目都不该挡住这条路，
+   * 它本来就是给「临时打几个渠道」用的。但 APK 与输出目录仍然要齐。
+   */
+  const handleCustomConfirm = async (payload: CustomChannelExportPayload): Promise<void> => {
+    if (apkPath.trim() === '' || outputDir.trim() === '') {
+      setStatus({ kind: 'error', text: '先选好 APK 与输出目录，再用自定义渠道出包。' })
+      return
+    }
+    setCustomBusy(true)
+    try {
+      if (payload.rowsToSave.length > 0 && payload.groupId !== '') {
+        const group = groups.find((item) => item.id === payload.groupId)
+        const existing = await getChannels(payload.groupId)
+        await saveChannels(payload.groupId, {
+          // 分组文件里的 app 属于分组自己，别被这次的临时英文名盖掉
+          defaultExtraInfo: { app: group?.app ?? existing.defaultExtraInfo.app },
+          channelInfoList: [...existing.channelInfoList, ...payload.rowsToSave],
+        })
+        if (payload.groupId === groupId) {
+          setChannels((previous) => [...previous, ...payload.rowsToSave])
+          setPicked((previous) => {
+            const next = new Set(previous)
+            for (const entry of payload.rowsToSave) {
+              next.add(entry.channel)
+            }
+            return next
+          })
+        }
+      }
+      setCustomOpen(false)
+      const base: TaskInput = {
+        apkPath: apkPath.trim(),
+        // 渠道来源 B：这份列表只存在于这次出包里
+        channelInfoList: payload.channels,
+        app: payload.app,
+        channelCodes: payload.channels.map((entry) => entry.channel),
+        signMode,
+        outputDir: outputDir.trim(),
+      }
+      await startWith(noJks ? { ...base, signMode: 'skip' } : { ...base, jksId })
+    } catch (error) {
+      setStatus({ kind: 'error', text: ipcErrorMessage(error) })
+    } finally {
+      setCustomBusy(false)
+    }
+  }
+
   /*
    * 「重跑本次」只把参数填回表单，不立刻开跑：同一份包换个渠道、换个输出目录再跑
    * 是常见动作，直接开跑会让人来不及改。
    *
-   * 勾选要分两条路走 —— 换了 jks 的话，下面读渠道列表那个 effect 会重跑并把勾选
-   * 重置成全选，所以得把要恢复的勾选交给它；没换 jks 时它不会跑，直接套用。
+   * 勾选要分两条路走 —— 换了分组的话，下面读渠道列表那个 effect 会重跑并把勾选
+   * 重置成全选，所以得把要恢复的勾选交给它；没换分组时它不会跑，直接套用。
    */
   const handleRerun = () => {
     if (!lastRun) {
       return
     }
     const targetJksId = lastRun.jksId ?? ''
-    if (targetJksId === '') {
-      // 上次是「不用 jks」：渠道条目在 lastRun 里，直接还原。
-      // 文件名还原不了（输入里只有条目），显示成「已导入 N 条」即可。
-      const restored = lastRun.channelInfoList ?? []
-      const available = new Set(restored.map((entry) => entry.channel))
-      setNoJks(true)
-      setJksId('')
-      setChannels(restored)
-      setChannelApp(lastRun.app ?? '')
-      setChannelFileName('')
-      setPicked(new Set(lastRun.channelCodes.filter((code) => available.has(code))))
-    } else {
-      setNoJks(false)
-      if (targetJksId === jksId) {
-        const available = new Set(channels.map((entry) => entry.channel))
-        setPicked(new Set(lastRun.channelCodes.filter((code) => available.has(code))))
-      } else {
-        pendingPickedRef.current = lastRun.channelCodes
-      }
-      setJksId(targetJksId)
-    }
+    const targetGroupId = lastRun.groupId ?? ''
     setApkPath(lastRun.apkPath)
     setSignMode(lastRun.signMode)
     setOutputDir(lastRun.outputDir)
+    setNoJks(targetJksId === '')
+    setJksId(targetJksId)
+
+    const restored = lastRun.channelInfoList
+    if (restored) {
+      /*
+       * 上次走的是「自定义渠道导出」：那份列表只存在于那一次运行里（没落盘），
+       * 而且它不是任何分组的内容 —— 填回表单只会让人以为要出分组的渠道。
+       * 所以把弹窗连同那份列表一起打开，让人看一眼再确认。
+       */
+      setCustomInitial({ channels: restored, app: lastRun.app ?? '' })
+      setCustomOpen(true)
+      setStatus({ kind: 'ok', text: '上次用的是自定义渠道，已把那份列表放回弹窗。' })
+      return
+    }
+
+    if (targetGroupId === groupId) {
+      const available = new Set(channels.map((entry) => entry.channel))
+      setPicked(new Set(lastRun.channelCodes.filter((code) => available.has(code))))
+    } else {
+      pendingPickedRef.current = lastRun.channelCodes
+    }
+    setGroupId(targetGroupId)
     setStatus({ kind: 'ok', text: '已把上次出包的参数填回上面，确认后点「开始出包」。' })
   }
 
@@ -453,8 +534,12 @@ export function PackScreen() {
     if (!noJks && !selectedJks) {
       list.push('尚未选择 jks')
     }
-    if (channels.length === 0) {
-      list.push(noJks ? '尚未导入渠道 JSON' : '该 jks 还没有渠道条目')
+    if (groups.length === 0) {
+      list.push('还没有分组 —— 渠道得先有个地方放')
+    } else if (!selectedGroup) {
+      list.push('尚未选择分组')
+    } else if (channels.length === 0) {
+      list.push('这个分组还没有渠道条目')
     } else if (picked.size === 0) {
       list.push('尚未勾选任何渠道')
     }
@@ -462,7 +547,16 @@ export function PackScreen() {
       list.push('尚未设置输出目录')
     }
     return list
-  }, [apkPath, noJks, selectedJks, channels.length, picked.size, outputDir])
+  }, [
+    apkPath,
+    noJks,
+    selectedJks,
+    groups.length,
+    selectedGroup,
+    channels.length,
+    picked.size,
+    outputDir,
+  ])
 
   const canStart = blockers.length === 0 && !running && !queueRunning
 
@@ -481,6 +575,7 @@ export function PackScreen() {
       params,
       apkName: baseNameOf(params.apkPath),
       jksName: noJks ? '不用 jks' : (selectedJks?.displayName ?? jksId),
+      groupName: selectedGroup?.name ?? '',
       status: 'pending',
     }
     setQueue((previous) => [...previous, item])
@@ -587,7 +682,7 @@ export function PackScreen() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader description="一个 APK 配一个 jks，勾选渠道后生成渠道包。产物名为 <原包名>_<别名>.apk。手上只有别人签好的包、没有私钥时，把 jks 选成「不用 jks」再导入一份渠道 JSON 即可 —— 只写渠道，不重签名。" />
+      <PageHeader description="一个 APK 配一套渠道，勾选后生成渠道包，产物名为 <原包名>_<别名>.apk。渠道来自「渠道配置」里的分组 —— 手上只有别人签好的包、没有私钥时，把 jks 选成「不用 jks」就只写渠道、不重签名。" />
 
       <Card>
         <CardHeader>
@@ -673,9 +768,9 @@ export function PackScreen() {
           <CardTitle>签名与渠道</CardTitle>
           <CardDescription>
             {noJks
-              ? '不用 jks：只把渠道写进包里，签名保持原样。渠道条目从下面导入的那份 JSON 读。'
+              ? '不用 jks：只把渠道写进包里，签名保持原样。'
               : selectedJks
-                ? `别名 ${selectedJks.alias} ｜ 应用名 ${selectedJks.app}`
+                ? `别名 ${selectedJks.alias}`
                 : '请选择一个 jks'}
           </CardDescription>
         </CardHeader>
@@ -688,7 +783,7 @@ export function PackScreen() {
                   <SelectValue placeholder="请选择 jks" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={NO_JKS}>不用 jks（只写渠道，直接导入渠道 JSON）</SelectItem>
+                  <SelectItem value={NO_JKS}>不用 jks（只写渠道，不重签名）</SelectItem>
                   {jksItems.map((item) => (
                     <SelectItem key={item.id} value={item.id}>
                       {item.displayName}（{item.id}）
@@ -714,43 +809,42 @@ export function PackScreen() {
             </div>
           </div>
 
-          {noJks ? (
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="pack-channel-json">渠道 JSON 文件</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  id="pack-channel-json"
-                  readOnly
-                  value={
-                    channelFileName !== ''
-                      ? channelFileName
-                      : channels.length > 0
-                        ? `已导入 ${channels.length} 条`
-                        : ''
-                  }
-                  placeholder="选择一份渠道 JSON，条目会列在下面"
-                />
-                <label className="cursor-pointer">
-                  <span className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium hover:bg-muted">
-                    <FileUp className="size-4" />
-                    选择文件
-                  </span>
-                  <input
-                    type="file"
-                    accept=".json"
-                    className="hidden"
-                    onChange={(event) => {
-                      void handleChannelJson(event.target.files?.[0])
-                      event.target.value = ''
-                    }}
-                  />
-                </label>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                这份 JSON 只是这次的渠道来源，不会写进「渠道配置」。想长期留着，就到「渠道配置」页导入。
-              </p>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="pack-group">渠道分组</Label>
+            <div className="flex items-center gap-2">
+              <Select value={groupId} onValueChange={handlePickGroup} disabled={groups.length === 0}>
+                <SelectTrigger id="pack-group">
+                  <SelectValue placeholder="请选择分组" />
+                </SelectTrigger>
+                <SelectContent>
+                  {groups.map((item) => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {item.name}（{item.app}）
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button variant="outline" size="sm" onClick={() => go('channels')}>
+                <ListPlus />
+                管理分组
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setCustomInitial(null)
+                  setCustomOpen(true)
+                }}
+              >
+                自定义渠道导出
+              </Button>
             </div>
-          ) : null}
+            <p className="text-xs text-muted-foreground">
+              {groups.length === 0
+                ? '还没有分组。渠道列表按分组存，先去「渠道配置」建一个。'
+                : `写进包的 defaultExtraInfo.app = ${selectedGroup?.app ?? ''}。换 jks 时会回到这个 jks 上次用的分组。`}
+            </p>
+          </div>
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="pack-output">输出目录</Label>
@@ -779,18 +873,12 @@ export function PackScreen() {
               </Button>
             </div>
             {channels.length === 0 ? (
-              noJks ? (
-                <p className="text-sm text-muted-foreground">
-                  还没有导入渠道 JSON —— 用上面的「选择文件」选一份。
-                </p>
-              ) : (
-                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                  <span>该 jks 还没有渠道条目。</span>
-                  <Button variant="outline" size="sm" onClick={() => go('channels')}>
-                    去「渠道配置」
-                  </Button>
-                </div>
-              )
+              <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                <span>这个分组还没有渠道条目。</span>
+                <Button variant="outline" size="sm" onClick={() => go('channels')}>
+                  去「渠道配置」
+                </Button>
+              </div>
             ) : (
               <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
                 {channels.map((entry) => {
@@ -873,6 +961,21 @@ export function PackScreen() {
           onOpenPath={handleOpenPath}
         />
       ) : null}
+
+      <CustomChannelExportDialog
+        open={customOpen}
+        onOpenChange={setCustomOpen}
+        groups={groups}
+        defaultApp={selectedGroup?.app ?? ''}
+        defaultGroupId={groupId}
+        initial={customInitial}
+        busy={customBusy}
+        onConfirm={(payload) => void handleCustomConfirm(payload)}
+        onGoChannels={() => {
+          setCustomOpen(false)
+          go('channels')
+        }}
+      />
 
       <Dialog
         open={showing || showResult !== null}

@@ -5,7 +5,7 @@ import type { TaskArtifact, TaskFailure, TaskInput, TaskResult, TaskStage } from
 import { createTaskLogger } from './logger'
 import { resolveInData } from './paths'
 import { StepFailure } from './proc'
-import { readChannels, readJksFile } from './store'
+import { readChannels, readGroups, readJksFile } from './store'
 import {
   assertSignedByKeystore,
   assertSkippableApk,
@@ -77,12 +77,14 @@ function prepare(input: TaskInput): Prepared {
     throw new Error('输入文件的后缀不是 .apk')
   }
 
+  /*
+   * 签名与渠道来源是两件正交的事（design.md §3）：
+   * 选不选 jks 只决定怎么签名，渠道从哪来由 groupId / channelInfoList 决定。
+   * 拆开之前，「没有 jks」既表示不重签名、又表示渠道另找来源，两个意思绑在一起，
+   * 于是「有 jks 但只想临时指定渠道」这种组合根本表达不出来。
+   */
   const jksId = input.jksId?.trim() ?? ''
   let sign: Prepared['sign']
-  let app: string
-  let sourceLabel: string
-  let sourceEntries: ChannelEntry[]
-
   if (jksId !== '') {
     const item = readJksFile().items.find((entry) => entry.id === jksId)
     if (!item) {
@@ -102,26 +104,38 @@ function prepare(input: TaskInput): Prepared {
     }
 
     sign = { item, keystorePath }
-    app = item.app
-    sourceLabel = `jks「${item.id}」（别名 ${item.alias}）`
-    sourceEntries = readChannels(item.id, item.app).channelInfoList
-  } else {
+  } else if (input.signMode !== 'skip') {
     /*
      * 没有 jks：只写渠道，不重签名。这条路上连 jks 的别名与口令都不需要 ——
      * 那两样是签名用的，跟渠道列表没有关系。
      */
-    if (input.signMode !== 'skip') {
-      throw new Error(
-        '没有选 jks 就只能跳过签名 —— 重签名需要私钥。请选一个 jks，或把签名模式改成「跳过签名」。',
-      )
+    throw new Error(
+      '没有选 jks 就只能跳过签名 —— 重签名需要私钥。请选一个 jks，或把签名模式改成「跳过签名」。',
+    )
+  }
+
+  const groupId = input.groupId?.trim() ?? ''
+  let app: string
+  let sourceLabel: string
+  let sourceEntries: ChannelEntry[]
+  if (groupId !== '') {
+    const group = readGroups().items.find((entry) => entry.id === groupId)
+    if (!group) {
+      throw new Error(`找不到分组：${groupId}。可能刚被删掉了，回到出包页重选一个。`)
     }
-    const entries = input.channelInfoList ?? []
+    app = group.app
+    sourceLabel = `分组「${group.name}」（${group.app}）`
+    sourceEntries = readChannels(group.id, group.app).channelInfoList
+  } else if (input.channelInfoList) {
+    const entries = input.channelInfoList
     if (entries.length === 0) {
-      throw new Error('没有可用的渠道条目：请选一个 jks，或导入一份渠道 JSON。')
+      throw new Error('自定义渠道列表是空的：请填渠道号，或导入一份渠道 JSON。')
     }
     app = input.app?.trim() ?? ''
-    sourceLabel = '临时渠道列表（没有 jks）'
+    sourceLabel = '自定义渠道列表（出包页临时指定）'
     sourceEntries = entries
+  } else {
+    throw new Error('没有可用的渠道条目：请选一个分组，或用「自定义渠道导出」临时指定。')
   }
 
   if (input.channelCodes.length === 0) {
@@ -170,6 +184,8 @@ export async function runPipeline(
   const artifacts: TaskArtifact[] = []
   let workDir = ''
   let outputDir = input.outputDir
+  // 结果卡片要回显写进包的应用名；prepare 之前还是空的，校验就失败时也不该编一个
+  let appName = ''
 
   // 子进程输出行需要知道当前属于哪个阶段，所以把阶段记在闭包里
   let currentStage: TaskStage = 'validate'
@@ -191,7 +207,8 @@ export async function runPipeline(
       logFile: log.file,
       artifacts,
       warnings,
-      // 成功时不写这个键，避免结果里多一个恒为 undefined 的字段
+      // 成功时不写这两个键，避免结果里多出恒为 undefined / 空串的字段
+      ...(appName !== '' ? { appName } : {}),
       ...(failure ? { failure } : {}),
     }
   }
@@ -200,6 +217,7 @@ export async function runPipeline(
     progress('validate', '校验输入')
     const p = prepare(input)
     outputDir = p.outputDir
+    appName = p.app
     log.info(`输入 APK：${p.apkPath}`)
     log.info(`渠道来源：${p.sourceLabel}`)
     log.info(`签名模式：${input.signMode}`)
@@ -420,6 +438,18 @@ export async function runPipeline(
       fs.rmSync(workDir, { recursive: true, force: true })
     } catch (error) {
       warnings.push(`清理工作目录失败：${error instanceof Error ? error.message : String(error)}`)
+    }
+
+    /*
+     * .work 只是装中间产物的壳：这次没留下中间产物，就不该在输出目录里留个空壳。
+     * 只在它确实空了才删 —— 万一有别的出包任务正占着，不能把人家正在用的目录端掉。
+     */
+    try {
+      if (fs.readdirSync(workRoot).length === 0) {
+        fs.rmdirSync(workRoot)
+      }
+    } catch {
+      // 目录已经不在了，本来就没有要清的东西
     }
 
     progress('done', message)

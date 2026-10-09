@@ -67,6 +67,7 @@ export function TaskResultCard({
         </CardTitle>
         <CardDescription>
           {result.message}
+          {result.appName ? ` ｜ 应用名：${result.appName}` : ''}
           {result.outputDir ? ` ｜ 输出目录：${result.outputDir}` : ''}
         </CardDescription>
       </CardHeader>

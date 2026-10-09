@@ -21,6 +21,8 @@ export interface QueueItem {
    */
   apkName: string
   jksName: string
+  /** 渠道来自哪个分组；自定义渠道出包时是空串 */
+  groupName: string
   status: QueueStatus
   result?: TaskResult
   /** runTask 自己就失败时（还没轮到流水线）的说明，这时没有 result 可看 */
@@ -120,7 +122,7 @@ export function PackQueueCard({
                 <TableHead className="w-10">#</TableHead>
                 <TableHead>APK</TableHead>
                 <TableHead>jks</TableHead>
-                <TableHead>渠道</TableHead>
+                <TableHead>渠道分组</TableHead>
                 <TableHead>签名</TableHead>
                 <TableHead>状态</TableHead>
                 <TableHead className="text-right">操作</TableHead>
@@ -136,7 +138,10 @@ export function PackQueueCard({
                   <TableCell className="max-w-[12rem] truncate" title={item.jksName}>
                     {item.jksName}
                   </TableCell>
-                  <TableCell>{item.params.channelCodes.length} 个</TableCell>
+                  <TableCell className="max-w-[14rem] truncate" title={item.groupName}>
+                    {item.groupName !== '' ? item.groupName : '自定义'} ｜{' '}
+                    {item.params.channelCodes.length} 个
+                  </TableCell>
                   <TableCell>{SIGN_MODE_LABELS[item.params.signMode]}</TableCell>
                   <TableCell>
                     <div className="flex flex-col items-start gap-1">
