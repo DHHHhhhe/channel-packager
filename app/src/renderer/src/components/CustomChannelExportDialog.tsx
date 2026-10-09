@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Plus, Trash2, TriangleAlert, Upload } from 'lucide-react'
 import { newPairRow, type PairRow } from '@/components/PairListEditor'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -81,6 +82,17 @@ export function CustomChannelExportDialog({
   const [existing, setExisting] = useState<ChannelEntry[]>([])
   const [importError, setImportError] = useState('')
   const [importName, setImportName] = useState('')
+  /** 动过的行 rowId：没动过的行不该一打开就顶着红框 */
+  const [touchedIds, setTouchedIds] = useState<string[]>([])
+  /** 点过一次「确认」：这之后再报红才是「你想提交但没填完」 */
+  const [attempted, setAttempted] = useState(false)
+  /** 表里已有内容时，导入要先问一句；问之前的这份先寄存在这里 */
+  const [pendingImport, setPendingImport] = useState<{
+    fileName: string
+    list: ChannelEntry[]
+  } | null>(null)
+  /** 导入前那一版，用来「撤销导入」 */
+  const [undoImport, setUndoImport] = useState<{ rows: PairRow[]; storeIds: string[] } | null>(null)
 
   /*
    * 每次打开都回到「这次要用的那份列表」。
@@ -97,6 +109,10 @@ export function CustomChannelExportDialog({
     setStoreIds([])
     setImportError('')
     setImportName('')
+    setTouchedIds([])
+    setAttempted(false)
+    setPendingImport(null)
+    setUndoImport(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initial, defaultGroupId])
 
@@ -125,6 +141,16 @@ export function CustomChannelExportDialog({
 
   const hasEmpty = rows.some((row) => row.key.trim() === '')
   const duplicates = useMemo(() => findDuplicates(rows.map((row) => row.key)), [rows])
+
+  /*
+   * 红字只在「用户动过」或「点过确认」之后出现。
+   *
+   * 弹窗一打开就摆一张空行、同时报红「有渠道号还空着的行」，说的是设计者
+   * 自己的事 —— 用户还没开始填。所以初始态用中性灰字交代怎么填，
+   * 真有问题再变红。
+   */
+  const showEmptyWarning =
+    hasEmpty && (attempted || rows.some((row) => touchedIds.includes(row.rowId)))
 
   const toEntry = (row: PairRow): ChannelEntry => {
     const channel = row.key.trim()
@@ -155,6 +181,25 @@ export function CustomChannelExportDialog({
     !hasEmpty &&
     duplicates.length === 0 &&
     (toAdd.length === 0 || targetGroupId !== '')
+  /*
+   * 按钮真的置灰的情况：正在出包、表里一行都没有、勾了「存入分组」却还没有分组。
+   * 空行与重复**不**置灰 —— 那两种能靠一次点击把原因显示出来。
+   */
+  const hardBlocked = busy || rows.length === 0 || (toAdd.length > 0 && targetGroupId === '')
+
+  /** 表里已经有用户敲进去的东西 —— 导入会把它整片换掉，所以要先问 */
+  const hasContent = rows.some((row) => row.key.trim() !== '' || row.alias.trim() !== '')
+
+  const applyImport = (list: ChannelEntry[], fileName: string): void => {
+    // 记下这一版，导入后悔了能退回去
+    setUndoImport({ rows, storeIds })
+    setRows(list.length > 0 ? list.map((entry) => newPairRow(entry.channel, entry.alias ?? '')) : [newPairRow()])
+    setImportName(fileName)
+    setImportError('')
+    setStoreIds([])
+    setTouchedIds([])
+    setAttempted(false)
+  }
 
   const handleImport = async (file: File | undefined): Promise<void> => {
     if (!file) {
@@ -162,17 +207,34 @@ export function CustomChannelExportDialog({
     }
     try {
       const parsed = parseChannelConfig(await file.text(), file.name)
-      setRows(
-        parsed.channelInfoList.length > 0
-          ? parsed.channelInfoList.map((entry) => newPairRow(entry.channel, entry.alias ?? ''))
-          : [newPairRow()],
-      )
-      setImportName(file.name)
-      setImportError('')
-      setStoreIds([])
+      if (hasContent) {
+        // 已经填了东西就先问；确认后再真的换
+        setPendingImport({ fileName: file.name, list: parsed.channelInfoList })
+        setImportError('')
+        return
+      }
+      applyImport(parsed.channelInfoList, file.name)
     } catch (error) {
       setImportError(error instanceof Error ? error.message : '这份渠道 JSON 读不出来。')
     }
+  }
+
+  const confirmImport = (): void => {
+    if (pendingImport === null) {
+      return
+    }
+    applyImport(pendingImport.list, pendingImport.fileName)
+    setPendingImport(null)
+  }
+
+  const undoLastImport = (): void => {
+    if (undoImport === null) {
+      return
+    }
+    setRows(undoImport.rows)
+    setStoreIds(undoImport.storeIds)
+    setImportName('')
+    setUndoImport(null)
   }
 
   const update = (rowId: string, patch: Partial<PairRow>): void => {
@@ -222,6 +284,11 @@ export function CustomChannelExportDialog({
           <span className="text-xs text-muted-foreground">
             {importName !== '' ? `已读取 ${importName}` : '或直接在下面手写渠道号'}
           </span>
+          {undoImport !== null ? (
+            <Button variant="ghost" size="sm" onClick={undoLastImport} disabled={busy}>
+              撤销导入
+            </Button>
+          ) : null}
         </div>
 
         {importError !== '' ? (
@@ -255,9 +322,16 @@ export function CustomChannelExportDialog({
                       <Input
                         value={row.key}
                         onChange={(event) => update(row.rowId, { key: event.target.value })}
+                        onBlur={() =>
+                          setTouchedIds((previous) =>
+                            previous.includes(row.rowId) ? previous : [...previous, row.rowId],
+                          )
+                        }
                         placeholder="例如 sample_gf"
                         aria-label="渠道号"
-                        aria-invalid={row.key.trim() === ''}
+                        aria-invalid={
+                          row.key.trim() === '' && (attempted || touchedIds.includes(row.rowId))
+                        }
                         disabled={busy}
                       />
                     </TableCell>
@@ -308,10 +382,14 @@ export function CustomChannelExportDialog({
           </Button>
         </div>
 
-        {hasEmpty ? (
+        {showEmptyWarning ? (
           <p className="flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
             <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
             <span>有渠道号还空着的行，补全或删除后才能确认。</span>
+          </p>
+        ) : hasEmpty ? (
+          <p className="text-xs text-muted-foreground">
+            每行填一个渠道号，别名选填；填完点「确认并用它出包」。
           </p>
         ) : null}
 
@@ -368,18 +446,48 @@ export function CustomChannelExportDialog({
         </div>
 
         <DialogFooter>
+          {attempted && !canConfirm && !hardBlocked ? (
+            <span className="mr-auto self-center text-xs text-destructive">
+              {hasEmpty ? '还有空的渠道号，补全或删掉那一行。' : '渠道号有重复，改掉后才能确认。'}
+            </span>
+          ) : null}
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
             取消
           </Button>
           <Button
-            onClick={() => onConfirm({ channels, groupId: targetGroupId, rowsToSave })}
-            disabled={!canConfirm}
+            onClick={() => {
+              /*
+               * 空行 / 重复时按钮不置灰：置灰只是「点不动」，人不知道差在哪。
+               * 让这一次点击把红字顶出来，比什么都不发生清楚。
+               */
+              if (!canConfirm) {
+                setAttempted(true)
+                return
+              }
+              onConfirm({ channels, groupId: targetGroupId, rowsToSave })
+            }}
+            disabled={hardBlocked}
           >
             {busy ? <Spinner /> : null}
             {busy ? '正在出包…' : '确认并用它出包'}
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      <ConfirmDialog
+        open={pendingImport !== null}
+        onOpenChange={(next) => {
+          if (!next) {
+            setPendingImport(null)
+          }
+        }}
+        title="用这份 JSON 换掉表里的内容？"
+        description={`导入会替换当前表里 ${rows.length} 行。`}
+        warning="正在编辑的内容没有别的地方存着，替换后要靠「撤销导入」退回。"
+        confirmText="替换"
+        destructive
+        onConfirm={confirmImport}
+      />
     </Dialog>
   )
 }

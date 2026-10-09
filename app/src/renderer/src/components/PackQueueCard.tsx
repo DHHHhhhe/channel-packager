@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ListChecks, Play, Trash2, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, ListChecks, Play, RotateCcw, Trash2, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -71,6 +71,14 @@ interface PackQueueCardProps {
   onStart: () => void
   onClear: () => void
   onRemove: (id: string) => void
+  /** 把一项退回「待出包」，让它跟着队列再跑一次 */
+  onRetry: (id: string) => void
+  /** 把所有失败项一起退回「待出包」 */
+  onRetryFailed: () => void
+  /** 调整执行顺序：direction 为 -1 上移、1 下移 */
+  onMove: (id: string, direction: -1 | 1) => void
+  /** 把这一项的参数填回上面的表单（不立刻开跑） */
+  onRerun: (item: QueueItem) => void
   onOpenPath: (target: string, what: string) => void | Promise<void>
 }
 
@@ -86,11 +94,16 @@ export function PackQueueCard({
   onStart,
   onClear,
   onRemove,
+  onRetry,
+  onRetryFailed,
+  onMove,
+  onRerun,
   onOpenPath,
 }: PackQueueCardProps) {
   const [detailId, setDetailId] = useState<string | null>(null)
 
   const pendingCount = items.filter((item) => item.status === 'pending').length
+  const failedCount = items.filter((item) => item.status === 'failed').length
   const detailIndex = items.findIndex((item) => item.id === detailId)
   const detail = detailIndex >= 0 ? items[detailIndex] : undefined
 
@@ -103,7 +116,8 @@ export function PackQueueCard({
           <Badge variant="outline">{items.length} 项</Badge>
         </CardTitle>
         <CardDescription>
-          一项接一项执行，某一项失败不会影响后面的。待出包 {pendingCount} 项。
+          按下面的顺序从上往下一项接一项执行，某一项失败不会影响后面的。待出包 {pendingCount} 项
+          {failedCount > 0 ? `，失败 ${failedCount} 项` : ''}。
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
@@ -112,7 +126,17 @@ export function PackQueueCard({
             {running ? <Spinner /> : <Play />}
             {running ? '正在出包…' : '开始队列'}
           </Button>
-          <Button variant="outline" onClick={onClear} disabled={running}>
+          {/*
+            失败项原来只能「移除」再重新加一遍 —— 参数明明还在这一行上，
+            却要回表单里重挑一遍 APK 和分组。
+          */}
+          {failedCount > 0 ? (
+            <Button variant="outline" onClick={onRetryFailed} disabled={running}>
+              <RotateCcw />
+              重跑失败项（{failedCount}）
+            </Button>
+          ) : null}
+          <Button variant="outline" onClick={onClear} disabled={running || items.length === 0}>
             <Trash2 />
             清空队列
           </Button>
@@ -125,7 +149,9 @@ export function PackQueueCard({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-10">#</TableHead>
+                <TableHead className="w-24" title="从上往下依次执行，可以调整顺序">
+                  顺序
+                </TableHead>
                 <TableHead>APK</TableHead>
                 <TableHead>签名文件</TableHead>
                 <TableHead>渠道分组</TableHead>
@@ -137,7 +163,31 @@ export function PackQueueCard({
             <TableBody>
               {items.map((item, index) => (
                 <TableRow key={item.id}>
-                  <TableCell className="text-muted-foreground">{index + 1}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-0.5">
+                      <span className="w-5 text-muted-foreground">{index + 1}</span>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => onMove(item.id, -1)}
+                        disabled={running || index === 0}
+                        title="上移一位（提前出包）"
+                        aria-label={`把第 ${index + 1} 项上移`}
+                      >
+                        <ArrowUp />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => onMove(item.id, 1)}
+                        disabled={running || index === items.length - 1}
+                        title="下移一位（推后出包）"
+                        aria-label={`把第 ${index + 1} 项下移`}
+                      >
+                        <ArrowDown />
+                      </Button>
+                    </div>
+                  </TableCell>
                   <TableCell className="max-w-[16rem] truncate" title={item.params.apkPath}>
                     {item.apkName}
                   </TableCell>
@@ -170,6 +220,18 @@ export function PackQueueCard({
                       {item.result ? (
                         <Button variant="outline" size="sm" onClick={() => setDetailId(item.id)}>
                           详情
+                        </Button>
+                      ) : null}
+                      {item.status === 'failed' ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => onRetry(item.id)}
+                          disabled={running}
+                          title="把这一项退回「待出包」，参数不用重新填"
+                        >
+                          <RotateCcw />
+                          重跑
                         </Button>
                       ) : null}
                       <Button
@@ -206,6 +268,12 @@ export function PackQueueCard({
             <TaskResultCard
               result={detail.result}
               onOpenPath={onOpenPath}
+              onRerun={() => {
+                // 填回表单后把详情收起来，不然人还停在结果上看不见表单变了
+                setDetailId(null)
+                onRerun(detail)
+              }}
+              rerunDisabled={running}
               heading={`${detail.apkName} · ${detail.result.ok ? '出包完成' : '出包失败'}`}
             />
           ) : null}

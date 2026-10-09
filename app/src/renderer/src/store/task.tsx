@@ -23,15 +23,31 @@ import { STAGE_LABELS } from '@/lib/task-report'
  * 放到这里之后：订阅只挂一次，切页不丢状态；顶部还能一直显示「出包中」，
  * 并且随时能取消。
  */
+/** 阶段流水的一行：走到哪个阶段、以及过程中的中文说明 */
+export interface FlowEntry {
+  at: number
+  text: string
+}
+
+/** 一次跑完的结果，带时间戳，供「最近结果」回看 */
+export interface HistoryEntry {
+  at: number
+  result: TaskResult
+}
+
 export interface TaskValue {
   /** 有没有任务在跑 */
   running: boolean
   /** 当前阶段的中文名；没跑过时为 null */
   stage: string | null
+  /** 阶段与中文说明的流水，最多留最近 200 条 */
+  flow: FlowEntry[]
   /** 子进程的原始输出行，最多留最近 500 行 */
   lines: string[]
   /** 最近一次跑完的结果；新一轮开始时清空 */
   result: TaskResult | null
+  /** 最近 10 次跑完的结果，新的在前；关掉窗口就没了 */
+  history: HistoryEntry[]
   /** 本次运行用的参数，供结果卡片上的「重跑本次」填回表单 */
   lastRun: TaskInput | null
   /** 队列模式下「第几项 / 共几项」；不在队列里时为 null */
@@ -55,13 +71,27 @@ const TaskContext = createContext<TaskValue | null>(null)
 /** 输出行留多少行。子进程刷得很快，不封顶会把内存吃满 */
 const MAX_LINES = 500
 
+/** 阶段流水留多少条 */
+const MAX_FLOW = 200
+
+/** 「最近结果」留几次。再多也没人回看，还占内存（产物清单可能很长） */
+const MAX_HISTORY = 10
+
 export function TaskProvider({ children }: { children: ReactNode }) {
   const [running, setRunning] = useState(false)
   const [stage, setStage] = useState<string | null>(null)
+  const [flow, setFlow] = useState<FlowEntry[]>([])
   const [lines, setLines] = useState<string[]>([])
   const [result, setResult] = useState<TaskResult | null>(null)
+  const [history, setHistory] = useState<HistoryEntry[]>([])
   const [lastRun, setLastRun] = useState<TaskInput | null>(null)
   const [queueProgress, setQueueProgress] = useState<{ index: number; total: number } | null>(null)
+
+  /*
+   * 同一个阶段会连着推很多条进度（每个阶段都是「先报阶段、再刷输出」），
+   * 只在阶段真的换了的时候往流水里补一行 —— 否则流水会被同一条刷满。
+   */
+  const lastStageRef = useRef<string | null>(null)
 
   // null 表示「界面还没启动过任务」；此时到达的进度一定属于本次启动
   const taskIdRef = useRef<string | null>(null)
@@ -78,13 +108,21 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         return
       }
       setStage(STAGE_LABELS[event.stage])
+      if (lastStageRef.current !== event.stage) {
+        lastStageRef.current = event.stage
+        const text = STAGE_LABELS[event.stage]
+        setFlow((previous) => [...previous.slice(-(MAX_FLOW - 1)), { at: Date.now(), text }])
+      }
       if (event.line !== undefined && event.line !== '') {
         setLines((previous) => [...previous.slice(-(MAX_LINES - 1)), event.line as string])
       } else if (event.message !== '') {
-        setLines((previous) => [...previous.slice(-(MAX_LINES - 1)), `— ${event.message}`])
+        // 主进程给的中文说明放进流水，原始英文输出单独留在 lines 里折叠显示
+        const text = event.message
+        setFlow((previous) => [...previous.slice(-(MAX_FLOW - 1)), { at: Date.now(), text }])
       }
       if (event.result) {
         setResult(event.result)
+        setHistory((previous) => [{ at: Date.now(), result: event.result as TaskResult }, ...previous].slice(0, MAX_HISTORY))
         setRunning(false)
         // 队列在等这一项跑完；叫醒它，否则循环会一直停在 await 上
         const resolve = resolveRef.current
@@ -115,7 +153,14 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         taskIdRef.current = state.taskId
         setRunning(true)
         setStage(STAGE_LABELS[state.stage])
-        setLines([`— ${state.message}（这个任务在本界面刷新前就已经开始了，之前的过程输出看不到）`])
+        lastStageRef.current = state.stage
+        setFlow([
+          {
+            at: Date.now(),
+            text: `${STAGE_LABELS[state.stage]}（这个任务在本界面刷新前就已经开始了，之前的过程看不到）`,
+          },
+        ])
+        setLines([])
       })
       .catch(() => {
         // 取不到就当没有任务在跑，不该因为这一句而让首屏报错
@@ -127,14 +172,18 @@ export function TaskProvider({ children }: { children: ReactNode }) {
 
   const reset = useCallback(() => {
     setLines([])
+    setFlow([])
     setResult(null)
     setStage(null)
     setRunning(false)
+    lastStageRef.current = null
   }, [])
 
   /** 共同的起跑动作：清进度、记参数、发 IPC。返回启动错误文本（成功时为空串） */
   const launch = useCallback(async (params: TaskInput): Promise<string> => {
     setLines([])
+    setFlow([])
+    lastStageRef.current = null
     setResult(null)
     setStage('启动中')
     setLastRun(params)
@@ -147,7 +196,8 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       const text = ipcErrorMessage(error)
       setRunning(false)
       setStage(STAGE_LABELS.failed)
-      setLines([text])
+      lastStageRef.current = 'failed'
+      setFlow([{ at: Date.now(), text }])
       return text
     }
   }, [])
@@ -203,8 +253,10 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     () => ({
       running,
       stage,
+      flow,
       lines,
       result,
+      history,
       lastRun,
       queueProgress,
       start,
@@ -213,7 +265,20 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       reset,
       setQueueProgress,
     }),
-    [running, stage, lines, result, lastRun, queueProgress, start, runAndWait, cancel, reset],
+    [
+      running,
+      stage,
+      flow,
+      lines,
+      result,
+      history,
+      lastRun,
+      queueProgress,
+      start,
+      runAndWait,
+      cancel,
+      reset,
+    ],
   )
 
   return <TaskContext.Provider value={value}>{children}</TaskContext.Provider>

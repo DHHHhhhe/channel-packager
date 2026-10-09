@@ -1,12 +1,22 @@
 import { useEffect, useState } from 'react'
-import { Copy, FileText, FolderOpen, RotateCcw, TriangleAlert } from 'lucide-react'
+import {
+  ClipboardList,
+  Copy,
+  FileText,
+  FolderOpen,
+  Lightbulb,
+  RotateCcw,
+  TriangleAlert,
+} from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import type { TaskResult } from '@shared/types/task'
 import { ipcErrorMessage } from '@/lib/ipc-error'
-import { STAGE_LABELS, buildDiagnostic } from '@/lib/task-report'
+import { dirName } from '@/lib/paths'
+import { STAGE_LABELS, buildArtifactList, buildDiagnostic, suggestFix } from '@/lib/task-report'
+import type { FixAction } from '@/lib/task-report'
 
 interface TaskResultCardProps {
   /** 一次出包的结果。成功与失败共用同一张卡片，只是失败时多一块诊断 */
@@ -16,6 +26,8 @@ interface TaskResultCardProps {
   /** 只有单次出包的那张卡片给「重跑本次」；队列里的每一项不提供 */
   onRerun?: () => void
   rerunDisabled?: boolean
+  /** 失败建议里那个按键落到哪儿。不给就只显示文字，不显示按钮 */
+  onFix?: (action: FixAction) => void
   /** 队列里用来标明这是第几项；单次出包不传，标题就是「出包完成 / 出包失败」 */
   heading?: string
 }
@@ -31,19 +43,26 @@ export function TaskResultCard({
   onOpenPath,
   onRerun,
   rerunDisabled,
+  onFix,
   heading,
 }: TaskResultCardProps) {
   const [copied, setCopied] = useState(false)
   const [copyError, setCopyError] = useState('')
+  /** 刚刚复制了哪个产物的路径；用来在那一行上显示「已复制」 */
+  const [copiedPath, setCopiedPath] = useState('')
+  const [listState, setListState] = useState<'' | 'ok' | string>('')
 
   // 换了结果就把上一轮的「已复制」撤掉，否则新卡片上会挂着旧提示
   useEffect(() => {
     setCopied(false)
     setCopyError('')
+    setCopiedPath('')
+    setListState('')
   }, [result])
 
   // 失败诊断只在失败时存在；提到这里是为了在 JSX 里拿到窄化后的类型
   const failure = result.ok ? undefined : result.failure
+  const suggestion = result.ok ? null : suggestFix(result)
 
   // 输出目录是出包一开始就建的（工作目录在它下面），校验阶段就失败时它才是空的
   const openDirTarget = result.outputDir
@@ -55,6 +74,24 @@ export function TaskResultCard({
       setCopied(true)
     } catch (error) {
       setCopyError(ipcErrorMessage(error))
+    }
+  }
+
+  const handleCopyPath = async (target: string): Promise<void> => {
+    try {
+      await window.api.writeClipboard(target)
+      setCopiedPath(target)
+    } catch (error) {
+      setCopyError(ipcErrorMessage(error))
+    }
+  }
+
+  const handleCopyList = async (): Promise<void> => {
+    try {
+      await window.api.writeClipboard(buildArtifactList(result))
+      setListState('ok')
+    } catch (error) {
+      setListState(ipcErrorMessage(error))
     }
   }
 
@@ -80,6 +117,21 @@ export function TaskResultCard({
             <FolderOpen />
             打开输出目录
           </Button>
+          {result.artifacts.length > 0 ? (
+            <>
+              <Button variant="outline" size="sm" onClick={() => void handleCopyList()}>
+                <ClipboardList />
+                复制产物清单
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                {listState === ''
+                  ? '清单含文件名、渠道号、别名、校验结果与完整路径，可直接粘进表格'
+                  : listState === 'ok'
+                    ? '清单已复制。'
+                    : `复制失败：${listState}`}
+              </span>
+            </>
+          ) : null}
           {onRerun ? (
             <>
               <Button variant="outline" size="sm" onClick={onRerun} disabled={rerunDisabled === true}>
@@ -102,6 +154,7 @@ export function TaskResultCard({
                   <TableHead>渠道号</TableHead>
                   <TableHead>别名</TableHead>
                   <TableHead>校验</TableHead>
+                  <TableHead className="text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -118,6 +171,35 @@ export function TaskResultCard({
                       ) : (
                         <Badge variant="destructive">{artifact.note ?? '未通过'}</Badge>
                       )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {/*
+                       * 出完几十个包要挨个发出去时，「打开输出目录」再在资源管理器里
+                       * 翻找对应文件很费事；路径又只挂在 title 上，没法直接拿走。
+                       */}
+                      <div className="flex items-center justify-end gap-1">
+                        {copiedPath === artifact.path ? (
+                          <span className="text-xs text-muted-foreground">已复制</span>
+                        ) : null}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => void handleCopyPath(artifact.path)}
+                          title={`复制路径：${artifact.path}`}
+                        >
+                          <Copy />
+                          复制路径
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => void onOpenPath(dirName(artifact.path), '产物所在文件夹')}
+                          title="在资源管理器里打开这个包所在的文件夹"
+                        >
+                          <FolderOpen />
+                          所在文件夹
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -154,6 +236,31 @@ export function TaskResultCard({
               {failure.timedOut ? <span>卡住后已强制结束</span> : null}
               <span className="text-muted-foreground">任务号 {result.taskId}</span>
             </div>
+
+            {/*
+              先说「接下来怎么办」，再说「刚才发生了什么」。
+              卡在哪个步骤、退出码是多少，这些是给排查的人看的；手上要赶着出包的人
+              只想知道现在该点哪里。说得出原因的那几类失败才给建议，说不清就不硬给。
+            */}
+            {suggestion ? (
+              <div className="flex flex-col gap-2 rounded-md border border-warning/40 bg-warning/5 p-2.5">
+                <div className="flex items-start gap-1.5 text-sm">
+                  <Lightbulb className="mt-0.5 size-4 shrink-0 text-warning" />
+                  <span>{suggestion.text}</span>
+                </div>
+                {suggestion.action !== undefined && onFix ? (
+                  <div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onFix(suggestion.action as FixAction)}
+                    >
+                      {suggestion.actionLabel}
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             {failure.outputTail && failure.outputTail.length > 0 ? (
               <>

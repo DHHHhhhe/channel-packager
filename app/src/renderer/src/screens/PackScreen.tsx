@@ -1,5 +1,24 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Eye, FolderOpen, ListPlus, Package, Search, Upload } from 'lucide-react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+} from 'react'
+import {
+  ChevronDown,
+  ChevronRight,
+  Eye,
+  FolderOpen,
+  History,
+  ListPlus,
+  Package,
+  Search,
+  Upload,
+} from 'lucide-react'
+import { toast } from 'sonner'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import {
   CustomChannelExportDialog,
   type CustomChannelExportPayload,
@@ -8,6 +27,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { PackQueueCard, type QueueItem } from '@/components/PackQueueCard'
 import { ProgressPanel } from '@/components/ProgressPanel'
 import { TaskResultCard } from '@/components/TaskResultCard'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -33,6 +53,7 @@ import type { ChannelEntry } from '@shared/types/store'
 import type { SignMode, SourceCheckResult, TaskInput, WalleShowResult } from '@shared/types/task'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { NO_JKS_KEY, readLastGroup, writeLastGroup } from '@/lib/last-group'
+import type { FixAction } from '@/lib/task-report'
 import { useAppStore } from '@/store/app-store'
 import { useNav } from '@/store/nav'
 import { useTask } from '@/store/task'
@@ -55,6 +76,13 @@ function defaultOutputDir(apkPath: string): string {
 function baseNameOf(filePath: string): string {
   const normalized = filePath.replace(/\\/g, '/')
   return normalized.slice(normalized.lastIndexOf('/') + 1)
+}
+
+/** 「最近结果」里的时间，只到分钟 —— 那一段只用来分「哪次是哪次」 */
+function clockOf(at: number): string {
+  const date = new Date(at)
+  const pad = (value: number): string => String(value).padStart(2, '0')
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
 /**
@@ -108,8 +136,10 @@ export function PackScreen() {
   const {
     running,
     stage,
+    flow,
     lines,
     result,
+    history,
     lastRun,
     queueProgress,
     start,
@@ -122,6 +152,10 @@ export function PackScreen() {
   const [queueRunning, setQueueRunning] = useState(false)
   /** 上一次出包是不是「开始队列」发起的 —— 决定结果卡片归谁渲染 */
   const [ranQueue, setRanQueue] = useState(false)
+  /** 「清空队列」的二次确认。整队一次丢光，点错一下就没法回头 */
+  const [clearQueueOpen, setClearQueueOpen] = useState(false)
+  /** 「最近结果」的展开状态。默认收起，只是偶尔回看 */
+  const [historyOpen, setHistoryOpen] = useState(false)
   /** 「自定义渠道导出」弹窗 */
   const [customOpen, setCustomOpen] = useState(false)
   const [customBusy, setCustomBusy] = useState(false)
@@ -132,6 +166,20 @@ export function PackScreen() {
   // 「重跑本次」要恢复的勾选。渠道列表是异步读的，得等读完再套用，
   // 否则会被读盘那一步的「默认全选」盖掉。
   const pendingPickedRef = useRef<string[] | null>(null)
+  /*
+   * 每个分组各自记住勾选。
+   *
+   * 原来切分组一律重置成「全选」：只是想过去看一眼另一个分组的渠道，
+   * 回来精心挑的那几条就没了。分组之间是并列的，不该互相清空。
+   */
+  const pickedByGroupRef = useRef<Map<string, string[]>>(new Map())
+  const pickedRef = useRef(picked)
+  pickedRef.current = picked
+  const lastGroupIdRef = useRef('')
+  /** 上一次点过的那条渠道在 visibleChannels 里的下标，给 Shift 连选用 */
+  const lastPickedIndexRef = useRef<number | null>(null)
+  /** 队列卡片：加入成功后滚过去，省得人以为没加上 */
+  const queueCardRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     // 首屏还没读完就先不动：jksItems 初始是空数组，这时把 noJks 定成 true 会
@@ -181,6 +229,20 @@ export function PackScreen() {
     setGroupId(target.id)
   }, [initialized, groups, groupId, noJks, jksId])
 
+  /*
+   * 切分组之前，先把当前这个分组的勾选记下来。
+   *
+   * 这个 effect 必须声明在读盘那个之前：它读的是「切换前」的勾选，
+   * 而读盘是异步的，等它回来时 picked 已经被覆盖了。
+   */
+  useEffect(() => {
+    const previous = lastGroupIdRef.current
+    lastGroupIdRef.current = groupId
+    if (previous !== '' && previous !== groupId) {
+      pickedByGroupRef.current.set(previous, [...pickedRef.current])
+    }
+  }, [groupId])
+
   useEffect(() => {
     if (groupId === '') {
       setChannels([])
@@ -189,6 +251,7 @@ export function PackScreen() {
     }
     // 换了分组，上一份列表的搜索词留着只会让人以为新分组也是空的
     setChannelQuery('')
+    lastPickedIndexRef.current = null
     let cancelled = false
     getChannels(groupId)
       .then((config) => {
@@ -197,16 +260,22 @@ export function PackScreen() {
         }
         setChannels(config.channelInfoList)
         const codes = config.channelInfoList.map((entry) => entry.channel)
+        const available = new Set(codes)
         const pending = pendingPickedRef.current
-        if (pending === null) {
-          setPicked(new Set(codes))
+        if (pending !== null) {
+          // 「重跑本次」恢复的勾选：只留这个分组里还存在的渠道，
+          // 上一次跑完到现在的这段时间里渠道可能已经被删掉了。
+          pendingPickedRef.current = null
+          setPicked(new Set(pending.filter((code) => available.has(code))))
           return
         }
-        // 「重跑本次」恢复的勾选：只留这个分组里还存在的渠道，
-        // 上一次跑完到现在的这段时间里渠道可能已经被删掉了。
-        pendingPickedRef.current = null
-        const available = new Set(codes)
-        setPicked(new Set(pending.filter((code) => available.has(code))))
+        const remembered = pickedByGroupRef.current.get(groupId)
+        if (remembered !== undefined) {
+          // 这个分组刚才挑过，按记忆恢复；期间被删掉的渠道去掉
+          setPicked(new Set(remembered.filter((code) => available.has(code))))
+          return
+        }
+        setPicked(new Set(codes))
       })
       .catch((error) => {
         if (!cancelled) {
@@ -382,6 +451,65 @@ export function PackScreen() {
   }
 
   /*
+   * Shift + 点：把「上次点的那条」到「这次点的这条」之间整段设成同一种状态。
+   *
+   * 一次要勾中间十几条时，一条条点很容易漏；而且漏掉的那条要等出完包才发现。
+   * 点中的那一条由 Checkbox 自己切好了（click 事件先到它、再冒泡到这里），
+   * 所以这里只补区间里其它的那些，否则它会被切两次。
+   */
+  const handleChannelShiftClick = (event: MouseEvent<HTMLLabelElement>, index: number) => {
+    const last = lastPickedIndexRef.current
+    lastPickedIndexRef.current = index
+    if (!event.shiftKey || last === null) {
+      return
+    }
+    const from = Math.min(last, index)
+    const to = Math.max(last, index)
+    const anchor = visibleChannels[index]
+    if (from === to || anchor === undefined) {
+      return
+    }
+    const target = !picked.has(anchor.channel)
+    const rest = visibleChannels
+      .slice(from, to + 1)
+      .filter((entry) => entry.channel !== anchor.channel)
+      .map((entry) => entry.channel)
+    setPicked((previous) => {
+      const next = new Set(previous)
+      for (const code of rest) {
+        if (target) {
+          next.add(code)
+        } else {
+          next.delete(code)
+        }
+      }
+      return next
+    })
+  }
+
+  /*
+   * 焦点在渠道网格里时，Ctrl+A 勾上「看得见的那些」，再来一次取消。
+   * 与全选按钮同一套口径：搜索过就只动筛出来的，看不见的不顺手改。
+   */
+  const handleChannelGridKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'a') {
+      return
+    }
+    event.preventDefault()
+    setPicked((previous) => {
+      const next = new Set(previous)
+      for (const entry of visibleChannels) {
+        if (visibleAllPicked) {
+          next.delete(entry.channel)
+        } else {
+          next.add(entry.channel)
+        }
+      }
+      return next
+    })
+  }
+
+  /*
    * 结果走弹窗而不是页面底部那一行状态文字：
    * 渠道号要完整显示，塞进一行很容易被截断。
    */
@@ -484,25 +612,25 @@ export function PackScreen() {
   }
 
   /*
-   * 「重跑本次」只把参数填回表单，不立刻开跑：同一份包换个渠道、换个输出目录再跑
-   * 是常见动作，直接开跑会让人来不及改。
+   * 把一份参数填回表单，不立刻开跑：同一份包换个渠道、换个输出目录再跑是常见动作，
+   * 直接开跑会让人来不及改。
+   *
+   * 单次出包的「重跑本次」与队列某一项的「重跑本次」都走这里 —— 要填的东西完全
+   * 一样，分开写迟早改歪一处。
    *
    * 勾选要分两条路走 —— 换了分组的话，下面读渠道列表那个 effect 会重跑并把勾选
    * 重置成全选，所以得把要恢复的勾选交给它；没换分组时它不会跑，直接套用。
    */
-  const handleRerun = () => {
-    if (!lastRun) {
-      return
-    }
-    const targetJksId = lastRun.jksId ?? ''
-    const targetGroupId = lastRun.groupId ?? ''
-    setApkPath(lastRun.apkPath)
-    setSignMode(lastRun.signMode)
-    setOutputDir(lastRun.outputDir)
+  const applyParams = (params: TaskInput, note: string) => {
+    const targetJksId = params.jksId ?? ''
+    const targetGroupId = params.groupId ?? ''
+    setApkPath(params.apkPath)
+    setSignMode(params.signMode)
+    setOutputDir(params.outputDir)
     setNoJks(targetJksId === '')
     setJksId(targetJksId)
 
-    const restored = lastRun.channelInfoList
+    const restored = params.channelInfoList
     if (restored) {
       /*
        * 上次走的是「自定义渠道导出」：那份列表只存在于那一次运行里（没落盘），
@@ -517,12 +645,24 @@ export function PackScreen() {
 
     if (targetGroupId === groupId) {
       const available = new Set(channels.map((entry) => entry.channel))
-      setPicked(new Set(lastRun.channelCodes.filter((code) => available.has(code))))
+      setPicked(new Set(params.channelCodes.filter((code) => available.has(code))))
     } else {
-      pendingPickedRef.current = lastRun.channelCodes
+      pendingPickedRef.current = params.channelCodes
     }
     setGroupId(targetGroupId)
-    setStatus({ kind: 'ok', text: '已把上次出包的参数填回上面，确认后点「开始出包」。' })
+    setStatus({ kind: 'ok', text: note })
+  }
+
+  const handleRerun = () => {
+    if (!lastRun) {
+      return
+    }
+    applyParams(lastRun, '已把上次出包的参数填回上面，确认后点「开始出包」。')
+  }
+
+  /** 队列某项的「详情」里点「填回表单」：用这一项的参数，不立刻开跑 */
+  const handleQueueRerun = (item: QueueItem) => {
+    applyParams(item.params, `已把「${item.apkName}」的参数填回上面，确认后点「开始出包」。`)
   }
 
   /*
@@ -616,6 +756,13 @@ export function PackScreen() {
     }
     setQueue((previous) => [...previous, item])
     setStatus({ kind: 'ok', text: `已加入队列（第 ${queue.length + 1} 项），点「开始队列」可批量出包。` })
+    /*
+     * 队列卡片在页面最下面，加完不滚过去的话，屏幕上什么也没变 ——
+     * 人只会再点一次「加入队列」，然后队列里出现两项一模一样的。
+     */
+    requestAnimationFrame(() => {
+      queueCardRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    })
   }
 
   /*
@@ -716,13 +863,98 @@ export function PackScreen() {
     }
   }
 
-  const handleClearQueue = () => {
+  /** 真的清空。走完二次确认才到这里 */
+  const confirmClearQueue = () => {
+    setClearQueueOpen(false)
     setQueue([])
     setStatus({ kind: 'ok', text: '队列已清空。' })
   }
 
+  /*
+   * 单项移除给一次「撤销」。
+   *
+   * 移除按钮就挨着「详情」，手一抖点错整项就没了 —— 而重新加一遍要回表单重挑
+   * APK 和分组。记下它原来在第几位，撤销时放回原位。
+   */
   const handleRemoveQueueItem = (id: string) => {
+    const index = queue.findIndex((item) => item.id === id)
+    if (index < 0) {
+      return
+    }
+    const removed = queue[index]
     setQueue((previous) => previous.filter((item) => item.id !== id))
+    toast.info(`已从队列移除第 ${index + 1} 项。`, {
+      action: {
+        label: '撤销',
+        onClick: () => {
+          setQueue((previous) => {
+            if (previous.some((item) => item.id === removed.id)) {
+              return previous
+            }
+            const next = [...previous]
+            next.splice(Math.min(index, next.length), 0, removed)
+            return next
+          })
+        },
+      },
+    })
+  }
+
+  /** 把一项退回「待出包」：参数原样留着，不用回表单重填 */
+  const handleRetryQueueItem = (id: string) => {
+    setQueue((previous) =>
+      previous.map((item) =>
+        item.id === id ? { ...item, status: 'pending', result: undefined, error: undefined } : item,
+      ),
+    )
+  }
+
+  const handleRetryFailedQueue = () => {
+    const count = queue.filter((item) => item.status === 'failed').length
+    if (count === 0) {
+      return
+    }
+    setQueue((previous) =>
+      previous.map((item) =>
+        item.status === 'failed'
+          ? { ...item, status: 'pending', result: undefined, error: undefined }
+          : item,
+      ),
+    )
+    setStatus({ kind: 'ok', text: `已把 ${count} 个失败项退回「待出包」，点「开始队列」重跑。` })
+  }
+
+  /** 调整执行顺序 —— 队列就是按这个顺序跑的，也就是「先出哪个包」 */
+  const handleMoveQueueItem = (id: string, direction: -1 | 1) => {
+    setQueue((previous) => {
+      const index = previous.findIndex((item) => item.id === id)
+      const target = index + direction
+      if (index < 0 || target < 0 || target >= previous.length) {
+        return previous
+      }
+      const next = [...previous]
+      const [moved] = next.splice(index, 1)
+      next.splice(target, 0, moved)
+      return next
+    })
+  }
+
+  /*
+   * 失败后那句「接下来怎么办」上的按键。
+   *
+   * 只把人送到该改的地方，不替他改任何值 —— 换哪份签名文件、换哪个目录，
+   * 只有他自己知道。
+   */
+  const handleFix = (action: FixAction) => {
+    if (action === 'jks') {
+      go('jks')
+      return
+    }
+    if (action === 'apk') {
+      setStatus({ kind: 'warning', text: '重新选择 APK：点上面的「选择 APK」，或把文件拖进来。' })
+      return
+    }
+    setStatus({ kind: 'warning', text: '换一个输出目录：点「选择目录」挑一个能写的目录再试。' })
   }
 
   return (
@@ -786,8 +1018,8 @@ export function PackScreen() {
               <Button
                 variant="outline"
                 onClick={handleShowChannel}
-                disabled={showing}
-                title="读取这个包的渠道号"
+                disabled={showing || apkPath.trim() === ''}
+                title={apkPath.trim() === '' ? '先选择 APK' : '读取这个包的渠道号'}
               >
                 <Eye />
                 查看渠道
@@ -939,6 +1171,11 @@ export function PackScreen() {
                   })
                 }
                 disabled={visibleChannels.length === 0}
+                title={
+                  searching
+                    ? '只动搜索筛出来的这些；键盘上按 Ctrl+A 同样效果'
+                    : '全部勾上或全部取消；键盘上按 Ctrl+A 同样效果'
+                }
               >
                 {visibleAllPicked
                   ? searching
@@ -980,8 +1217,11 @@ export function PackScreen() {
                     </Button>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
-                    {visibleChannels.map((entry) => {
+                  <div
+                    className="grid grid-cols-2 gap-2 md:grid-cols-3"
+                    onKeyDown={handleChannelGridKeyDown}
+                  >
+                    {visibleChannels.map((entry, index) => {
                       const alias = entry.alias?.trim()
                       // 别名是给人看的，渠道号是实际写进包里的，两个都要能看见：
                       // 只显示别名时，两条别名相近的渠道分不出哪条是哪条。
@@ -989,28 +1229,32 @@ export function PackScreen() {
                         <label
                           key={entry.channel}
                           className="flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm"
+                          onClick={(event) => handleChannelShiftClick(event, index)}
                         >
-                      <Checkbox
-                        checked={picked.has(entry.channel)}
-                        onCheckedChange={(value) => toggleChannel(entry.channel, value === true)}
-                        aria-label={entry.channel}
-                      />
-                      <span className="flex min-w-0 flex-col leading-tight">
-                        <span className="truncate" title={alias ? `${alias}（${entry.channel}）` : entry.channel}>
-                          {alias || entry.channel}
-                        </span>
-                        {alias ? (
-                          <span
-                            className="truncate font-mono text-xs text-muted-foreground"
-                            title={entry.channel}
-                          >
-                            {entry.channel}
+                          <Checkbox
+                            checked={picked.has(entry.channel)}
+                            onCheckedChange={(value) => toggleChannel(entry.channel, value === true)}
+                            aria-label={entry.channel}
+                          />
+                          <span className="flex min-w-0 flex-col leading-tight">
+                            <span
+                              className="truncate"
+                              title={alias ? `${alias}（${entry.channel}）` : entry.channel}
+                            >
+                              {alias || entry.channel}
+                            </span>
+                            {alias ? (
+                              <span
+                                className="truncate font-mono text-xs text-muted-foreground"
+                                title={entry.channel}
+                              >
+                                {entry.channel}
+                              </span>
+                            ) : null}
                           </span>
-                        ) : null}
-                      </span>
-                    </label>
-                  )
-                })}
+                        </label>
+                      )
+                    })}
                   </div>
                 )}
               </>
@@ -1028,12 +1272,19 @@ export function PackScreen() {
                 ? 'text-sm text-warning'
                 : 'text-sm text-success'
           }
+          role={status.kind === 'error' ? 'alert' : 'status'}
         >
           {status.text}
         </p>
       ) : null}
 
-      <ProgressPanel stage={stage} lines={lines} queueProgress={queueProgress} />
+      <ProgressPanel
+        stage={stage}
+        flow={flow}
+        lines={lines}
+        queueProgress={queueProgress}
+        failed={result !== null && !result.ok}
+      />
 
       <div className="flex flex-wrap items-center gap-3">
         <Button onClick={() => void handleStart()} disabled={!canStart}>
@@ -1055,19 +1306,86 @@ export function PackScreen() {
           onOpenPath={handleOpenPath}
           onRerun={handleRerun}
           rerunDisabled={lastRun === null || running || queueRunning}
+          onFix={handleFix}
         />
       ) : null}
 
       {queue.length > 0 ? (
-        <PackQueueCard
-          items={queue}
-          running={queueRunning}
-          onStart={() => void handleStartQueue()}
-          onClear={handleClearQueue}
-          onRemove={handleRemoveQueueItem}
-          onOpenPath={handleOpenPath}
-        />
+        <div ref={queueCardRef}>
+          <PackQueueCard
+            items={queue}
+            running={queueRunning}
+            onStart={() => void handleStartQueue()}
+            onClear={() => setClearQueueOpen(true)}
+            onRemove={handleRemoveQueueItem}
+            onRetry={handleRetryQueueItem}
+            onRetryFailed={handleRetryFailedQueue}
+            onMove={handleMoveQueueItem}
+            onRerun={handleQueueRerun}
+            onOpenPath={handleOpenPath}
+          />
+        </div>
       ) : null}
+
+      {/*
+        跑完的结果原来只留最近一次：出完一批回头想确认「第几个包出成没有」，
+        屏幕上已经换成别的了。留在内存里回看，不落盘 —— 关掉窗口就该是干净的。
+      */}
+      {history.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              <History />
+              最近结果
+              <Badge variant="outline">{history.length} 次</Badge>
+            </CardTitle>
+            <CardDescription>
+              最近 10 次出包的结果，新的在最上面；关掉窗口就没了。逐项结果在「出包队列」里看。
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            {(historyOpen ? history : history.slice(0, 3)).map((entry) => (
+              <div key={entry.at} className="flex flex-wrap items-baseline gap-2 text-sm">
+                <span className="font-mono text-xs text-muted-foreground tabular-nums">
+                  {clockOf(entry.at)}
+                </span>
+                <Badge variant={entry.result.ok ? 'success' : 'destructive'}>
+                  {entry.result.ok ? '成功' : '失败'}
+                </Badge>
+                <span className="min-w-0 break-words">{entry.result.message}</span>
+              </div>
+            ))}
+            {history.length > 3 ? (
+              <div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setHistoryOpen((previous) => !previous)}
+                  aria-expanded={historyOpen}
+                >
+                  {historyOpen ? <ChevronDown /> : <ChevronRight />}
+                  {historyOpen ? '只看最近 3 次' : `展开其余 ${history.length - 3} 次`}
+                </Button>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {/*
+        清空是整队一次丢光，而队列里的参数没有别的地方存着 —— 重新加一遍要回表单
+        重挑 APK 与分组。所以先问一句，并把「会丢掉多少」写在明面上。
+      */}
+      <ConfirmDialog
+        open={clearQueueOpen}
+        onOpenChange={setClearQueueOpen}
+        title="清空整个队列？"
+        description={`队列里 ${queue.length} 项会一起消失。`}
+        warning={`其中 ${queue.filter((item) => item.status === 'pending').length} 项还没跑 —— 这些参数没有别的地方存着，重新加一遍要回表单重挑 APK 与分组。已经出好的包不受影响。`}
+        confirmText="清空队列"
+        destructive
+        onConfirm={confirmClearQueue}
+      />
 
       <CustomChannelExportDialog
         open={customOpen}
