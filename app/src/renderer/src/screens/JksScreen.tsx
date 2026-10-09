@@ -64,7 +64,7 @@ export function JksScreen() {
       await saveJks({ action: 'remove', id: deleting.id })
       setStatus({
         kind: 'ok',
-        text: `已删除 ${deleting.id}，data/keystores/ 下的副本与渠道文件一并清除。`,
+        text: `已删除 ${deleting.id}，data/keystores/ 下的副本已清除。分组与渠道列表不受影响。`,
       })
       setDeleting(undefined)
     } catch (error) {
@@ -77,7 +77,7 @@ export function JksScreen() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
-        description="每个 jks 保存自己的别名、口令与应用名。签名与校验一律只用 data/keystores/ 下的副本。"
+        description="每个 jks 只保存签名要用的别名与口令。签名与校验一律只用 data/keystores/ 下的副本。渠道列表按分组管理，见「渠道配置」。"
         actions={
           <Button onClick={openAdd}>
             <Plus />
@@ -113,7 +113,7 @@ export function JksScreen() {
                   <TableRow>
                     <TableHead>显示名</TableHead>
                     <TableHead>别名</TableHead>
-                    <TableHead>应用名</TableHead>
+                    <TableHead>英文名</TableHead>
                     <TableHead>来源路径</TableHead>
                     <TableHead>SHA256</TableHead>
                     <TableHead className="text-right">操作</TableHead>
@@ -191,7 +191,7 @@ export function JksScreen() {
           <DialogHeader>
             <DialogTitle>删除 {deleting?.displayName}</DialogTitle>
             <DialogDescription>
-              会同时删除 data/keystores/ 下的副本与它的渠道列表，无法撤销。原文件不受影响。
+              只会删除 data/keystores/ 下的副本，无法撤销。分组与渠道列表不受影响，原文件也不受影响。
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

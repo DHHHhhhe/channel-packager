@@ -1,6 +1,6 @@
 /** 一个 jks 条目。字段含义见 design.md「数据模型」 */
 export interface JksItem {
-  /** 稳定标识，默认取 jks 文件名去扩展名；channels/<id>.json 以它命名 */
+  /** 稳定标识，默认取 jks 文件名去扩展名 */
   id: string
   displayName: string
   /** 相对 data/ 的副本路径 —— 签名与凭据校验唯一使用的路径 */
@@ -12,7 +12,10 @@ export interface JksItem {
   fileSize: number
   alias: string
   storePassword: string
-  /** 写入 walle 的 defaultExtraInfo.app */
+  /**
+   * 迁移时写进对应分组的英文名（R8）。
+   * 分组建立之后 jks 不再管渠道，这个字段只在老数据迁移时被读一次。
+   */
   app: string
   /** derived = 来自规律推导；manual = 用户手工填过。仅用于界面提示 */
   credentialSource: 'derived' | 'manual'
@@ -22,6 +25,33 @@ export interface JksItem {
 export interface JksFile {
   version: number
   items: JksItem[]
+}
+
+/**
+ * 一个渠道分组（R1）。渠道列表的归属从这里取，与 jks 彻底解耦 ——
+ * 拿不到私钥的人也能建分组、配渠道。
+ *
+ * 索引存在 data/groups.json，条目本身存在 channels/<id>.json。
+ */
+export interface GroupItem {
+  /** 稳定标识；channels/<id>.json 以它命名。迁移来的分组直接复用原 jks id */
+  id: string
+  /** 分组名，给人认。新建时默认自动取 appLabel，可改 */
+  name: string
+  /** 应用名（中文显示名，如「沐爱」）。**只给人看，不写进包** */
+  appLabel: string
+  /**
+   * 英文名（如 demo）。写进 walle 的 defaultExtraInfo.app。
+   * 值会被 App 侧按 key 读出来用，所以必须是代码认得的标识，不能是中文。
+   */
+  app: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface GroupFile {
+  version: number
+  items: GroupItem[]
 }
 
 /** 模板里的一条：渠道后缀 + 显示别名 */
@@ -67,6 +97,8 @@ export interface StoreProblem {
 /** 应用启动时一次性取回的存储快照，省掉多次往返 */
 export interface StoreSnapshot {
   jks: JksFile
+  /** 分组索引。读之前已经跑过老数据迁移，所以这里一定是迁移后的结果 */
+  groups: GroupFile
   template: TemplateFile
   dataDir: string
   /** data/ 不可写、已回退到 userData 时为 true，界面需要明示 */
@@ -101,6 +133,31 @@ export interface JksMutationResult {
   item?: JksItem
   /** duplicate 等情况下给用户看的原因 */
   message?: string
+}
+
+/** store:saveGroup 的请求，与 JksMutation 同构：一个通道承载增改删 */
+export type GroupMutation =
+  | {
+      action: 'add'
+      name: string
+      appLabel: string
+      app: string
+      /**
+       * 指定分组 id。只有「新建 jks 时顺手把渠道也配好」那条路会传 ——
+       * 它要沿用 jks 的 id，渠道文件才落在 channels/<jksId>.json。
+       * 不传就按英文名（退分组名）推导，与用户手建分组一致。
+       */
+      id?: string
+    }
+  | { action: 'update'; item: GroupItem }
+  | { action: 'remove'; id: string }
+
+export interface GroupMutationResult {
+  status: 'added' | 'updated' | 'removed'
+  /** 操作后的完整列表，界面直接替换即可 */
+  items: GroupItem[]
+  /** add 成功时返回新条目，便于界面选中它 */
+  item?: GroupItem
 }
 
 /** 从原文件重新导入的比对结果，不自动同步 */

@@ -11,6 +11,8 @@ export const IPC_CHANNELS = {
 
   storeGetChannels: 'store:getChannels',
   storeSaveChannels: 'store:saveChannels',
+  /** 分组索引的增改删。渠道条目本身仍走 store:saveChannels */
+  storeSaveGroup: 'store:saveGroup',
   storeSaveTemplate: 'store:saveTemplate',
   /** 取走并清空「读到坏文件」的记录；读不到的文件不存在时不算坏 */
   storeTakeProblems: 'store:takeProblems',

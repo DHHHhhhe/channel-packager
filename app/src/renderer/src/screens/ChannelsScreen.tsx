@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { FileDown, Wand2 } from 'lucide-react'
+import { FileDown, Pencil, Plus, Trash2, Wand2 } from 'lucide-react'
 import { ChannelListPreviewDialog } from '@/components/ChannelListPreviewDialog'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { GroupFormDialog, type GroupFormPayload } from '@/components/GroupFormDialog'
 import { PageHeader } from '@/components/PageHeader'
 import { PairListEditor, newPairRow, type PairRow } from '@/components/PairListEditor'
 import { Button } from '@/components/ui/button'
@@ -15,14 +16,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { ChannelEntry } from '@shared/types/store'
+import type { ChannelEntry, GroupItem } from '@shared/types/store'
 import type { ChannelImportMode, ChannelListPreview } from '@shared/types/pack'
 import { buildChannelsFromTemplate } from '@shared/utils/channels'
 import { mergeImportedRows } from '@/lib/channels-import'
 import { findDuplicates } from '@/lib/duplicates'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { useAppStore } from '@/store/app-store'
-import { useNav } from '@/store/nav'
 
 /** 编辑器里的行 → 落盘/导出用的条目；别名为空时不写这个字段 */
 function toChannelEntries(rows: PairRow[]): ChannelEntry[] {
@@ -33,8 +33,7 @@ function toChannelEntries(rows: PairRow[]): ChannelEntry[] {
 }
 
 export function ChannelsScreen() {
-  const { jksItems, template, getChannels, saveChannels } = useAppStore()
-  const { go } = useNav()
+  const { groups, template, getChannels, saveChannels, saveGroup } = useAppStore()
   const [selectedId, setSelectedId] = useState('')
   const [rows, setRows] = useState<PairRow[]>([])
   const [dirty, setDirty] = useState(false)
@@ -50,18 +49,25 @@ export function ChannelsScreen() {
   const [confirmTemplate, setConfirmTemplate] = useState(false)
   /** 递增一下就让渠道列表把搜索清掉 —— 保存被拦下时，问题行可能正被搜索藏着 */
   const [filterResetToken, setFilterResetToken] = useState(0)
+  /** 分组表单：editing 为 null 表示新建 */
+  const [groupForm, setGroupForm] = useState<{ open: boolean; editing: GroupItem | null }>({
+    open: false,
+    editing: null,
+  })
+  const [groupBusy, setGroupBusy] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
-  const selected = jksItems.find((item) => item.id === selectedId)
+  const selected = groups.find((item) => item.id === selectedId)
 
   useEffect(() => {
-    if (jksItems.length === 0) {
+    if (groups.length === 0) {
       setSelectedId('')
       return
     }
-    if (!jksItems.some((item) => item.id === selectedId)) {
-      setSelectedId(jksItems[0].id)
+    if (!groups.some((item) => item.id === selectedId)) {
+      setSelectedId(groups[0].id)
     }
-  }, [jksItems, selectedId])
+  }, [groups, selectedId])
 
   useEffect(() => {
     if (!selectedId) {
@@ -71,7 +77,7 @@ export function ChannelsScreen() {
     let cancelled = false
     setLoading(true)
     setStatus(null)
-    // 换 jks 后旧的导入确认框已经没意义了
+    // 换分组后旧的导入确认框已经没意义了
     setPending(null)
     getChannels(selectedId)
       .then((config) => {
@@ -98,10 +104,10 @@ export function ChannelsScreen() {
     }
   }, [selectedId, getChannels])
 
-  // 前缀默认取 jks 基名（即 id），可直接改
+  // 前缀默认取分组的英文名（写进包的那个标识），可直接改
   useEffect(() => {
-    setPrefix(selectedId)
-  }, [selectedId])
+    setPrefix(selected?.app ?? selectedId)
+  }, [selected?.app, selectedId])
 
   const duplicates = useMemo(() => findDuplicates(rows.map((row) => row.key)), [rows])
   const hasEmpty = rows.some((row) => row.key.trim() === '')
@@ -254,35 +260,100 @@ export function ChannelsScreen() {
     }
   }
 
-  if (jksItems.length === 0) {
+  const handleSubmitGroup = async (payload: GroupFormPayload) => {
+    setGroupBusy(true)
+    setStatus(null)
+    try {
+      const editing = groupForm.editing
+      const result = editing
+        ? await saveGroup({ action: 'update', item: { ...editing, ...payload } })
+        : await saveGroup({ action: 'add', ...payload })
+      setGroupForm({ open: false, editing: null })
+      if (result.item) {
+        // 新建后直接切过去，省得用户再去下拉里找一遍
+        setSelectedId(result.item.id)
+      }
+      setStatus({
+        kind: 'ok',
+        text: editing
+          ? `分组「${result.item?.name ?? payload.name}」已更新。`
+          : `分组「${result.item?.name ?? payload.name}」已新建，现在可以往里面加渠道了。`,
+      })
+    } catch (error) {
+      setStatus({ kind: 'error', text: ipcErrorMessage(error) })
+    } finally {
+      setGroupBusy(false)
+    }
+  }
+
+  const handleDeleteGroup = async () => {
+    if (!selected) {
+      return
+    }
+    setGroupBusy(true)
+    setStatus(null)
+    try {
+      const name = selected.name
+      await saveGroup({ action: 'remove', id: selected.id })
+      setConfirmDelete(false)
+      setStatus({ kind: 'ok', text: `分组「${name}」及其渠道列表已删除。` })
+    } catch (error) {
+      setStatus({ kind: 'error', text: ipcErrorMessage(error) })
+    } finally {
+      setGroupBusy(false)
+    }
+  }
+
+  const groupDialogs = (
+    <>
+      <GroupFormDialog
+        open={groupForm.open}
+        onOpenChange={(open) => setGroupForm({ open, editing: open ? groupForm.editing : null })}
+        group={groupForm.editing}
+        busy={groupBusy}
+        onSubmit={handleSubmitGroup}
+      />
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title="删除分组？"
+        description={`会删掉「${selected?.name ?? ''}」以及它名下的渠道列表。`}
+        warning="渠道列表文件会一并删掉，删了就没了。"
+        confirmText="删除分组"
+        destructive
+        onConfirm={handleDeleteGroup}
+      />
+    </>
+  )
+
+  if (groups.length === 0) {
     return (
       <div className="flex flex-col gap-4">
-        <PageHeader description="每个 jks 各自维护一份渠道列表。" />
+        <PageHeader description="一个分组一份渠道列表，导出后可直接给 walle 的 batch2 -f 使用。" />
         <Card>
           <CardHeader>
-            <CardTitle>还没有 jks</CardTitle>
+            <CardTitle>还没有分组</CardTitle>
             <CardDescription>
-              这个页面把渠道列表按 jks 分开存放，所以得先有一个 jks。
+              分组是渠道列表的家，跟 jks 没关系 —— 没有 jks 也能建。
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <p className="text-sm text-muted-foreground">
-              jks 在这两件事上各有一个用途：出包时当签名凭据（要重签名才需要），
-              以及给渠道列表当存放位置（只写渠道也走这里）。所以想让渠道列表有个固定的家，
-              就得先新增一个 jks。
+              一个分组代表一个应用：中文应用名给人看，英文名写进包的{' '}
+              <code>defaultExtraInfo.app</code>。出包时选中哪个分组，就按哪个分组的渠道列表出包。
             </p>
             <p className="text-sm text-muted-foreground">
-              如果这次只是临时出一批渠道包、手上还没有 jks：出包页把 jks 选成「不用 jks」，
-              直接导入一份渠道 JSON 就能出包，不必为此专门造一个 jks。
+              jks 从此只管签名：要重签名才需要它，只写渠道时可以完全不选。
             </p>
             <div className="flex flex-wrap gap-2">
-              <Button onClick={() => go('jks')}>去「签名配置」新增 jks</Button>
-              <Button variant="outline" onClick={() => go('pack')}>
-                去「出包」用「不用 jks」
+              <Button onClick={() => setGroupForm({ open: true, editing: null })}>
+                <Plus />
+                新建分组
               </Button>
             </div>
           </CardContent>
         </Card>
+        {groupDialogs}
       </div>
     )
   }
@@ -290,7 +361,7 @@ export function ChannelsScreen() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
-        description="每个 jks 各自维护一份渠道列表，导出后可直接给 walle 的 batch2 -f 使用。"
+        description="一个分组一份渠道列表，导出后可直接给 walle 的 batch2 -f 使用。"
         actions={
           <>
             {dirty ? <span className="text-xs text-muted-foreground">有未保存的修改</span> : null}
@@ -318,25 +389,51 @@ export function ChannelsScreen() {
 
       <Card>
         <CardHeader>
-          <CardTitle>选择 jks</CardTitle>
+          <CardTitle>选择分组</CardTitle>
           <CardDescription>
-            {selected ? `应用名 defaultExtraInfo.app = ${selected.app}` : '请选择一个 jks'}
+            {selected
+              ? `英文名 defaultExtraInfo.app = ${selected.app}${
+                  selected.appLabel ? `　中文应用名 ${selected.appLabel}` : ''
+                }`
+              : '请选择一个分组'}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <div className="max-w-sm">
-            <Select value={selectedId} onValueChange={setSelectedId}>
-              <SelectTrigger aria-label="选择 jks">
-                <SelectValue placeholder="请选择 jks" />
-              </SelectTrigger>
-              <SelectContent>
-                {jksItems.map((item) => (
-                  <SelectItem key={item.id} value={item.id}>
-                    {item.displayName}（{item.id}）
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="max-w-sm flex-1">
+              <Select value={selectedId} onValueChange={setSelectedId}>
+                <SelectTrigger aria-label="选择分组">
+                  <SelectValue placeholder="请选择分组" />
+                </SelectTrigger>
+                <SelectContent>
+                  {groups.map((item) => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {item.name}（{item.app}）
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button variant="outline" onClick={() => setGroupForm({ open: true, editing: null })}>
+              <Plus />
+              新建分组
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setGroupForm({ open: true, editing: selected ?? null })}
+              disabled={!selected}
+            >
+              <Pencil />
+              编辑
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setConfirmDelete(true)}
+              disabled={!selected || saving || loading}
+            >
+              <Trash2 />
+              删除
+            </Button>
           </div>
 
           <div className="flex flex-wrap items-end gap-2">
@@ -439,6 +536,8 @@ export function ChannelsScreen() {
           applyTemplate()
         }}
       />
+
+      {groupDialogs}
     </div>
   )
 }

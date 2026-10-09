@@ -49,7 +49,7 @@ function fileNameOf(filePath: string): string {
 }
 
 export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormDialogProps) {
-  const { template, jksItems, saveJks, saveChannels, verifyCredentials } = useAppStore()
+  const { template, jksItems, saveJks, saveChannels, saveGroup, verifyCredentials } = useAppStore()
 
   const [sourcePath, setSourcePath] = useState('')
   const [displayName, setDisplayName] = useState('')
@@ -111,7 +111,7 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
 
   /*
    * 新增模式下还没选 jks 文件时，渠道数据整块不可操作。
-   * 渠道列表是挂在 jks 上的（data/channels/<id>.json），id 又由文件名推导而来，
+   * 保存时会顺手建一个同 id 的分组来存这份渠道（见 handleCreate），而 id 由文件名推导，
    * 文件都没选就先让人编渠道，编完也无处可落，只能白填。
    */
   const noJks = !isEdit && sourcePath.trim() === ''
@@ -399,13 +399,24 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
      * 草稿列表才是最终内容，不再按来源分支 ——
      * 用户可能选「不套用模板」后手工加了几行，那几行同样要落库。
      * 一条都没有时不写渠道文件，与之前的行为一致（读的时候给空配置）。
+     *
+     * 渠道的归属已经是「分组」（R1），所以先建一个同 id 的分组再写渠道文件 ——
+     * 否则 channels/<id>.json 会变成界面上看不见的孤儿文件。
+     * 分组 id 沿用 jks 的 id，文件路径与拆分前完全一致；之后删掉这个 jks 也不影响分组（R4）。
      */
     const channelInfoList = draftChannels
       .map((row) => ({ channel: row.key.trim(), alias: row.alias.trim() }))
       .filter((row) => row.channel !== '')
       .map((row) => (row.alias !== '' ? row : { channel: row.channel }))
     if (channelInfoList.length > 0) {
-      await saveChannels(created.id, {
+      const group = await saveGroup({
+        action: 'add',
+        id: created.id,
+        name: created.displayName,
+        appLabel: '',
+        app: created.app,
+      })
+      await saveChannels(group.item?.id ?? created.id, {
         defaultExtraInfo: { app: created.app },
         channelInfoList,
       })
@@ -413,7 +424,11 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
 
     const suffix =
       finalAlias !== alias.trim() ? `，别名已修正为「${finalAlias}」` : ''
-    onFinished(`已新增 ${created.id} 并校验通过${suffix}。`)
+    const groupNote =
+      channelInfoList.length > 0
+        ? `，渠道已存进分组「${created.displayName}」`
+        : ''
+    onFinished(`已新增 ${created.id} 并校验通过${suffix}${groupNote}。`)
     return true
   }
 
@@ -597,13 +612,17 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
               </div>
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="jks-app">应用名</Label>
+              <Label htmlFor="jks-app">英文名</Label>
               <Input
                 id="jks-app"
                 value={app}
                 onChange={(event) => setApp(event.target.value)}
-                placeholder="写入 defaultExtraInfo.app"
+                placeholder="写入 defaultExtraInfo.app，例如 demo"
               />
+              <p className="text-xs text-muted-foreground">
+                写进包的 <code>defaultExtraInfo.app</code>。新增时下面配的渠道会存进一个同 id
+                的分组，分组的英文名就取这里；分组建好之后以分组上的为准。
+              </p>
             </div>
           </div>
 
@@ -710,7 +729,7 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
                   noJks
                     ? '选择 jks 文件后，这里就能编辑渠道了。'
                     : channelMode === 'empty'
-                      ? '还没有渠道条目。点下面的「添加一行」就能直接给这个 jks 加渠道。'
+                      ? '还没有渠道条目。点下面的「添加一行」就能直接给它加渠道。'
                       : channelMode === 'template'
                         ? '模板为空，生成不出条目。可改用「不套用模板」手工添加。'
                         : '还没读到渠道。选一份 channelConfig.json 就会出现在这里。'

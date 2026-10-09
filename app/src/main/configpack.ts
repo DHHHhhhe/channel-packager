@@ -16,7 +16,8 @@ import {
   type PackPreviewResult,
 } from '../shared/types/pack'
 import { buildChannelsFromTemplate, parseChannelConfig } from '../shared/utils/channels'
-import { allocateId, keystoreRelativePath, sha256File } from './keystore'
+import { allocateId } from '../shared/utils/ids'
+import { keystoreRelativePath, sha256File } from './keystore'
 import { getChannelsDir, getKeystoresDir } from './paths'
 import { runProcess, tailLines } from './proc'
 import { resolveRuntimeComponentPath } from './runtime'

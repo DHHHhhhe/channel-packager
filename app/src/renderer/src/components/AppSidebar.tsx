@@ -12,8 +12,8 @@ export interface NavItem {
 
 export const NAV_ITEMS: readonly NavItem[] = [
   { view: 'pack', label: '出包', hint: '选 APK 与渠道，开始分包', icon: Package },
-  { view: 'jks', label: '签名配置', hint: '每个 jks 的凭据与应用名', icon: KeyRound },
-  { view: 'channels', label: '渠道配置', hint: '每个 jks 的渠道列表', icon: ListTree },
+  { view: 'jks', label: '签名配置', hint: '每个 jks 的签名凭据', icon: KeyRound },
+  { view: 'channels', label: '渠道配置', hint: '每个分组的渠道列表', icon: ListTree },
   { view: 'template', label: '渠道模板', hint: '新增 jks 时可套用的后缀表', icon: ScrollText },
 ]
 

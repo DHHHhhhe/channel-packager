@@ -3,6 +3,8 @@ import type {
   ChannelConfig,
   ChannelEntry,
   CredentialVerifyResult,
+  GroupMutation,
+  GroupMutationResult,
   JksMutation,
   JksMutationResult,
   RefreshResult,
@@ -51,12 +53,16 @@ export interface RendererApi {
    */
   takeStoreProblems(): Promise<StoreProblem[]>
 
-  /** 新增 / 更新 / 删除 jks。新增时复制副本，删除时一并清副本与渠道文件 */
+  /** 新增 / 更新 / 删除 jks。新增时复制副本；删除时只清副本，不再级联删渠道（R4） */
   saveJks(mutation: JksMutation): Promise<JksMutationResult>
 
   /** 读 sourcePath 现内容与记录指纹比对，只报告差异，不自动同步 */
   refreshJksFromSource(id: string): Promise<RefreshResult>
 
+  /** 新增 / 更新 / 删除分组。删除时一并清掉它的渠道文件 */
+  saveGroup(mutation: GroupMutation): Promise<GroupMutationResult>
+
+  /** 键是**分组 id**，不是 jks id */
   getChannels(id: string): Promise<ChannelConfig>
   saveChannels(id: string, config: ChannelConfig): Promise<ChannelConfig>
   saveTemplate(template: TemplateFile): Promise<TemplateFile>

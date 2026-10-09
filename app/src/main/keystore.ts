@@ -3,8 +3,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { JksItem, JksMutationResult, RefreshResult } from '../shared/types/store'
 import { baseNameOf, deriveAlias, derivePassword } from '../shared/utils/credentials'
+import { allocateId } from '../shared/utils/ids'
 import { resolveInData } from './paths'
-import { deleteChannels, readJksFile, writeChannels, writeJksFile } from './store'
+import { readJksFile, writeJksFile } from './store'
 
 /** jks 只有几 KB，直接整读进内存算摘要即可 */
 export function sha256File(filePath: string): string {
@@ -16,18 +17,6 @@ export function sha256File(filePath: string): string {
 /** 副本在 data/ 下的相对路径。统一存正斜杠，JSON 跨平台可读 */
 export function keystoreRelativePath(id: string): string {
   return `keystores/${id}.jks`
-}
-
-/** 同 id 已被占用时退到 <id>_2、<id>_3…，绝不覆盖已有副本 */
-export function allocateId(baseId: string, taken: ReadonlySet<string>): string {
-  if (!taken.has(baseId)) {
-    return baseId
-  }
-  let index = 2
-  while (taken.has(`${baseId}_${index}`)) {
-    index += 1
-  }
-  return `${baseId}_${index}`
 }
 
 export interface AddKeystoreOptions {
@@ -84,8 +73,6 @@ export function addKeystore(sourcePath: string, options: AddKeystoreOptions = {}
 
   file.items.push(item)
   writeJksFile(file)
-  // 顺手建一份空的渠道文件，保证 channels/<id>.json 与条目一一对应
-  writeChannels(id, { defaultExtraInfo: { app: item.app }, channelInfoList: [] })
 
   return { status: 'added', items: file.items, item }
 }
@@ -101,7 +88,10 @@ export function updateJksItem(item: JksItem): JksMutationResult {
   return { status: 'updated', items: file.items, item }
 }
 
-/** 删除条目时一并清掉副本与渠道文件，否则同 id 重新导入会读到上一份渠道列表 */
+/**
+ * 删除条目时一并清掉副本。
+ * 不再级联删渠道文件（R4）：分组是渠道的归属，删 jks 不该动别人的分组。
+ */
 export function removeJksItem(id: string): JksMutationResult {
   const file = readJksFile()
   const target = file.items.find((item) => item.id === id)
@@ -115,7 +105,6 @@ export function removeJksItem(id: string): JksMutationResult {
   file.items = file.items.filter((item) => item.id !== id)
   writeJksFile(file)
   fs.rmSync(copyPath, { force: true })
-  deleteChannels(id)
 
   return { status: 'removed', items: file.items }
 }

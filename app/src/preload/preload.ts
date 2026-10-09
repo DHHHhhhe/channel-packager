@@ -6,6 +6,8 @@ import type {
   ChannelConfig,
   ChannelEntry,
   CredentialVerifyResult,
+  GroupMutation,
+  GroupMutationResult,
   JksMutation,
   JksMutationResult,
   RefreshResult,
@@ -64,6 +66,10 @@ const api: RendererApi = {
 
   refreshJksFromSource(id: string): Promise<RefreshResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.jksRefreshFromSource, id)
+  },
+
+  saveGroup(mutation: GroupMutation): Promise<GroupMutationResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.storeSaveGroup, mutation)
   },
 
   getChannels(id: string): Promise<ChannelConfig> {

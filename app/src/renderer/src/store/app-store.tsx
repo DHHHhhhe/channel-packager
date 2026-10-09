@@ -10,6 +10,9 @@ import {
 import type {
   ChannelConfig,
   CredentialVerifyResult,
+  GroupItem,
+  GroupMutation,
+  GroupMutationResult,
   JksItem,
   JksMutation,
   JksMutationResult,
@@ -34,10 +37,14 @@ interface AppStoreValue {
   /** 文件在、却读不出来的那些配置。空数组表示都正常 */
   problems: StoreProblem[]
   jksItems: JksItem[]
+  /** 渠道分组。渠道列表的归属，与 jks 无关 */
+  groups: GroupItem[]
   template: TemplateFile
   reload: () => Promise<void>
   saveJks: (mutation: JksMutation) => Promise<JksMutationResult>
+  saveGroup: (mutation: GroupMutation) => Promise<GroupMutationResult>
   saveTemplate: (template: TemplateFile) => Promise<void>
+  /** 键是分组 id */
   getChannels: (id: string) => Promise<ChannelConfig>
   saveChannels: (id: string, config: ChannelConfig) => Promise<void>
   refreshJks: (id: string) => Promise<RefreshResult>
@@ -62,6 +69,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const [usedFallback, setUsedFallback] = useState(false)
   const [problems, setProblems] = useState<StoreProblem[]>([])
   const [jksItems, setJksItems] = useState<JksItem[]>([])
+  const [groups, setGroups] = useState<GroupItem[]>([])
   const [template, setTemplate] = useState<TemplateFile>({ version: 1, suffixes: [] })
 
   /** 按路径去重地并进问题列表，免得渠道列表读到的问题把 jks 列表那条顶掉 */
@@ -87,6 +95,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       setDataDir(snapshot.dataDir)
       setUsedFallback(snapshot.usedFallback)
       setJksItems(snapshot.jks.items)
+      setGroups(snapshot.groups.items)
       setTemplate(snapshot.template)
       setProblems(snapshot.problems)
       setLoadError(null)
@@ -111,11 +120,17 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       usedFallback,
       problems,
       jksItems,
+      groups,
       template,
       reload,
       async saveJks(mutation: JksMutation) {
         const result = await window.api.saveJks(mutation)
         setJksItems(result.items)
+        return result
+      },
+      async saveGroup(mutation: GroupMutation) {
+        const result = await window.api.saveGroup(mutation)
+        setGroups(result.items)
         return result
       },
       async saveTemplate(next: TemplateFile) {
@@ -138,7 +153,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         return window.api.verifyCredentials(id, password, alias)
       },
     }),
-    [loading, initialized, loadError, dataDir, usedFallback, problems, jksItems, template, reload, mergeProblems],
+    [loading, initialized, loadError, dataDir, usedFallback, problems, jksItems, groups, template, reload, mergeProblems],
   )
 
   return <AppStoreContext.Provider value={value}>{children}</AppStoreContext.Provider>
