@@ -103,6 +103,25 @@ export function NavProvider({ children }: { children: ReactNode }) {
   }, [go])
 
   /*
+   * 菜单里的「页面」那一栏：键位显示在菜单上，点了也走同一条路。
+   *
+   * 菜单项没让系统注册快捷键（registerAccelerator: false），所以按 Ctrl+1 还是
+   * 上面那个监听器在处理，这里只接鼠标点击。
+   */
+  useEffect(() => {
+    return window.api.onNavCommand((command) => {
+      if (command === 'save') {
+        saveRef.current.get(viewRef.current)?.()
+        return
+      }
+      const item = NAV_ITEMS.find((entry) => entry.view === command)
+      if (item) {
+        go(item.view)
+      }
+    })
+  }, [go])
+
+  /*
    * 关窗口是唯一还会丢东西的出口，拦一下。
    *
    * 拦住之后 Electron 会取消这次关闭，窗口什么反应都没有 —— 所以顺手弹一句提示，

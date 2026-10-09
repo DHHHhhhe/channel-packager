@@ -56,6 +56,9 @@ export const IPC_CHANNELS = {
 
   /** 用系统文件资源管理器打开一个目录或文件；返回错误信息，成功时为空串 */
   shellOpenPath: 'shell:openPath',
+
+  /** 菜单里的页面/保存命令，由主进程推给渲染层。快捷键的键位写在菜单上才有人看得见 */
+  navCommand: 'nav:command',
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]

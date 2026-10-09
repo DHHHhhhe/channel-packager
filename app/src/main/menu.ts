@@ -1,4 +1,31 @@
-import { app, Menu, type MenuItemConstructorOptions } from 'electron'
+import { app, BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron'
+import { IPC_CHANNELS } from '../shared/constants/channels'
+import type { NavCommand } from '../shared/types/api'
+
+/**
+ * 页面菜单项：把键位写在菜单上，别人才知道有快捷键。
+ *
+ * registerAccelerator: false 是关键 —— 按键本身由渲染层的全局按键处理
+ * （见 store/nav.tsx），这里只负责**显示**键位，并给鼠标用户一个入口。
+ * 交给系统注册的话，按 Ctrl+1 会被菜单截走，界面里那套反而不触发。
+ */
+function navItem(
+  label: string,
+  accelerator: string,
+  command: NavCommand,
+): MenuItemConstructorOptions {
+  return {
+    label,
+    accelerator,
+    registerAccelerator: false,
+    click: (_item, target) => {
+      // 第二参在类型上是 BaseWindow（可能不是窗口，也可能已经关了），要收窄
+      if (target instanceof BrowserWindow) {
+        target.webContents.send(IPC_CHANNELS.navCommand, command)
+      }
+    },
+  }
+}
 
 /**
  * 装一份中文应用菜单。
@@ -38,6 +65,17 @@ export function installApplicationMenu(): void {
         { role: 'copy', label: '复制' },
         { role: 'paste', label: '粘贴' },
         { role: 'selectAll', label: '全选' },
+      ],
+    },
+    {
+      label: '页面',
+      submenu: [
+        navItem('出包', 'CmdOrCtrl+1', 'pack'),
+        navItem('签名配置', 'CmdOrCtrl+2', 'jks'),
+        navItem('渠道配置', 'CmdOrCtrl+3', 'channels'),
+        navItem('模板与配置包', 'CmdOrCtrl+4', 'template'),
+        { type: 'separator' },
+        navItem('保存当前页', 'CmdOrCtrl+S', 'save'),
       ],
     },
     {

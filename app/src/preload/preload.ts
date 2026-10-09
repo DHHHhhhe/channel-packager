@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import { IPC_CHANNELS } from '../shared/constants/channels'
-import type { RendererApi } from '../shared/types/api'
+import type { NavCommand, RendererApi } from '../shared/types/api'
 import type { RuntimeCheckResult } from '../shared/types/runtime'
 import { parseThemeChoice, type ThemeChoice } from '../shared/types/settings'
 import type {
@@ -131,6 +131,17 @@ const api: RendererApi = {
     ipcRenderer.on(IPC_CHANNELS.taskProgress, handler)
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.taskProgress, handler)
+    }
+  },
+
+  onNavCommand(listener: (command: NavCommand) => void): () => void {
+    // 同样只把负载交出去，IpcRendererEvent 不上送
+    const handler = (_event: IpcRendererEvent, command: NavCommand): void => {
+      listener(command)
+    }
+    ipcRenderer.on(IPC_CHANNELS.navCommand, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.navCommand, handler)
     }
   },
 

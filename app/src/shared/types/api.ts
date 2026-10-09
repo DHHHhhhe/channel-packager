@@ -33,6 +33,12 @@ import type {
 } from './pack'
 
 /**
+ * 应用菜单发过来的导航命令：四个页面 id，外加 save（保存当前页）。
+ * 键位由渲染层的全局按键处理，菜单只负责「让人看见有哪些键」以及给鼠标用户入口。
+ */
+export type NavCommand = 'pack' | 'jks' | 'channels' | 'template' | 'save'
+
+/**
  * preload 通过 contextBridge 暴露到 window.api 的白名单接口。
  * 主进程与渲染进程共用此类型，保证两边签名一致。
  */
@@ -107,6 +113,12 @@ export interface RendererApi {
    * 组件卸载时务必调用，否则重复挂载会累积监听器、同一行输出收到多次。
    */
   onTaskProgress(listener: (event: TaskProgressEvent) => void): () => void
+
+  /**
+   * 订阅应用菜单里的页面/保存命令，返回取消订阅函数。
+   * 菜单项上的快捷键只是展示，按键本身由渲染层的全局按键处理 —— 见 store/nav.tsx。
+   */
+  onNavCommand(listener: (command: NavCommand) => void): () => void
 
   /**
    * 取消正在跑的出包任务。返回是否真的取消了 —— 任务已经跑完时返回 false，
