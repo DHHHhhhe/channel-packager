@@ -117,4 +117,12 @@ export interface RendererApi {
    * 复制的多是失败诊断，里面全是本机绝对路径，发给别人前不必再手工改。
    */
   writeClipboard(text: string): Promise<void>
+
+  /**
+   * 用系统文件资源管理器打开一个目录或文件。
+   *
+   * 返回错误信息，成功时是空串（`shell.openPath` 的契约）。路径不存在时也会
+   * 直接返回一句中文说明，不会弹出系统自己的报错框。
+   */
+  openPath(targetPath: string): Promise<string>
 }

@@ -560,6 +560,46 @@ pnpm 那条是实测确认的（pnpm 11.8.0）：
 | 改回 10 分钟后重跑同一包 | `出包完成 1 个包`，与改动前行为一致（回归无变化） |
 | 预置 35 份假日志后跑一次出包 | 目录从 35 份变成 31 份 = 30 份（`dummy06`–`dummy35`）+ 本次新日志，`dummy01`–`dummy05` 已删 |
 
+## 后续增强：结果卡片上的三个动作（2026-10-08 五续）
+
+起因是审计里的 P1-7「出包结果可回到界面」：结果卡片只把信息摆出来，看完就断了 —— 想打开产物目录、想再看一眼日志、想拿同一份包换个渠道再跑一遍，都得自己回到资源管理器或重新拖一次包。
+
+三处口径先跟用户确认过：**「重跑本次」只把参数填回表单，不直接开跑**（同一份包换个渠道、换个输出目录再跑是常见动作，直接开跑会让人来不及改）；打开目录走系统文件资源管理器；日志路径那一行也变成可点的按钮。
+
+### 改动
+
+| 位置 | 改动 | 理由 |
+|---|---|---|
+| `app/src/shared/constants/channels.ts` | 新增 `shellOpenPath: 'shell:openPath'` | 通道名只有这一处来源，主进程与 preload 都从这里取 |
+| `app/src/main/ipc/shell.ts`（新增） | `registerShellIpc()`：空路径直接回「没有可打开的路径」，路径不存在回「路径不存在，可能已经被移走或删掉了」，其余交给 `shell.openPath` | 返回错误信息而不是抛异常 —— 这是 `shell.openPath` 自己的契约（成功时空串）。失败时的工作目录、日志都可能被手工挪走，先自己验一遍才不会弹出更难懂的系统报错 |
+| `app/src/main/main.ts` | 在 `registerClipboardIpc()` 之后注册 `registerShellIpc()` | 与既有 IPC 注册顺序一致 |
+| `app/src/preload/preload.ts`、`app/src/shared/types/api.ts` | `openPath(targetPath: string): Promise<string>` | 渲染层只判空串，不需要区分错误种类 |
+| `app/src/renderer/src/screens/PackScreen.tsx` | 结果卡片顶部加一行动作：「打开输出目录」「重跑本次」+ 一句「「重跑本次」只把参数填回上面的表单，不会立刻开跑」 | 放在产物表格之前：这是看完结果后最可能做的下一步 |
+| `app/src/renderer/src/screens/PackScreen.tsx` | 新增 `lastRun` state，`handleStart` 里把这次用的 `TaskInput` 存下来；「重跑本次」用 `pendingPickedRef` 把勾选交给读渠道列表那个 effect | `setJksId` 会触发重新读盘并把勾选重置成「全选」，所以换 jks 时勾选必须等读完再套用；没换 jks 时那个 effect 不跑，直接套用 |
+| `app/src/renderer/src/screens/PackScreen.tsx` | 日志那一行改成 `<button>`（不是 `Button` 组件） | 日志路径要能折行，而 `whitespace-nowrap` 写在 `Button` 的基类里，再叠一个 `whitespace-normal` 谁赢取决于 Tailwind 的生成顺序，不保险 |
+| `app/src/renderer/src/screens/PackScreen.tsx` | `handleOpenPath(target, what)` 统一处理两个按钮：空目标与打不开都写成中文状态行 | 路径不存在时不再静默失败 |
+
+### 实测结果（开发构建 + CDP 驱动，页面错误 `[]`）
+
+成功场景（夹具 `id=t15` / 渠道 `t15_gf`(官方)、`t15_hw`(华为)，输入包 104,301,040 字节）：
+
+| 场景 | 结果 |
+|---|---|
+| 先取消勾选「华为」再出包 | `出包完成 1 个包`，耗时 5.3 s |
+| 把输出目录改掉、再点「全选」 | 表单变成 `…\changed` + 两条都勾上 |
+| 点「重跑本次」 | APK / 输出目录 / jks / 签名模式全部回到上次出包时的值，`t15_hw` 重新变成**未勾选**；状态行「已把上次出包的参数填回上面，确认后点「开始出包」。」；「开始出包」按钮仍是空闲态、结果卡片仍是同一个任务 —— **确认没有自动开跑** |
+| 点「打开输出目录」 | 资源管理器新开一个窗口，地址正是 `…\p7\out` |
+| 点日志路径 | 用记事本打开了那份 `2026…log`，卡片上没有出现错误提示 |
+| `window.api.openPath('')` | 返回「没有可打开的路径」 |
+| `window.api.openPath('…\definitely-missing\x.log')` | 返回「路径不存在，可能已经被移走或删掉了」（都不产生副作用） |
+
+失败场景（把夹具里的 `storePassword` 故意写成 `654321`）：
+
+| 场景 | 结果 |
+|---|---|
+| 重签名时 apksigner 失败 | 卡片同时渲染三块：动作行（`打开输出目录` / `重跑本次` / 提示语）、失败诊断块（`卡在：apksigner 重签名` / `退出码：2` / 任务号 / 13 行输出 / `复制诊断信息` / 工作目录）、`日志：` + 可点按钮；`window.__h.errs()` 为空 |
+| 改掉输出目录后点「重跑本次」 | 输出目录回到 `…\p7\out`，卡片还在 |
+
 ## 风险与回滚点
 
 | 风险 | 触发点 | 回滚/对策 |

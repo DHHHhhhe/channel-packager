@@ -135,6 +135,10 @@ const api: RendererApi = {
   writeClipboard(text: string): Promise<void> {
     return ipcRenderer.invoke(IPC_CHANNELS.clipboardWrite, text)
   },
+
+  openPath(targetPath: string): Promise<string> {
+    return ipcRenderer.invoke(IPC_CHANNELS.shellOpenPath, targetPath)
+  },
 }
 
 contextBridge.exposeInMainWorld('api', api)

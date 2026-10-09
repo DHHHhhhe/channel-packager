@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Copy, Eye, Package, Upload } from 'lucide-react'
+import { Copy, Eye, FileText, FolderOpen, Package, RotateCcw, Upload } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 import { ProgressPanel } from '@/components/ProgressPanel'
 import { Badge } from '@/components/ui/badge'
@@ -25,7 +25,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import type { ChannelEntry } from '@shared/types/store'
-import type { SignMode, TaskResult, TaskStage, WalleShowResult } from '@shared/types/task'
+import type { SignMode, TaskInput, TaskResult, TaskStage, WalleShowResult } from '@shared/types/task'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { useAppStore } from '@/store/app-store'
 
@@ -132,8 +132,13 @@ export function PackScreen() {
   const [result, setResult] = useState<TaskResult | null>(null)
   /** 「复制诊断信息」点过了，用来把按钮旁的提示换掉 */
   const [copied, setCopied] = useState(false)
+  /** 本次出包用的参数，供结果卡片上的「重跑本次」填回表单 */
+  const [lastRun, setLastRun] = useState<TaskInput | null>(null)
   // null 表示「本界面还没启动过任务」；此时到达的进度一定属于本次启动
   const taskIdRef = useRef<string | null>(null)
+  // 「重跑本次」要恢复的勾选。渠道列表是异步读的，得等读完再套用，
+  // 否则会被读盘那一步的「默认全选」盖掉。
+  const pendingPickedRef = useRef<string[] | null>(null)
 
   useEffect(() => {
     const unsubscribe = window.api.onTaskProgress((event) => {
@@ -179,7 +184,17 @@ export function PackScreen() {
           return
         }
         setChannels(config.channelInfoList)
-        setPicked(new Set(config.channelInfoList.map((entry) => entry.channel)))
+        const codes = config.channelInfoList.map((entry) => entry.channel)
+        const pending = pendingPickedRef.current
+        if (pending === null) {
+          setPicked(new Set(codes))
+          return
+        }
+        // 「重跑本次」恢复的勾选：只留这个 jks 里还存在的渠道，
+        // 上一次跑完到现在的这段时间里渠道可能已经被删掉了。
+        pendingPickedRef.current = null
+        const available = new Set(codes)
+        setPicked(new Set(pending.filter((code) => available.has(code))))
       })
       .catch((error) => {
         if (!cancelled) {
@@ -254,14 +269,17 @@ export function PackScreen() {
     setStage('启动中')
     taskIdRef.current = null
     setRunning(true)
+    // 先记下这次用的参数，跑完能在结果卡片上「重跑本次」
+    const params: TaskInput = {
+      apkPath: apkPath.trim(),
+      jksId,
+      channelCodes: [...picked],
+      signMode,
+      outputDir: outputDir.trim(),
+    }
+    setLastRun(params)
     try {
-      const started = await window.api.runTask({
-        apkPath: apkPath.trim(),
-        jksId,
-        channelCodes: [...picked],
-        signMode,
-        outputDir: outputDir.trim(),
-      })
+      const started = await window.api.runTask(params)
       taskIdRef.current = started.taskId
     } catch (error) {
       setRunning(false)
@@ -277,6 +295,49 @@ export function PackScreen() {
     try {
       await window.api.writeClipboard(buildDiagnostic(result))
       setCopied(true)
+    } catch (error) {
+      setStatus({ kind: 'error', text: ipcErrorMessage(error) })
+    }
+  }
+
+  /*
+   * 「重跑本次」只把参数填回表单，不立刻开跑：同一份包换个渠道、换个输出目录再跑
+   * 是常见动作，直接开跑会让人来不及改。
+   *
+   * 勾选要分两条路走 —— 换了 jks 的话，下面读渠道列表那个 effect 会重跑并把勾选
+   * 重置成全选，所以得把要恢复的勾选交给它；没换 jks 时它不会跑，直接套用。
+   */
+  const handleRerun = () => {
+    if (!lastRun) {
+      return
+    }
+    if (lastRun.jksId === jksId) {
+      const available = new Set(channels.map((entry) => entry.channel))
+      setPicked(new Set(lastRun.channelCodes.filter((code) => available.has(code))))
+    } else {
+      pendingPickedRef.current = lastRun.channelCodes
+    }
+    setApkPath(lastRun.apkPath)
+    setJksId(lastRun.jksId)
+    setSignMode(lastRun.signMode)
+    setOutputDir(lastRun.outputDir)
+    setStatus({ kind: 'ok', text: '已把上次出包的参数填回上面，确认后点「开始出包」。' })
+  }
+
+  /*
+   * 打开目录或日志交给系统资源管理器。路径可能已经被手工挪走或删掉，
+   * 所以主进程把「打不开」当返回值给（成功是空串），这里只判空串。
+   */
+  const handleOpenPath = async (target: string, what: string): Promise<void> => {
+    if (target === '') {
+      setStatus({ kind: 'error', text: `没有可打开的${what}。` })
+      return
+    }
+    try {
+      const error = await window.api.openPath(target)
+      if (error !== '') {
+        setStatus({ kind: 'error', text: `打不开${what}：${error}` })
+      }
     } catch (error) {
       setStatus({ kind: 'error', text: ipcErrorMessage(error) })
     }
@@ -306,6 +367,9 @@ export function PackScreen() {
 
   // 失败诊断只在失败时存在；提到这里是为了在 JSX 里拿到窄化后的类型
   const failure = result && !result.ok ? result.failure : undefined
+
+  // 输出目录是出包一开始就建的（工作目录在它下面），校验阶段就失败时它才是空的
+  const openDirTarget = result ? result.outputDir : ''
 
   return (
     <div className="flex flex-col gap-4">
@@ -521,6 +585,29 @@ export function PackScreen() {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void handleOpenPath(openDirTarget, '输出目录')}
+              >
+                <FolderOpen />
+                打开输出目录
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRerun}
+                disabled={lastRun === null || running}
+              >
+                <RotateCcw />
+                重跑本次
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                「重跑本次」只把参数填回上面的表单，不会立刻开跑
+              </span>
+            </div>
+
             {result.artifacts.length > 0 ? (
               <div className="overflow-hidden rounded-lg border">
                 <Table>
@@ -616,7 +703,22 @@ export function PackScreen() {
               </div>
             ) : null}
 
-            <p className="text-xs text-muted-foreground">日志：{result.logFile}</p>
+            {/*
+              这里不用 Button：日志路径要能折行（`whitespace-nowrap` 写在 Button 的基类里，
+              再叠一个 whitespace-normal 谁赢取决于 Tailwind 的生成顺序，不保险）。
+            */}
+            <div className="flex flex-wrap items-baseline gap-1 text-xs text-muted-foreground">
+              <span>日志：</span>
+              <button
+                type="button"
+                onClick={() => void handleOpenPath(result.logFile, '日志')}
+                title="用系统默认程序打开这份日志"
+                className="inline-flex items-baseline gap-1 break-all text-left font-mono text-primary underline-offset-4 hover:underline"
+              >
+                <FileText className="size-3.5 shrink-0 self-center" />
+                {result.logFile}
+              </button>
+            </div>
           </CardContent>
         </Card>
       ) : null}

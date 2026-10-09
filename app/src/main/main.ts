@@ -6,6 +6,7 @@ import { registerRuntimeIpc } from './ipc/runtime'
 import { registerStoreIpc } from './ipc/store'
 import { registerTaskIpc } from './ipc/task'
 import { registerPackIpc } from './ipc/pack'
+import { registerShellIpc } from './ipc/shell'
 import { initPaths } from './paths'
 
 /** dev 时由 vite-plugin-electron 注入；打包后不存在 */
@@ -85,6 +86,7 @@ app.whenReady().then(() => {
   registerTaskIpc()
   registerPackIpc()
   registerClipboardIpc()
+  registerShellIpc()
 
   createWindow()
 
