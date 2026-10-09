@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { TEMPLATE_SEED } from '../shared/constants/templateSeed'
-import type { ChannelEntry, JksItem, TemplateSuffix } from '../shared/types/store'
+import type { ChannelEntry, GroupFile, GroupItem, JksItem, TemplateSuffix } from '../shared/types/store'
 import {
   PACK_FORMAT,
   PACK_VERSION,
@@ -23,11 +23,14 @@ import { runProcess, tailLines } from './proc'
 import { resolveRuntimeComponentPath } from './runtime'
 import {
   JKS_FILE_VERSION,
+  groupsFilePath,
   jksFilePath,
+  readGroups,
   readJksFile,
   readTemplate,
   templateFilePath,
   writeChannels,
+  writeGroups,
   writeJksFile,
   writeTemplate,
 } from './store'
@@ -37,6 +40,8 @@ const JKS_NAME = 'jks.json'
 const TEMPLATE_NAME = 'template.json'
 const KEYSTORES_DIR = 'keystores'
 const CHANNELS_DIR = 'channels'
+/** 与 store.ts 的 GROUPS_FILE_NAME 必须一致：包内路径是导入导出两侧的契约 */
+const GROUPS_NAME = 'groups.json'
 
 /** 上限只用于挡住「明显不是配置包」的超大文件，正常配置包是几百 KB */
 const MAX_PACK_BYTES = 512 * 1024 * 1024
@@ -258,12 +263,21 @@ export async function exportConfigPack(input: PackExportInput): Promise<PackExpo
       for (const name of listFiles(getChannelsDir())) {
         stage(`${CHANNELS_DIR}/${name}`, path.join(getChannelsDir(), name))
       }
+      /*
+       * 分组索引必须跟 channels/ 成对走：渠道文件的归属写在它里面。
+       * 只导渠道不导索引，对方拿到的是一堆没主的文件 —— 导入侧也就无从还原
+       * （会退回「每个 jks 一个分组」的老包路径，等于分组名与应用名全丢了）。
+       */
+      if (fs.existsSync(groupsFilePath())) {
+        stage(GROUPS_NAME, groupsFilePath())
+      }
     } else {
       /*
        * 不含凭据时仍要放一份**空的** jks.json：导入侧第一步就是读它，
        * 缺文件会被判成「这不是本工具导出的配置包」。空列表则一路走空循环，
        * 对方的既有 jks 一条都不会动（importConfigPack 是在本机列表上追加）。
-       * 渠道列表挂在 jks 上，没有 jks 就没有渠道可带，所以 channels/ 也一并省掉。
+       * 渠道列表与分组索引也一并省掉：这份包只用来「拿一份渠道模板」，
+       * 分组是对方自己的东西，不该被一份空包动到。
        */
       const emptyJks = `${JSON.stringify({ version: JKS_FILE_VERSION, items: [] }, null, 2)}\n`
       const target = safeJoin(staging, JKS_NAME)
@@ -360,6 +374,95 @@ export interface PackImportInput {
   overwriteTemplate: boolean
 }
 
+/**
+ * 还原配置包里的分组索引（含各分组自己的渠道列表），返回包内分组 id → 本机分组 id 的映射。
+ *
+ * 分组与 jks 没有绑定关系（A′），所以这一段**独立于 jks 的冲突处理**：
+ * jks 的「跳过 / 覆盖 / 保留两份」不会影响分组；分组一律**追加**，id 撞车就另分一个
+ * —— 就地顶掉本机同名分组，等于把人家的渠道列表换了，那是数据丢失而不是冲突处理。
+ *
+ * 包内没有 groups.json（老包）时返回空映射，由调用方走「每个 jks 一个分组」那条老路。
+ */
+function restorePackedGroups(
+  dir: string,
+  manifest: PackManifest,
+  notes: string[],
+  groupFile: GroupFile,
+  taken: Set<string>,
+): { hasIndex: boolean; changed: boolean } {
+  if (manifest.files[GROUPS_NAME] === undefined) {
+    return { hasIndex: false, changed: false }
+  }
+
+  const text = fs.readFileSync(safeJoin(dir, GROUPS_NAME), 'utf8')
+  let parsed: { items?: unknown }
+  try {
+    parsed = JSON.parse(text) as { items?: unknown }
+  } catch {
+    notes.push('配置包里的 groups.json 不是合法 JSON，分组未导入')
+    return { hasIndex: false, changed: false }
+  }
+  const incoming = Array.isArray(parsed.items) ? parsed.items : null
+  if (incoming === null) {
+    notes.push('配置包里的 groups.json 结构不符（缺少 items 数组），分组未导入')
+    return { hasIndex: false, changed: false }
+  }
+
+  const now = new Date().toISOString()
+  let imported = 0
+
+  for (const raw of incoming) {
+    const entry = raw as Partial<GroupItem>
+    if (typeof entry.id !== 'string' || entry.id.trim() === '') {
+      continue
+    }
+    const packId = entry.id
+    const id = allocateId(packId, taken)
+    const app = typeof entry.app === 'string' ? entry.app : ''
+    const appLabel = typeof entry.appLabel === 'string' ? entry.appLabel : ''
+    const rawName = typeof entry.name === 'string' ? entry.name.trim() : ''
+    // 名字缺了就退回中文应用名、再退回英文名 —— 与 applyGroupMutation 的兜底同序
+    const name = rawName !== '' ? rawName : appLabel.trim() !== '' ? appLabel.trim() : app
+
+    groupFile.items.push({
+      id,
+      name: name.trim() === '' ? id : name,
+      appLabel,
+      app,
+      createdAt: now,
+      updatedAt: now,
+    })
+    taken.add(id)
+    imported += 1
+
+    const channelsRelative = `${CHANNELS_DIR}/${packId}.json`
+    if (manifest.files[channelsRelative] !== undefined) {
+      const channelsText = fs.readFileSync(safeJoin(dir, channelsRelative), 'utf8')
+      const channels = parseChannelConfig(channelsText, `配置包里的 ${channelsRelative}`)
+      // defaultExtraInfo.app 归分组所有：用索引里的值写回，不信渠道文件里那份（R1）
+      writeChannels(id, { defaultExtraInfo: { app }, channelInfoList: channels.channelInfoList })
+    }
+  }
+
+  if (imported > 0) {
+    notes.push(`导入了 ${imported} 个分组`)
+  }
+
+  // 有渠道文件却没进索引的，是包里的孤儿 —— 说出来，别让它悄悄消失
+  const orphans = Object.keys(manifest.files).filter(
+    (relative) =>
+      relative.startsWith(`${CHANNELS_DIR}/`) &&
+      !incoming.some(
+        (raw) => `${CHANNELS_DIR}/${(raw as Partial<GroupItem>).id ?? ''}.json` === relative,
+      ),
+  )
+  if (orphans.length > 0) {
+    notes.push(`配置包里有 ${orphans.length} 份渠道列表没有对应的分组，已跳过`)
+  }
+
+  return { hasIndex: true, changed: imported > 0 }
+}
+
 export async function importConfigPack(input: PackImportInput): Promise<PackImportResult> {
   const { dir, manifest } = await extractAndVerify(input.packPath)
   const notes: string[] = []
@@ -372,6 +475,20 @@ export async function importConfigPack(input: PackImportInput): Promise<PackImpo
     const items = [...current.items]
     const byId = new Map(items.map((item) => [item.id, item]))
     const taken = new Set(byId.keys())
+
+    // 分组索引：新包（带 groups.json）一次还原；老包在下面按 jks 逐个补建
+    const groupFile = readGroups()
+    const takenGroups = new Set(groupFile.items.map((entry) => entry.id))
+    const restored = restorePackedGroups(dir, manifest, notes, groupFile, takenGroups)
+    let groupsChanged = restored.changed
+    if (restored.changed) {
+      /*
+       * 新包的分组在 restorePackedGroups 里就已经把渠道文件写下去了，
+       * 索引必须同时落地 —— 否则下面 jks 那圈一旦抛错，留下的渠道文件没人认领。
+       * （结尾还会再写一次，把老包补建的分组一起带上；原子写，重复写无副作用。）
+       */
+      writeGroups(groupFile)
+    }
 
     let importedJks = 0
     let skipped = 0
@@ -409,14 +526,38 @@ export async function importConfigPack(input: PackImportInput): Promise<PackImpo
       const keystoreRelative = keystoreRelativePath(targetId)
       copyInto(dir, item.keystoreFile, path.join(getKeystoresDir(), `${targetId}.jks`))
 
-      const channelsRelative = `${CHANNELS_DIR}/${item.id}.json`
-      if (manifest.files[channelsRelative] !== undefined) {
-        const text = fs.readFileSync(safeJoin(dir, channelsRelative), 'utf8')
-        const parsed = parseChannelConfig(text, `配置包里的 ${channelsRelative}`)
-        writeChannels(targetId, {
-          defaultExtraInfo: { app: targetItem.app },
-          channelInfoList: parsed.channelInfoList,
-        })
+      /*
+       * 渠道列表跟着**分组**走（R1），不再挂在 jks 上。
+       *
+       * 新包的分组（连同各自的渠道）已经在上面的 restorePackedGroups 里还原过了，
+       * 这里不再碰 —— 否则会按 jks id 又写出一份没人认领的渠道文件。
+       *
+       * 老包（version=1，没有分组索引）沿用「每个 jks 一个分组」的还原方式，
+       * 判据与 migrateGroupsIfNeeded 一致：已经有同 id 分组就并进去，不重复建。
+       */
+      if (!restored.hasIndex) {
+        const channelsRelative = `${CHANNELS_DIR}/${item.id}.json`
+        if (manifest.files[channelsRelative] !== undefined) {
+          const text = fs.readFileSync(safeJoin(dir, channelsRelative), 'utf8')
+          const parsed = parseChannelConfig(text, `配置包里的 ${channelsRelative}`)
+          if (!takenGroups.has(targetId)) {
+            groupFile.items.push({
+              id: targetId,
+              name: targetItem.displayName,
+              // 中文应用名是本次新增的概念，老包里没有来源 —— 留空由用户补
+              appLabel: '',
+              app: targetItem.app,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            })
+            takenGroups.add(targetId)
+            groupsChanged = true
+          }
+          writeChannels(targetId, {
+            defaultExtraInfo: { app: targetItem.app },
+            channelInfoList: parsed.channelInfoList,
+          })
+        }
       }
 
       const normalized: JksItem = { ...targetItem, id: targetId, keystoreFile: keystoreRelative }
@@ -438,6 +579,10 @@ export async function importConfigPack(input: PackImportInput): Promise<PackImpo
       if (normalized.sourcePath !== '' && !fs.existsSync(normalized.sourcePath)) {
         missingSources.push(targetId)
       }
+    }
+
+    if (groupsChanged) {
+      writeGroups(groupFile)
     }
 
     writeJksFile({ version: JKS_FILE_VERSION, items })
@@ -513,7 +658,7 @@ export function previewChannels(app: string, sourcePath: string): ChannelListPre
   const notes: string[] = []
   if (parsed.app !== undefined && parsed.app !== app) {
     notes.push(
-      `文件里的 defaultExtraInfo.app 是「${parsed.app}」，与本 jks 的「${app}」不同；按 jks 的值为准，文件里的未采用。`,
+      `文件里的 defaultExtraInfo.app 是「${parsed.app}」，与本分组的「${app}」不同；按分组的值来，文件里的未采用。`,
     )
   }
   return {
@@ -549,7 +694,7 @@ export function exportSampleChannels(
   const config = buildChannelsFromTemplate(fromTemplate ? suffixes : SAMPLE_SUFFIXES, prefix, app)
   const payload = {
     _说明:
-      '这是示例文件。改好 channelInfoList 后用「导入 JSON」读回来；defaultExtraInfo.app 会按当前 jks 的值覆盖。',
+      '这是示例文件。改好 channelInfoList 后用「导入 JSON」读回来；defaultExtraInfo.app 会按当前分组的值覆盖。',
     ...config,
   }
   fs.mkdirSync(path.dirname(targetPath), { recursive: true })

@@ -189,8 +189,8 @@ export function TemplateScreen() {
             <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
               <Info className="mt-0.5 size-3.5 shrink-0" />
               <span>
-                这份包里只有渠道模板，没有私钥、密码，也没有渠道列表（渠道列表挂在 jks 上，没有 jks
-                就没得带）。适合发给同事当初始配置，对方导入后自己新增 jks 再套用模板。
+                这份包里只有渠道模板，没有私钥、密码，也没有分组与渠道列表。适合发给同事当初始配置，对方导入后自己新增
+                jks 再套用模板。
               </span>
             </p>
           ) : (
