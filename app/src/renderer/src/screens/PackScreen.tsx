@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Copy, Eye, FileText, FolderOpen, Package, RotateCcw, Upload } from 'lucide-react'
+import { Eye, ListPlus, Package, Upload } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
+import { PackQueueCard, type QueueItem } from '@/components/PackQueueCard'
 import { ProgressPanel } from '@/components/ProgressPanel'
-import { Badge } from '@/components/ui/badge'
+import { TaskResultCard } from '@/components/TaskResultCard'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -15,7 +16,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
   Dialog,
   DialogContent,
@@ -25,26 +25,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import type { ChannelEntry } from '@shared/types/store'
-import type { SignMode, TaskInput, TaskResult, TaskStage, WalleShowResult } from '@shared/types/task'
+import type { SignMode, TaskInput, TaskResult, WalleShowResult } from '@shared/types/task'
 import { ipcErrorMessage } from '@/lib/ipc-error'
+import { STAGE_LABELS } from '@/lib/task-report'
 import { useAppStore } from '@/store/app-store'
-
-const STAGE_LABELS: Record<TaskStage, string> = {
-  validate: '校验输入',
-  prepare: '准备工作目录',
-  'check-source': '核对输入包签名',
-  align: 'zipalign 对齐',
-  sign: 'apksigner 重签名',
-  'verify-sign': '校验签名',
-  rename: '还原为原包名',
-  'resigned-copy': '另存已签名未写渠道的包',
-  'channel-json': '写渠道配置',
-  walle: 'walle 写渠道',
-  check: '校验产物渠道号',
-  publish: '移动到输出目录',
-  done: '完成',
-  failed: '失败',
-}
 
 /** 默认输出到 APK 同级的「渠道包」目录（K11） */
 function defaultOutputDir(apkPath: string): string {
@@ -66,51 +50,6 @@ function baseNameOf(filePath: string): string {
   return normalized.slice(normalized.lastIndexOf('/') + 1)
 }
 
-/**
- * 拼出「复制诊断信息」的内容。
- *
- * 只放定位问题用得上的东西，不塞组件版本 —— 收件人真正要看的是卡在哪一步、
- * 退出码多少、那一步说了什么。家目录的脱敏不在这里做：主进程写剪贴板时按
- * `os.homedir()` 精确替换（见 app/src/main/ipc/clipboard.ts），
- * 比在这儿拿正则猜路径长什么样可靠（用户名带空格时会猜错）。
- */
-function buildDiagnostic(result: TaskResult): string {
-  const failure = result.failure
-  const lines: string[] = [
-    '渠道分包工具 · 出包失败',
-    `任务号：${result.taskId}`,
-    `失败步骤：${failure ? STAGE_LABELS[failure.stage] : '未知'}`,
-    `原因：${result.message}`,
-  ]
-  if (failure?.exitCode !== undefined) {
-    lines.push(`退出码：${failure.exitCode}`)
-  }
-  if (failure?.timedOut) {
-    lines.push('该步骤没有输出后被杀掉：等满超时时间仍未结束，已强制终止进程')
-  }
-  if (failure && failure.outputTail && failure.outputTail.length > 0) {
-    lines.push(`该步骤输出末尾 ${failure.outputTail.length} 行：`)
-    for (const line of failure.outputTail) {
-      lines.push(`    ${line}`)
-    }
-  }
-  if (result.outputDir !== '') {
-    lines.push(`输出目录：${result.outputDir}`)
-  }
-  if (result.workDir !== '') {
-    lines.push(`工作目录：${result.workDir}`)
-  }
-  lines.push(`日志：${result.logFile}`)
-  if (result.warnings.length > 0) {
-    lines.push('过程中的提醒：')
-    for (const warning of result.warnings) {
-      lines.push(`    ${warning}`)
-    }
-  }
-  // 记事本也能正常换行，别只给 \n
-  return lines.join('\r\n')
-}
-
 export function PackScreen() {
   const { jksItems, getChannels } = useAppStore()
   const [apkPath, setApkPath] = useState('')
@@ -130,12 +69,18 @@ export function PackScreen() {
   const [stage, setStage] = useState<string | null>(null)
   const [lines, setLines] = useState<string[]>([])
   const [result, setResult] = useState<TaskResult | null>(null)
-  /** 「复制诊断信息」点过了，用来把按钮旁的提示换掉 */
-  const [copied, setCopied] = useState(false)
   /** 本次出包用的参数，供结果卡片上的「重跑本次」填回表单 */
   const [lastRun, setLastRun] = useState<TaskInput | null>(null)
+  /** 批量出包的队列。空数组时整个队列卡片不渲染 */
+  const [queue, setQueue] = useState<QueueItem[]>([])
+  const [queueRunning, setQueueRunning] = useState(false)
+  /** 上一次出包是不是「开始队列」发起的 —— 决定结果卡片归谁渲染 */
+  const [ranQueue, setRanQueue] = useState(false)
   // null 表示「本界面还没启动过任务」；此时到达的进度一定属于本次启动
   const taskIdRef = useRef<string | null>(null)
+  // 队列在等这一项的最终结果。进度事件带 result 时把它叫醒，循环才往下走；
+  // runTask 自己抛错时没人叫醒，所以参数允许 null 表示「这一项没结果」。
+  const queueResolveRef = useRef<((result: TaskResult | null) => void) | null>(null)
   // 「重跑本次」要恢复的勾选。渠道列表是异步读的，得等读完再套用，
   // 否则会被读盘那一步的「默认全选」盖掉。
   const pendingPickedRef = useRef<string[] | null>(null)
@@ -154,8 +99,13 @@ export function PackScreen() {
       }
       if (event.result) {
         setResult(event.result)
-        setCopied(false)
         setRunning(false)
+        // 队列在等这一项跑完；叫醒它，否则循环会一直停在 await 上
+        const resolve = queueResolveRef.current
+        if (resolve !== null) {
+          queueResolveRef.current = null
+          resolve(event.result)
+        }
       }
     })
     return unsubscribe
@@ -261,22 +211,25 @@ export function PackScreen() {
     }
   }
 
+  /** 把当前表单的参数整理成一份出包输入；单次出包与「加入队列」共用 */
+  const currentParams = (): TaskInput => ({
+    apkPath: apkPath.trim(),
+    jksId,
+    channelCodes: [...picked],
+    signMode,
+    outputDir: outputDir.trim(),
+  })
+
   const handleStart = async () => {
     setLines([])
     setResult(null)
-    setCopied(false)
     setStatus(null)
     setStage('启动中')
+    setRanQueue(false)
     taskIdRef.current = null
     setRunning(true)
     // 先记下这次用的参数，跑完能在结果卡片上「重跑本次」
-    const params: TaskInput = {
-      apkPath: apkPath.trim(),
-      jksId,
-      channelCodes: [...picked],
-      signMode,
-      outputDir: outputDir.trim(),
-    }
+    const params = currentParams()
     setLastRun(params)
     try {
       const started = await window.api.runTask(params)
@@ -285,18 +238,6 @@ export function PackScreen() {
       setRunning(false)
       setStage('失败')
       setLines([ipcErrorMessage(error)])
-    }
-  }
-
-  const handleCopyDiagnostic = async (): Promise<void> => {
-    if (!result) {
-      return
-    }
-    try {
-      await window.api.writeClipboard(buildDiagnostic(result))
-      setCopied(true)
-    } catch (error) {
-      setStatus({ kind: 'error', text: ipcErrorMessage(error) })
     }
   }
 
@@ -363,13 +304,126 @@ export function PackScreen() {
     return list
   }, [apkPath, selectedJks, channels.length, picked.size, outputDir])
 
-  const canStart = blockers.length === 0 && !running
+  const canStart = blockers.length === 0 && !running && !queueRunning
 
-  // 失败诊断只在失败时存在；提到这里是为了在 JSX 里拿到窄化后的类型
-  const failure = result && !result.ok ? result.failure : undefined
+  /*
+   * 「加入队列」把当前表单的参数存成一项。队列是当时的意图的快照 ——
+   * 之后改表单、改 jks 名字都不该动它，否则排队排到一半内容就变了。
+   */
+  const handleEnqueue = () => {
+    if (blockers.length > 0) {
+      setStatus({ kind: 'error', text: `还差：${blockers.join('、')}` })
+      return
+    }
+    const params = currentParams()
+    const item: QueueItem = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      params,
+      apkName: baseNameOf(params.apkPath),
+      jksName: selectedJks?.displayName ?? params.jksId,
+      status: 'pending',
+    }
+    setQueue((previous) => [...previous, item])
+    setStatus({ kind: 'ok', text: `已加入队列（第 ${queue.length + 1} 项），点「开始队列」一起出包。` })
+  }
 
-  // 输出目录是出包一开始就建的（工作目录在它下面），校验阶段就失败时它才是空的
-  const openDirTarget = result ? result.outputDir : ''
+  /*
+   * 串行跑队列。
+   *
+   * 单项失败只标它自己，循环照常往下走 —— 一批里坏一个就全停，等于把「批量」
+   * 这件事废掉了。结果要等进度事件带 result 才拿得到（runTask 只回 taskId），
+   * 所以用 queueResolveRef 把这一项挂起，进度回调来叫醒。
+   */
+  const handleStartQueue = async (): Promise<void> => {
+    const pending = queue.filter((item) => item.status === 'pending')
+    if (pending.length === 0) {
+      setStatus({ kind: 'error', text: '队列里没有待出包的任务。' })
+      return
+    }
+    setStatus(null)
+    setRanQueue(true)
+    setQueueRunning(true)
+    setRunning(true)
+    let ok = 0
+    let bad = 0
+    for (const item of pending) {
+      setLines([])
+      setResult(null)
+      setStage('启动中')
+      setQueue((previous) =>
+        previous.map((row) => (row.id === item.id ? { ...row, status: 'running' } : row)),
+      )
+      /*
+       * 先把「等结果」的钩子挂上，再启动任务。
+       *
+       * 反过来写会漏事件：流水线在「校验输入」阶段就失败时几乎立刻返回，那条带
+       * result 的进度事件可能比 runTask 的返回值先到，那时钩子还没挂上，这一项
+       * 就会永远停在「出包中」（打包态实测踩到过）。
+       * taskIdRef 仍要先清成 null，否则新任务的进度会被上一项的 taskId 过滤掉。
+       */
+      const waited = new Promise<TaskResult | null>((resolve) => {
+        queueResolveRef.current = resolve
+      })
+      taskIdRef.current = null
+      let failureText = ''
+      try {
+        const started = await window.api.runTask(item.params)
+        taskIdRef.current = started.taskId
+      } catch (error) {
+        failureText = ipcErrorMessage(error)
+        // runTask 自己就抛了错，不会有结果事件来叫醒，这里手动收尾
+        const resolve = queueResolveRef.current
+        queueResolveRef.current = null
+        if (resolve !== null) {
+          resolve(null)
+        }
+      }
+      const outcome = await waited
+      if (outcome === null) {
+        // runTask 自己就抛了错（还没轮到流水线），这时没有结果卡片可看，只记一句
+        bad += 1
+        setQueue((previous) =>
+          previous.map((row) =>
+            row.id === item.id
+              ? { ...row, status: 'failed', error: failureText || '没拿到这次出包的结果' }
+              : row,
+          ),
+        )
+      } else if (outcome.ok) {
+        ok += 1
+        setQueue((previous) =>
+          previous.map((row) => (row.id === item.id ? { ...row, status: 'done', result: outcome } : row)),
+        )
+      } else {
+        bad += 1
+        setQueue((previous) =>
+          previous.map((row) =>
+            row.id === item.id ? { ...row, status: 'failed', result: outcome } : row,
+          ),
+        )
+      }
+    }
+    setQueueRunning(false)
+    setRunning(false)
+    setStage(null)
+    // 队列的逐项结果在队列卡片里看，别让最后一项又占一张单次出包的结果卡片
+    setResult(null)
+    setStatus({
+      kind: bad === 0 ? 'ok' : 'error',
+      text:
+        `队列跑完：成功 ${ok} 项，失败 ${bad} 项。` +
+        (bad > 0 ? '失败的那几项点「详情」看诊断信息。' : ''),
+    })
+  }
+
+  const handleClearQueue = () => {
+    setQueue([])
+    setStatus({ kind: 'ok', text: '队列已清空。' })
+  }
+
+  const handleRemoveQueueItem = (id: string) => {
+    setQueue((previous) => previous.filter((item) => item.id !== id))
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -564,163 +618,36 @@ export function PackScreen() {
       <ProgressPanel stage={stage} lines={lines} />
 
       <div className="flex flex-wrap items-center gap-3">
-        <Button onClick={handleStart} disabled={!canStart}>
+        <Button onClick={() => void handleStart()} disabled={!canStart}>
           {running ? '出包中…' : '开始出包'}
+        </Button>
+        <Button variant="outline" onClick={handleEnqueue} disabled={!canStart}>
+          <ListPlus />
+          加入队列
         </Button>
         {blockers.length > 0 ? (
           <span className="text-sm text-muted-foreground">还差：{blockers.join('、')}</span>
         ) : null}
       </div>
 
-      {result ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              {result.ok ? '出包完成' : '出包失败'}
-              {result.ok ? <Badge variant="outline">{result.artifacts.length} 个包</Badge> : null}
-            </CardTitle>
-            <CardDescription>
-              {result.message}
-              {result.outputDir ? ` ｜ 输出目录：${result.outputDir}` : ''}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void handleOpenPath(openDirTarget, '输出目录')}
-              >
-                <FolderOpen />
-                打开输出目录
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleRerun}
-                disabled={lastRun === null || running}
-              >
-                <RotateCcw />
-                重跑本次
-              </Button>
-              <span className="text-xs text-muted-foreground">
-                「重跑本次」只把参数填回上面的表单，不会立刻开跑
-              </span>
-            </div>
+      {result && !ranQueue ? (
+        <TaskResultCard
+          result={result}
+          onOpenPath={handleOpenPath}
+          onRerun={handleRerun}
+          rerunDisabled={lastRun === null || running || queueRunning}
+        />
+      ) : null}
 
-            {result.artifacts.length > 0 ? (
-              <div className="overflow-hidden rounded-lg border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>文件名</TableHead>
-                      <TableHead>渠道号</TableHead>
-                      <TableHead>别名</TableHead>
-                      <TableHead>校验</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {result.artifacts.map((artifact) => (
-                      <TableRow key={artifact.fileName}>
-                        <TableCell className="max-w-[20rem] truncate" title={artifact.path}>
-                          {artifact.fileName}
-                        </TableCell>
-                        <TableCell>{artifact.channel || '(空)'}</TableCell>
-                        <TableCell>{artifact.alias ?? '—'}</TableCell>
-                        <TableCell>
-                          {artifact.verified ? (
-                            <Badge variant="outline">通过</Badge>
-                          ) : (
-                            <Badge variant="destructive">{artifact.note ?? '未通过'}</Badge>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            ) : null}
-
-            {result.warnings.length > 0 ? (
-              <ul className="flex list-disc flex-col gap-1 pl-5 text-sm text-muted-foreground">
-                {result.warnings.map((warning) => (
-                  <li key={warning}>{warning}</li>
-                ))}
-              </ul>
-            ) : null}
-
-            {failure ? (
-              <div className="flex flex-col gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-3">
-                <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
-                  <span>
-                    卡在：<span className="font-medium">{STAGE_LABELS[failure.stage]}</span>
-                  </span>
-                  {failure.exitCode !== undefined ? (
-                    <span>
-                      退出码：<span className="font-mono">{failure.exitCode}</span>
-                    </span>
-                  ) : null}
-                  {failure.timedOut ? <span>卡住后已强制结束</span> : null}
-                  <span className="text-muted-foreground">任务号 {result.taskId}</span>
-                </div>
-
-                {failure.outputTail && failure.outputTail.length > 0 ? (
-                  <>
-                    <p className="text-sm text-muted-foreground">
-                      这个步骤的输出末尾 {failure.outputTail.length} 行：
-                    </p>
-                    <pre className="max-h-64 overflow-auto rounded-md bg-muted p-3 font-mono text-xs whitespace-pre-wrap">
-                      {failure.outputTail.join('\n')}
-                    </pre>
-                  </>
-                ) : failure.timedOut ? (
-                  <p className="text-sm text-muted-foreground">
-                    这个进程从头到尾一个字都没输出，等到超时就被强制结束了 —— 日志里能看到它停在哪个动作上。
-                  </p>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    这一步没有子进程输出 —— 报错来自程序自己的检查，不用去日志里找。
-                  </p>
-                )}
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={handleCopyDiagnostic}>
-                    <Copy />
-                    复制诊断信息
-                  </Button>
-                  <span className="text-xs text-muted-foreground">
-                    {copied
-                      ? '已复制，路径里的家目录已换成 %USERPROFILE%'
-                      : '复制的内容里，路径的家目录会换成 %USERPROFILE%'}
-                  </span>
-                </div>
-
-                {result.workDir !== '' ? (
-                  <p className="text-xs text-muted-foreground">
-                    工作目录（失败时保留，可对着中间产物排查）：{result.workDir}
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
-
-            {/*
-              这里不用 Button：日志路径要能折行（`whitespace-nowrap` 写在 Button 的基类里，
-              再叠一个 whitespace-normal 谁赢取决于 Tailwind 的生成顺序，不保险）。
-            */}
-            <div className="flex flex-wrap items-baseline gap-1 text-xs text-muted-foreground">
-              <span>日志：</span>
-              <button
-                type="button"
-                onClick={() => void handleOpenPath(result.logFile, '日志')}
-                title="用系统默认程序打开这份日志"
-                className="inline-flex items-baseline gap-1 break-all text-left font-mono text-primary underline-offset-4 hover:underline"
-              >
-                <FileText className="size-3.5 shrink-0 self-center" />
-                {result.logFile}
-              </button>
-            </div>
-          </CardContent>
-        </Card>
+      {queue.length > 0 ? (
+        <PackQueueCard
+          items={queue}
+          running={queueRunning}
+          onStart={() => void handleStartQueue()}
+          onClear={handleClearQueue}
+          onRemove={handleRemoveQueueItem}
+          onOpenPath={handleOpenPath}
+        />
       ) : null}
 
       <Dialog
