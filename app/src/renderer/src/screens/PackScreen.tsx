@@ -144,7 +144,9 @@ export function PackScreen() {
     if (jksItems.length === 0) {
       // 一个 jks 都没有：直接进「不用 jks」。只写渠道不需要私钥，
       // 不该因为签名配置是空的就完全没法出包。
+      // signMode 一并落成 skip —— 否则下拉会显示成「重签名」，与真正会发生的事不符。
       setJksId('')
+      setSignMode('skip')
       setNoJks(true)
       return
     }
@@ -234,19 +236,41 @@ export function PackScreen() {
    * 切「不用 jks」时把 jks 带来的渠道清掉 —— 那是上一个来源的残留，
    * 留着会让人以为渠道已经选好了。切回去时下面读渠道列表的 effect 会重新读。
    */
+  const switchToNoJks = () => {
+    setNoJks(true)
+    setJksId('')
+    // 没有私钥就只能跳过签名，这里顺手改掉，省得人以为还能重签名
+    setSignMode('skip')
+    setChannels([])
+    setPicked(new Set())
+    setChannelApp('')
+    setChannelFileName('')
+  }
+
   const handlePickJks = (value: string) => {
     if (value === NO_JKS) {
-      setNoJks(true)
-      // 没有私钥就只能跳过签名，这里顺手改掉，省得人以为还能重签名
-      setSignMode('skip')
-      setChannels([])
-      setPicked(new Set())
-      setChannelApp('')
-      setChannelFileName('')
+      switchToNoJks()
       return
     }
     setNoJks(false)
     setJksId(value)
+  }
+
+  /*
+   * 两个下拉是同一件事的两面：跳过签名不需要私钥，所以选它就等于选「不用 jks」；
+   * 反过来选重签名就必须有 jks，于是切回 jks 那条路。两个方向都自动接上，
+   * 免得人以为还得自己去另一个下拉里改一遍。
+   *
+   * 重签名时 jks 交给下面「自动选中第一个 jks」那条 effect 补 —— 这里放掉 noJks 就行。
+   * 一个 jks 都没有时，重签名那一项在界面上是禁用的，走不到这里。
+   */
+  const handlePickSignMode = (value: SignMode) => {
+    setSignMode(value)
+    if (value === 'skip') {
+      switchToNoJks()
+      return
+    }
+    setNoJks(false)
   }
 
   /*
@@ -380,6 +404,7 @@ export function PackScreen() {
       const restored = lastRun.channelInfoList ?? []
       const available = new Set(restored.map((entry) => entry.channel))
       setNoJks(true)
+      setJksId('')
       setChannels(restored)
       setChannelApp(lastRun.app ?? '')
       setChannelFileName('')
@@ -674,17 +699,16 @@ export function PackScreen() {
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="pack-sign-mode">签名模式</Label>
-              <Select
-                value={signMode}
-                onValueChange={(value) => setSignMode(value as SignMode)}
-                disabled={noJks}
-              >
+              <Select value={signMode} onValueChange={handlePickSignMode}>
                 <SelectTrigger id="pack-sign-mode">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="sign">重签名（zipalign + apksigner）</SelectItem>
-                  <SelectItem value="skip">跳过签名（用已签好的包，会先核对证书）</SelectItem>
+                  {/* 没有 jks 就没有私钥，重签名这一项选不了；jks 下拉里选回一个就会解开 */}
+                  <SelectItem value="sign" disabled={jksItems.length === 0}>
+                    重签名（zipalign + apksigner）
+                  </SelectItem>
+                  <SelectItem value="skip">跳过签名（不重签名，先核对包的签名）</SelectItem>
                 </SelectContent>
               </Select>
             </div>
