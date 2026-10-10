@@ -8,7 +8,7 @@
 
 Drop in an APK, tick the channels you want, and get a batch of channel packages back.
 
-**No install ceremony, no toolchain to set up** — the JRE, apksigner, zipalign and walle are all bundled. It replaces the old `APK拖动到此分包.bat` script.
+No Java to install, no Android SDK to configure — the JRE, apksigner, zipalign and walle are all bundled.
 
 ![Main window](docs/images/main.png)
 
@@ -16,7 +16,7 @@ Drop in an APK, tick the channels you want, and get a batch of channel packages 
 
 ## Contents
 
-- [What it solves](#what-it-solves)
+- [What it does](#what-it-does)
 - [Quick start](#quick-start)
 - [The interface](#the-interface)
 - [Channel lists belong to groups, not to keystores](#channel-lists-belong-to-groups-not-to-keystores)
@@ -29,17 +29,18 @@ Drop in an APK, tick the channels you want, and get a batch of channel packages 
 - [Third-party components](#third-party-components)
 - [License](#license)
 
-## What it solves
+## What it does
 
-|  | The old .bat | This tool |
-| --- | --- | --- |
-| Passwords | Hard-coded in the script | Stored per keystore, editable in the UI |
-| Channel config | One global JSON file | Organised as **groups**, decoupled from keystores, several can coexist |
-| Write channels only | Not possible (needs the private key) | Works without a private key — writes channels, does not re-sign |
-| Runtime | Needs a local Java and Android SDK | JRE / apksigner / zipalign / walle all bundled |
-| Moving machines | Reinstall the toolchain, fix paths | Ship one installer, or migrate wholesale with a config pack |
-| Adding a channel | Hand-edit JSON | Apply a template |
-| Debugging failures | Whatever scrolled past in the console | The result card names the failing step and shows the tail of its output, plus a full log |
+| Capability | Notes |
+| --- | --- |
+| Batch channel packages | One APK in, a batch of channel packages out, named `<original name>_<alias>.apk` |
+| Write channels without re-signing | Works when all you have is a package someone else signed and no private key |
+| Channels organised in groups | One channel list per group, decoupled from keystores, several can coexist; add channels from a template |
+| Passwords stored per keystore | Each keystore's password is kept separately, editable in the UI, with an eye button to check the plaintext |
+| No local toolchain | The JRE, apksigner, zipalign and walle are all bundled — no Java to install, no Android SDK to configure |
+| Portable configuration | Export a config pack (optionally without credentials) to move machines or sync a team in one shot |
+| Failures you can act on | The result card names the failing step, its exit code and the tail of its output, plus a full log |
+| Auto-update | Installed builds check for new versions themselves; the release notes come first and you decide whether to download |
 
 ## Quick start
 
@@ -279,11 +280,11 @@ Every channel id in `channelConfig.sample.json` has been rewritten (prefix `demo
 
 Only `channelInfoList` is read on import; if an older version's `defaultExtraInfo` is still in the file it is **ignored outright** (the tool no longer writes extra information into packages, and anything written there is metadata nobody reads).
 
-The repository's `.gitignore` already excludes `*.jks`, `*.keystore`, `*.apk`, `data/`, `channelConfig.json` and `APK拖动到此分包.bat`.
+The repository's `.gitignore` already excludes `*.jks`, `*.keystore`, `*.apk`, `data/` and `channelConfig.json`.
 
 ### There is no exe in the repository
 
-`app/release/` is in `.gitignore`, so a fresh clone contains **no exe at all** — run a build yourself (see [Building from source](#building-from-source)). The output is app/release/渠道分包工具-&lt;version&gt;.exe, about 114 MB.
+`app/release/` is in `.gitignore`, so a fresh clone contains **no exe at all** — run a build yourself (see [Building from source](#building-from-source)). The output is app/release/渠道分包工具-&lt;version&gt;.exe, about 120 MB.
 
 It is kept out of version control because it is a build artifact: hundreds of megabytes, and byte-different on every build (timestamps, signatures), so committing it would only bloat the repository.
 
