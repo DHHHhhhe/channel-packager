@@ -158,6 +158,39 @@ pwsh -File app/scripts/release.ps1
 - 装好的机器把更新地址固化在安装包的 `resources/app-update.yml` 里，**换地址要重新构建安装包**；临时换地址可以在数据目录放一份 `update.json`（`{"url":"http://内网服务器/渠道分包工具/"}`）。
 - 便携版与解压即用版不带自动更新，只有安装包会自己升级。
 
+### 用 GitHub Actions 自动发版
+
+仓库带了 `.github/workflows/release.yml`：推一个 `v<版本>` 标签，Actions 就在 Windows 上构建并把**安装包 + `.blockmap` + `latest.yml`** 传到 Releases。本机不用装 Node / Android SDK，也不用配 `GH_TOKEN`（用 Actions 自带的 `GITHUB_TOKEN`）。
+
+```powershell
+# 先改 app/package.json 的 version，提交推送之后：
+git tag v0.3.0
+git push origin main --tags
+```
+
+跑完 Release 直接是**正式版本**（客户端才认），已装旧版的机器打开应用就会自己升级。想先出草稿、人工点 Publish 再公开：在仓库的 Settings → Secrets and variables → Actions → Variables 里加一个 `EP_DRAFT=true`，或者在 Actions 页面手动触发这个工作流时把 `draft` 勾上。
+
+| 发版方式 | 适合 | 前置 |
+| --- | --- | --- |
+| `app/scripts/release.ps1` | 本机就有构建环境，想立刻发 | 装好 Node / pnpm，配好 `GH_TOKEN` |
+| GitHub Actions | 换机器发、给协作者发 | 仓库已经推到 GitHub |
+
+两种方式都只上传**安装包**（它是唯一带自动更新的产物）；便携版与解压即用版留在本机 `app/release/` 里，要发就手动传。
+
+### 第一次把仓库推到 GitHub
+
+```powershell
+# 装了 gh 的话（winget install GitHub.cli），一条命令建仓库并推上去：
+gh auth login
+gh repo create channel-packager --public --source=. --remote=origin --push
+
+# 没装 gh：先在网页上建一个空仓库，再
+git remote add origin https://github.com/<账号>/<仓库>.git
+git push -u origin main
+```
+
+推送前确认这几样没被带上去（`.gitignore` 已经拦住，但换机器 clone 后要复核）：`data/`、`*.jks`、`*.apk`、`channelConfig.json`。仓库里只有 `channelConfig.sample.json` 这一份脱敏样例。
+
 ## 已知注意事项
 
 ### 发给别人时，第一次打开会被 Windows 拦一下

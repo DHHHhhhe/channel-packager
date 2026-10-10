@@ -64,6 +64,8 @@ pwsh -File app/scripts/release.ps1
 
 GitHub 只接受它允许的字符做附件名，中文产物名会被换成 `channel-packager-setup-<版本>.exe`；`latest.yml` 里写的也是这个名字，两边一致，不用管。
 
+不想在本机构建也可以推标签让 CI 发：`.github/workflows/release.yml` 在 `v<版本>` 标签上跑，用 Actions 自带的 `GITHUB_TOKEN`，只上传安装包（nsis）。仓库 Variables 里加 `EP_DRAFT=true` 就改成出草稿。
+
 不想重新打包也能换地址：在数据目录放一份 `update.json`（内容是 `{"url":"http://内网服务器/渠道分包工具/"}`），应用启动时用它覆盖构建时的地址 —— 见 `app/src/main/updater.ts`。安装版与便携版都认这个文件。
 
 已知限制：装好的应用把地址固化在 `app-update.yml` 里，**换地址之前装出去的旧包看不到新地址的 Release**，只能重装，或者让它读 `update.json`。
@@ -72,7 +74,7 @@ GitHub 只接受它允许的字符做附件名，中文产物名会被换成 `ch
 
 `app/release/` 是构建产物目录，而 `app/release/data/` 是便携版的数据目录 —— 只要从 `app/release/` 里双击过那个 exe，它就会在那儿当场生成一份。里面有 jks 副本、明文口令、分组与渠道列表；`release/` 重建或清理时会被整个删掉，打包发人时也会被一起带走。
 
-- 正常用法：把 exe 与 `data/` 一起放在仓库外的目录（例如 `桌面\渠道工具-规划原件备份\渠道分包工具\`），从那里双击使用。
+- 正常用法：把 exe 与 `data/` 一起放在仓库外的目录（例如 `D:\工具\渠道分包工具\`），从那里双击使用。
 - 已加一道保险：`app/electron-builder.yml` 的 `beforePack` 钩子（实现在 `app/scripts/before-pack.cjs`）检测到 `app/release/data/` 就直接中止构建。
 - 真被拦下来时，按提示把 `data/` 挪到 exe 旁边，再重新构建。
 

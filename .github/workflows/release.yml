@@ -1,0 +1,88 @@
+# 打一个 v<版本> 标签就自动构建并发布到 Releases，安装版客户端的自动更新就指向这里。
+#
+# 发一版的完整流程：
+#     1. 改 app/package.json 的 version（必须比线上大，同号不会被升级）
+#     2. git add app/package.json && git commit -m "chore: 升到 0.3.0"
+#     3. git tag v0.3.0 && git push origin main --tags
+# 推完标签不用再做别的：Actions 跑完会在 Releases 里出现一个新版本，
+# 已装旧版的同事下次打开应用会自动下到它。
+#
+# 想先出草稿、人工点 Publish 才对外：在仓库的
+# Settings → Secrets and variables → Actions → Variables 里加一个 EP_DRAFT=true，
+# 或者在 Actions 页面手动触发这个工作流时把 draft 勾上。
+#
+# 注意：Release 的标签是 v<version>，和触发的标签必须一致，否则客户端找不到 latest.yml。
+
+name: 发布新版本
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      draft:
+        description: 出成草稿 Release（不对外可见，要去网页点 Publish）
+        type: boolean
+        default: false
+
+# electron-builder 要用 GITHUB_TOKEN 建 Release、传附件
+permissions:
+  contents: write
+
+# 同一个标签重复触发时，掐掉上一次没跑完的
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: 取出代码
+        uses: actions/checkout@v4
+
+      - name: 装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.8.0
+
+      - name: 装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+
+      - name: 装依赖
+        working-directory: app
+        run: pnpm install --frozen-lockfile
+
+      # 内置运行时不入库，构建前必须重建：jre 从 Adoptium 下载后 jlink 裁剪（约 182 MB），
+      # zipalign.exe 与 apksigner.jar 本机没装 Android SDK 就沿用仓库自带的那两份。
+      - name: 准备内置运行时
+        working-directory: app
+        run: pnpm prepare:runtime
+
+      - name: 构建并发布到 Releases
+        working-directory: app
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 置 true 就出草稿（EP_DRAFT 在 electron-builder 里优先级最高，会盖掉下面的 releaseType）
+          EP_DRAFT: ${{ inputs.draft || vars.EP_DRAFT }}
+          # 不加这个，往「发布超过 2 小时」的既有 Release 补传附件会被 electron-builder 静默跳过，
+          # 失败重跑同一个标签时就白跑了
+          EP_GH_IGNORE_TIME: true
+        run: |
+          pnpm build
+          .\node_modules\.bin\electron-builder.CMD --win nsis --publish always `
+            --config.publish.provider=github `
+            --config.publish.owner=${{ github.repository_owner }} `
+            --config.publish.repo=${{ github.event.repository.name }} `
+            --config.publish.releaseType=release
+
+      - name: 提示
+        if: ${{ !(inputs.draft || vars.EP_DRAFT) }}
+        run: |
+          Write-Host "已发布。安装包 + .blockmap + latest.yml 都在 Releases 里，"
+          Write-Host "装过旧版的机器打开应用就会自己升级。"
