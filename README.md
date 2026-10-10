@@ -1,44 +1,89 @@
 # 渠道分包工具
 
-免安装的 Android 渠道分包工具。把一个 APK 拖进来，按选中的渠道列表写入渠道信息并重签名，输出一批渠道包。
+**中文** ｜ [English](README.en.md)
 
-用来替代原来的 `APK拖动到此分包.bat`。
+[![version](https://img.shields.io/github/v/release/DHHHhhhe/channel-packager)](https://github.com/DHHHhhhe/channel-packager/releases)
+![platform](https://img.shields.io/badge/platform-Windows-0078d4)
+[![license](https://img.shields.io/github/license/DHHHhhhe/channel-packager)](LICENSE)
 
-## 和原脚本的区别
+把一个 APK 拖进来，勾几个渠道，得到一批写好渠道信息的渠道包。
 
-|            | 原 bat                | 本工具                                        |
-| ---------- | --------------------- | --------------------------------------------- |
-| 口令       | 写在脚本里            | 每个签名文件独立保存，界面里可改              |
-| 渠道配置   | 一个全局 JSON          | 按**分组**管理，与签名文件解耦，可并存多份    |
-| 只写渠道   | 做不到（必须给私钥）  | 没有私钥也能只写渠道，不重新签名              |
-| 运行环境   | 依赖本机 Java 与 Android SDK | JRE / apksigner / zipalign / walle 全部内置 |
-| 换机器     | 重配环境、改路径      | 只发 exe；或用配置包整体迁移                  |
-| 新增渠道   | 手改 JSON             | 模板一键套用                                  |
-| 出错排查   | 黑窗口滚过的输出      | 失败时卡片直接写出卡在哪一步与输出末尾，另有完整日志 |
+**免安装、免配环境** —— JRE、apksigner、zipalign、walle 全部内置，装上就能用。用来替代原来的 `APK拖动到此分包.bat`。
 
-## 使用
+![主界面](docs/images/main.png)
 
-1. 下载 `渠道分包工具-<版本>.exe`，放到任意可写目录（建议单独建一个文件夹）
-2. 双击运行
-3. 到「签名配置」新增签名文件：选择 `.jks` 文件，确认别名与口令，点「新增并校验」
-4. 到「渠道配置」新建分组并维护它的渠道列表；「模板与配置包」维护后缀表，新增签名文件时可一键套用
-5. 到「出包」把 APK 拖进去，勾选要出的渠道，点「开始出包」
+## 目录
 
-**渠道列表挂在「分组」上，不挂在签名文件上。** 一个分组 = 一份渠道列表，与有没有私钥无关：一个应用可以挂「正式」「测试」多个分组，同一份渠道列表也能给不同的签名文件用。选签名文件只是为了签名；手上只有别人签好的包、没有私钥时，签名那一栏选「不用签名文件」即可只写渠道、不重新签名。
+- [它解决什么](#它解决什么)
+- [快速开始](#快速开始)
+- [界面](#界面)
+- [渠道列表挂在分组上，不挂在签名文件上](#渠道列表挂在分组上不挂在签名文件上)
+- [功能细节](#功能细节)
+- [数据放在哪](#数据放在哪)
+- [配置包](#配置包)
+- [从源码构建](#从源码构建)
+- [发布新版本](#发布新版本)
+- [已知注意事项](#已知注意事项)
+- [第三方组件](#第三方组件)
+- [许可证](#许可证)
 
-侧边栏四个页面：
+## 它解决什么
 
-| 页面         | 作用                             |
-| ------------ | -------------------------------- |
-| 出包         | 选 APK 与渠道，开始分包          |
-| 签名配置     | 管理签名文件与密码               |
-| 渠道配置     | 维护分组与渠道列表               |
-| 模板与配置包 | 后缀模板、导入导出配置           |
+|  | 原 bat | 本工具 |
+| --- | --- | --- |
+| 口令 | 写在脚本里 | 每个签名文件独立保存，界面里可改 |
+| 渠道配置 | 一个全局 JSON | 按**分组**管理，与签名文件解耦，可并存多份 |
+| 只写渠道 | 做不到（必须给私钥） | 没有私钥也能只写渠道，不重新签名 |
+| 运行环境 | 依赖本机 Java 与 Android SDK | JRE / apksigner / zipalign / walle 全部内置 |
+| 换机器 | 重配环境、改路径 | 只发一个安装包；或用配置包整体迁移 |
+| 新增渠道 | 手改 JSON | 模板一键套用 |
+| 出错排查 | 黑窗口滚过的输出 | 失败时卡片直接写出卡在哪一步与输出末尾，另有完整日志 |
 
-### 几个好用的地方
+## 快速开始
+
+1. 到 [Releases](https://github.com/DHHHhhhe/channel-packager/releases) 下载 `channel-packager-setup-<版本>.exe` 装上（安装路径可以自己选）
+2. 打开应用，到「签名配置」新增签名文件：选 `.jks` 文件，确认别名与口令，点「新增并校验」
+3. 到「渠道配置」新建分组并维护它的渠道列表；「模板与配置包」维护后缀表，新增签名文件时可一键套用
+4. 到「出包」把 APK 拖进去，勾选要出的渠道，点「开始出包」
+
+> 第一次打开会被 Windows SmartScreen 拦一下（没有代码签名证书，发布者显示为「未知发布者」）。点「更多信息」→「仍要运行」即可，不是文件损坏。
+
+装好的版本会**自动检查更新**：发现新版本时先把更新内容摆出来，由你决定下不下；下载完可以立即重启，也可以下次关窗口时自动装上。
+
+> 便携版（`渠道分包工具-<版本>.exe`）与解压即用版不带自动更新，要更新得手动换包。这两种形态仓库里没有，需要自己构建（见[从源码构建](#从源码构建)）。
+
+## 界面
+
+![侧边栏](docs/images/sidebar.png)
+
+左侧四个页面：
+
+| 页面 | 作用 |
+| --- | --- |
+| 出包 | 选 APK 与渠道，开始分包 |
+| 签名配置 | 管理签名文件与密码 |
+| 渠道配置 | 维护分组与渠道列表 |
+| 模板与配置包 | 后缀模板、导入导出配置 |
+
+导航项右侧的数字是「家底计数」（有几个签名文件、几个分组）；底部是主题切换、检查更新与当前版本。
+
+## 渠道列表挂在分组上，不挂在签名文件上
+
+一个分组 = 一份渠道列表，与有没有私钥无关：
+
+- 一个应用可以挂「正式」「测试」多个分组
+- 同一份渠道列表也能给不同的签名文件用
+- 选签名文件只是为了签名
+
+手上只有别人签好的包、没有私钥时，签名那一栏选「不用签名文件」即可只写渠道、不重新签名。
+
+## 功能细节
+
+<details>
+<summary>展开：各页的具体行为与边界处理</summary>
 
 | 位置 | 操作 | 说明 |
-| ---- | ---- | ---- |
+| --- | --- | --- |
 | 签名配置 → 新增签名文件 | 口令右侧的眼睛按钮 | 切换口令明文/密文，用来核对手抄错没有 |
 | 签名配置 → 新增签名文件 | 「渠道数据」区块 | 选好 `.jks` 文件后才可用；无论选「不套用模板 / 套用模板 / 导入 JSON」，下方始终是**最终会保存的列表**，可以直接增删改、也能勾选多行一次删掉；新增签名文件的同时就把渠道建好。选「导入 JSON」会先弹一个可编辑的预览框，改完点确认才落到这份列表上 |
 | 签名配置 → 新增签名文件 | 校验没过时 | 弹窗不关、填过的东西一条不丢，只把出问题的那一项标红（`.jks` 文件 / 别名 / 口令），改动那一项红框立刻撤掉；「新增并校验」失败会把刚建的条目、副本与渠道文件一起删干净，不会留下半条脏数据 |
@@ -63,20 +108,24 @@
 | 数据放在哪 | `data/logs/` | 最多留 30 份、总体积不超过 50 MB，按最旧的删，至少保留最近 10 份 |
 | 数据放在哪 | 配置文件被写坏时 | 顶部弹一条横幅，写明**是哪个文件、为什么读不出来、绝对路径**，并把坏掉的内容另存一份 `<文件名>.broken`，然后按空列表继续 —— **原文件一个字节都不改**。修好或删掉之后重新打开即可；点「知道了」可以先把横幅收起来（换一个新文件出问题时还会再冒出来） |
 
-### 数据放在哪
+</details>
 
-免安装版是单文件 exe，每次启动会自解压到 `%TEMP%`，但**数据目录固定在 exe 旁边**：
+## 数据放在哪
+
+**安装版**的数据目录在 `%LOCALAPPDATA%\渠道分包工具\data`（与安装目录分开，卸载不会连数据一起删）。
+
+**便携版 / 解压即用版**是单文件 exe，每次启动自解压到 `%TEMP%`，但数据目录固定在 exe 旁边：
 
 ```
-渠道分包工具-0.1.0.exe
+渠道分包工具-<版本>.exe
 data/
-├── jks.json               # 每个签名文件的别名、口令
-├── groups.json            # 分组索引：分组名、中文应用名
-├── template.json          # 渠道后缀模板
-├── keystores/<id>.jks     # jks 副本，签名与校验只用副本
+├── jks.json                # 每个签名文件的别名、口令
+├── groups.json             # 分组索引：分组名、中文应用名
+├── template.json           # 渠道后缀模板
+├── keystores/<id>.jks      # jks 副本，签名与校验只用副本
 ├── channels/<分组 id>.json # 每个分组的渠道列表
-├── logs/                  # 每次出包的完整日志（自动轮转，不会无限涨）
-└── .runtime/              # Chromium 缓存，可删
+├── logs/                   # 每次出包的完整日志（自动轮转，不会无限涨）
+└── .runtime/               # Chromium 缓存，可删
 ```
 
 整个文件夹拷走就是完整迁移；只拷 exe 就是一份干净的新工具（无证书、无渠道）。
@@ -93,9 +142,9 @@ data/
 
 > 配置包内含**明文密码与私钥**。导出后只发给你信任的人；导入等于把对方的签名身份装进本机。
 
-| 方式     | 内容                                            | 用途                     |
-| -------- | ----------------------------------------------- | ------------------------ |
-| 发 exe   | 干净工具，无任何证书与渠道                      | 给同事一份工具           |
+| 方式 | 内容 | 用途 |
+| --- | --- | --- |
+| 发安装包 | 干净工具，无任何证书与渠道 | 给同事一份工具 |
 | 发配置包 | jks 副本 + 凭据 + 分组与渠道列表 + 模板，打成一个 zip | 换机器整体迁移、统一团队配置 |
 | 发配置包（勾上「不含签名凭据」） | 只有模板 + 一份空的签名文件列表，打成一个 zip | 给同事一份渠道模板，签名文件让他自己补 |
 
@@ -109,40 +158,60 @@ data/
 
 ### 前置
 
-| 依赖                  | 说明                                                     |
-| --------------------- | -------------------------------------------------------- |
-| Node.js ≥ 20          | 开发用 Node v24 验证                                     |
-| pnpm 11               | `packageManager` 已锁定 11.8.0                           |
-| PowerShell 7          | 运行时准备脚本与图标生成脚本用                           |
+| 依赖 | 说明 |
+| --- | --- |
+| Node.js ≥ 20 | 开发用 Node v24 验证 |
+| pnpm 11 | `packageManager` 已锁定 11.8.0 |
+| PowerShell 7 | 运行时准备脚本与图标生成脚本用 |
 | Android SDK build-tools | 可选。只用来取 `zipalign.exe` 与 `apksigner.jar`；本机没装 SDK 就沿用仓库自带的那两份 |
-| 网络                  | `prepare:runtime` 需从 Adoptium 下载 Temurin JDK 17（约 182 MB） |
+| 网络 | `prepare:runtime` 需从 Adoptium 下载 Temurin JDK 17（约 182 MB） |
 
 ### 步骤
 
 ```powershell
-git clone <repo>
-cd <repo>/app
+git clone https://github.com/DHHHhhhe/channel-packager.git
+cd channel-packager/app
 
 pnpm install
 pnpm prepare:runtime   # 生成 resources/bin —— 未入库，必须执行一次
 pnpm dev               # 开发模式
 pnpm build             # 类型检查 + 打包渲染层
-pnpm dist              # 出便携版 exe，产物在 release/
 ```
+
+出安装包 / 便携版（产物在 `app/release/`）：
+
+```powershell
+.\node_modules\.bin\electron-builder.CMD --win nsis portable zip
+```
+
+> 本机不能用 `pnpm dist`，原因见[已知注意事项](#本机-pnpm-dist-报-unknown-argument-electron-builderclijs)。
 
 `app/resources/bin/` 基本不入库（33.4 MB，只有 `zipalign.exe` 与 `apksigner.jar` 约 2.0 MB 随仓库分发），由 `pnpm prepare:runtime` 重建：
 
-| 产物                                | 来源                                                                        |
-| ----------------------------------- | --------------------------------------------------------------------------- |
-| `jre/`                              | 从 Adoptium 下载 Temurin JDK 17，用 `jlink` 裁剪（模块集 `java.base,java.sql,java.logging,jdk.crypto.ec,jdk.jartool`） |
-| `zipalign.exe`、`apksigner.jar`     | 本机 Android SDK build-tools 里版本号最高的正式版目录；本机没装 SDK 时沿用仓库自带的那两份（已入库，所以没有 SDK 也能构建） |
-| `walle-cli-all.jar`                 | 仓库根目录（第三方构建，来源见「第三方组件」）                                                                 |
+| 产物 | 来源 |
+| --- | --- |
+| `jre/` | 从 Adoptium 下载 Temurin JDK 17，用 `jlink` 裁剪（模块集 `java.base,java.sql,java.logging,jdk.crypto.ec,jdk.jartool`） |
+| `zipalign.exe`、`apksigner.jar` | 本机 Android SDK build-tools 里版本号最高的正式版目录；本机没装 SDK 时沿用仓库自带的那两份（已入库，所以没有 SDK 也能构建） |
+| `walle-cli-all.jar` | 仓库根目录（第三方构建，来源见[第三方组件](#第三方组件)） |
 
 脚本幂等：产物存在且体积与 `resources/bin/.manifest.json` 记录一致就跳过，加 `-Force` 强制重建。
 
-### 发布新版本（GitHub Releases）
+## 发布新版本
 
-安装包版本带自动更新（electron-updater），更新地址就是 GitHub 的 Release。发一版：
+推一个 `v<版本>` 标签，GitHub Actions 会在 Windows 上构建并把**安装包 + `.blockmap` + `latest.yml`** 传到 Releases。本机不用装 Node / Android SDK，也不用配令牌。
+
+```powershell
+# 1. 改 app/package.json 的 version（必须比线上大，同号不会被升级）
+# 2. 把这一版要说的写进 app/build/release-notes.md —— 它会成为 Release 正文，
+#    也是客户端「发现新版本」时显示的更新内容
+# 3. 提交推送之后：
+git tag v0.3.0
+git push origin main --tags
+```
+
+跑完 Release 直接是**正式版本**（客户端才认），已装旧版的机器打开应用就会自己升级。想先出草稿、人工点 Publish 再公开：在仓库的 Settings → Secrets and variables → Actions → Variables 里加一个 `EP_DRAFT=true`，或者在 Actions 页面手动触发这个工作流时把 `draft` 勾上。
+
+### 本机发版（不想走 CI）
 
 ```powershell
 git remote add origin https://github.com/<账号>/<仓库>.git   # 只需一次
@@ -150,46 +219,19 @@ $env:GH_TOKEN = 'ghp_xxx'                                   # 公开仓库勾 pu
 pwsh -File app/scripts/release.ps1
 ```
 
-脚本从 `origin` 读出账号与仓库名（`electron-builder.yml` 里那两个是占位值，构建机器上必须覆盖，否则会直接构建失败），先 `pnpm build`，再用 `electron-builder --win nsis --publish always` 构建并上传：安装包 + `.blockmap` + `latest.yml`。上传完 Release 是**草稿**，要去网页点 Publish，同事那边才看得到。
-
-要点：
-
-- 版本号（`app/package.json` 的 `version`）必须比线上大，同号不会被升级。
-- 装好的机器把更新地址固化在安装包的 `resources/app-update.yml` 里，**换地址要重新构建安装包**；临时换地址可以在数据目录放一份 `update.json`（`{"url":"http://内网服务器/渠道分包工具/"}`）。
-- 便携版与解压即用版不带自动更新，只有安装包会自己升级。
-
-### 用 GitHub Actions 自动发版
-
-仓库带了 `.github/workflows/release.yml`：推一个 `v<版本>` 标签，Actions 就在 Windows 上构建并把**安装包 + `.blockmap` + `latest.yml`** 传到 Releases。本机不用装 Node / Android SDK，也不用配 `GH_TOKEN`（用 Actions 自带的 `GITHUB_TOKEN`）。
-
-```powershell
-# 先改 app/package.json 的 version，提交推送之后：
-git tag v0.3.0
-git push origin main --tags
-```
-
-跑完 Release 直接是**正式版本**（客户端才认），已装旧版的机器打开应用就会自己升级。想先出草稿、人工点 Publish 再公开：在仓库的 Settings → Secrets and variables → Actions → Variables 里加一个 `EP_DRAFT=true`，或者在 Actions 页面手动触发这个工作流时把 `draft` 勾上。
+脚本从 `origin` 读出账号与仓库名（`electron-builder.yml` 里那两个是占位值，构建机器上必须覆盖，否则会直接构建失败），先 `pnpm build`，再用 `electron-builder --win nsis --publish always` 构建并上传。上传完 Release 是**草稿**，要去网页点 Publish，同事那边才看得到。
 
 | 发版方式 | 适合 | 前置 |
 | --- | --- | --- |
-| `app/scripts/release.ps1` | 本机就有构建环境，想立刻发 | 装好 Node / pnpm，配好 `GH_TOKEN` |
 | GitHub Actions | 换机器发、给协作者发 | 仓库已经推到 GitHub |
+| `app/scripts/release.ps1` | 本机就有构建环境，想立刻发 | 装好 Node / pnpm，配好 `GH_TOKEN` |
 
 两种方式都只上传**安装包**（它是唯一带自动更新的产物）；便携版与解压即用版留在本机 `app/release/` 里，要发就手动传。
 
-### 第一次把仓库推到 GitHub
+### 关于更新地址
 
-```powershell
-# 装了 gh 的话（winget install GitHub.cli），一条命令建仓库并推上去：
-gh auth login
-gh repo create channel-packager --public --source=. --remote=origin --push
-
-# 没装 gh：先在网页上建一个空仓库，再
-git remote add origin https://github.com/<账号>/<仓库>.git
-git push -u origin main
-```
-
-推送前确认这几样没被带上去（`.gitignore` 已经拦住，但换机器 clone 后要复核）：`data/`、`*.jks`、`*.apk`、`channelConfig.json`。仓库里只有 `channelConfig.sample.json` 这一份脱敏样例。
+- 装好的机器把更新地址固化在安装包的 `resources/app-update.yml` 里，**换地址要重新构建安装包**
+- 临时换地址不用重新打包：在数据目录放一份 `update.json`（`{"url":"http://内网服务器/渠道分包工具/"}`），应用启动时用它覆盖构建时的地址
 
 ## 已知注意事项
 
@@ -197,7 +239,7 @@ git push -u origin main
 
 exe 没有代码签名证书，Windows SmartScreen 会弹「Windows 已保护你的电脑」，发布者显示为「未知发布者」。这不是文件损坏，点「更多信息」→「仍要运行」即可。
 
-拿到 exe 的人需要知道的事（放哪、怎么过拦截、哪些文件不能外发）整理在 [交付说明.md](交付说明.md)，可以连同 exe 一起发过去。
+拿到 exe 的人需要知道的事（放哪、怎么过拦截、哪些文件不能外发）整理在 [交付说明.md](交付说明.md)，可以连同安装包一起发过去。
 
 ### 本机 `pnpm dist` 报 `Unknown argument: …electron-builder\cli.js`
 
@@ -231,38 +273,34 @@ pwsh -NoProfile -File scripts/make-icon.ps1
 
 ### 仓库里没有 exe，要自己构建
 
-`app/release/` 在 `.gitignore` 里，所以 clone 下来的仓库**不含便携版 exe**，必须自己跑一次构建（见「从源码构建」）。产物是 `app/release/渠道分包工具-<版本>.exe`，约 114 MB。
+`app/release/` 在 `.gitignore` 里，所以 clone 下来的仓库**不含任何 exe**，必须自己跑一次构建（见[从源码构建](#从源码构建)）。产物是 `app/release/渠道分包工具-<版本>.exe`，约 114 MB。
 
 不进版本库的原因：它是构建产物，体积上百 MB，且每次构建的字节内容都不同（时间戳、签名等），入库只会让仓库无限膨胀。
 
 **改完代码要重新构建才有新 exe。** `pnpm build` 只更新 `dist/` 与 `dist-electron/`（开发模式用），打包版仍是上一版 —— 从 `app/release/` 打开的话，看到的还是旧逻辑。
 
-**便携版把数据写在 exe 旁边的 `data/`**。如果你直接从 `app/release/` 运行 exe，配置就会落到 `app/release/data/` —— 那是构建产物目录，容易被重新构建或清理时一并删掉，里面的 `.jks` 副本与明文口令也会跟着没。
-
-建议把 exe **拷到别处再运行**（例如 `D:\工具\渠道分包工具\`），数据就跟着留在那里，跟构建目录彻底分开。
-
 ## 第三方组件
 
-| 组件          | 版本                     | 许可证                      |
-| ------------- | ------------------------ | --------------------------- |
-| Electron      | 44.4.5                   | MIT                         |
-| Chromium      | 随 Electron              | BSD-3-Clause 等             |
-| Temurin JRE   | 17.0.20.1                | GPLv2 + Classpath Exception |
-| apksigner     | 0.9                      | Apache-2.0                  |
-| zipalign      | Android SDK build-tools  | Apache-2.0                  |
-| Walle         | 1.1.6（第三方构建，见下）              | Apache-2.0                  |
+| 组件 | 版本 | 许可证 |
+| --- | --- | --- |
+| Electron | 44.4.5 | MIT |
+| Chromium | 随 Electron | BSD-3-Clause 等 |
+| Temurin JRE | 17.0.20.1 | GPLv2 + Classpath Exception |
+| apksigner | 0.9 | Apache-2.0 |
+| zipalign | Android SDK build-tools | Apache-2.0 |
+| Walle | 1.1.6（第三方构建，见下） | Apache-2.0 |
 
 ### Walle CLI jar 的来源
 
 仓库根目录的 `walle-cli-all.jar` **不是上游的 release 资产，而是一份第三方构建**。来源如下，请知悉后再使用。
 
-| 项       | 值                                                                                                                       |
-| -------- | ------------------------------------------------------------------------------------------------------------------------ |
-| 上游项目 | [Meituan-Dianping/walle](https://github.com/Meituan-Dianping/walle)（Apache-2.0）                                         |
-| 本仓库这份 | 585,426 字节，SHA256 `89D0358A512B7AC0586F999B31774C6A4B76A388AC35A34B1F28169FA449368B`                                 |
-| 获取自   | [issue #264](https://github.com/Meituan-Dianping/walle/issues/264) 里用户 vclub 贴出的自编译产物：`https://github.com/vclub/vclub.github.io/raw/master/walle-cli-all.jar` |
-| 代码对应 | 上游 master 上 PR #259（提交 `be6421b`）之后的代码，manifest 标 `Walle-Version: 1.1.6`                                    |
-| 内置依赖 | jcommander 1.48、commons-io 2.5、org.json 20080701、gson 2.8.0                                                            |
+| 项 | 值 |
+| --- | --- |
+| 上游项目 | [Meituan-Dianping/walle](https://github.com/Meituan-Dianping/walle)（Apache-2.0） |
+| 本仓库这份 | 585,426 字节，SHA256 `89D0358A512B7AC0586F999B31774C6A4B76A388AC35A34B1F28169FA449368B` |
+| 获取自 | [issue #264](https://github.com/Meituan-Dianping/walle/issues/264) 里用户 vclub 贴出的自编译产物：`https://github.com/vclub/vclub.github.io/raw/master/walle-cli-all.jar` |
+| 代码对应 | 上游 master 上 PR #259（提交 `be6421b`）之后的代码，manifest 标 `Walle-Version: 1.1.6` |
+| 内置依赖 | jcommander 1.48、commons-io 2.5、org.json 20080701、gson 2.8.0 |
 
 **为什么不直接用官方 release 资产**：官方只发布过 `v1.1.6` 的 `walle-cli-all.jar`（584,848 字节，SHA256 `E655C5284EE1FC2916CCCA2ED3217C4BE227A8284FDB9218308C9CF431EF222C`），它缺 PR #259 的签名块 verity padding 处理，会产出装不上的渠道包 —— 见 [issue #290](https://github.com/Meituan-Dianping/walle/issues/290)：
 
