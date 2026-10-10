@@ -68,8 +68,11 @@ jobs:
         working-directory: app
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # 置 true 就出草稿（EP_DRAFT 在 electron-builder 里优先级最高，会盖掉下面的 releaseType）
-          EP_DRAFT: ${{ inputs.draft || vars.EP_DRAFT }}
+          # 注意末尾的 || 'false' 不能省：electron-builder 的 isEnvTrue() 把**空字符串也算 true**
+          # （value === "true" || value === "" || value === "1"），所以这个变量一旦被设成空串，
+          # 每次发版都会变成草稿。必须给它一个明确的 "false"。
+          # EP_DRAFT 在 electron-builder 里优先级最高，会盖掉下面的 releaseType。
+          EP_DRAFT: ${{ inputs.draft || vars.EP_DRAFT || 'false' }}
           # 不加这个，往「发布超过 2 小时」的既有 Release 补传附件会被 electron-builder 静默跳过，
           # 失败重跑同一个标签时就白跑了
           EP_GH_IGNORE_TIME: true
