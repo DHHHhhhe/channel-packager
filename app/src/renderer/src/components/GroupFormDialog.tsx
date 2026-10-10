@@ -104,7 +104,7 @@ export function GroupFormDialog({
                 setNameTouched(true)
                 setName(event.target.value)
               }}
-              placeholder="例如 沐爱"
+              placeholder="例如 示例应用"
               aria-invalid={nameClash}
               title={nameClash ? '已经有同名分组了' : undefined}
             />
@@ -119,7 +119,7 @@ export function GroupFormDialog({
               id="group-app-label"
               value={appLabel}
               onChange={(event) => setAppLabel(event.target.value)}
-              placeholder="例如 沐爱"
+              placeholder="例如 示例应用"
             />
             <p className="text-xs text-muted-foreground">
               这个分组代表的应用叫什么。只在本工具里显示，不会写进安装包。

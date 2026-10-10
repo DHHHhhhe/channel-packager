@@ -53,22 +53,22 @@
             "alias": "UC"
         },
         {
-            "channel": "CPS00001"
+            "channel": "demo_cps0001"
         },
         {
-            "channel": "CPS00002"
+            "channel": "demo_cps0002"
         },
         {
-            "channel": "CPS00003"
+            "channel": "demo_cps0003"
         },
         {
-            "channel": "CPS00004"
+            "channel": "demo_cps0004"
         },
         {
-            "channel": "CPS00005"
+            "channel": "demo_cps0005"
         },
         {
-            "channel": "CPS00006"
+            "channel": "demo_cps0006"
         },
         {
             "channel": "demo_bd0001"

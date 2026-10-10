@@ -33,7 +33,7 @@ export interface GroupItem {
   id: string
   /** 分组名，给人认。新建时默认自动取 appLabel，可改 */
   name: string
-  /** 应用名（中文显示名，如「沐爱」）。**只给人看，不写进包** */
+  /** 应用名（中文显示名，如「示例应用」）。**只给人看，不写进包** */
   appLabel: string
   createdAt: string
   updatedAt: string
