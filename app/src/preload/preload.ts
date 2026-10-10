@@ -217,6 +217,10 @@ const api: RendererApi = {
     return ipcRenderer.invoke(IPC_CHANNELS.updateCheck)
   },
 
+  downloadUpdate(): Promise<UpdateState> {
+    return ipcRenderer.invoke(IPC_CHANNELS.updateDownload)
+  },
+
   getUpdateState(): Promise<UpdateState> {
     return ipcRenderer.invoke(IPC_CHANNELS.updateGetState)
   },

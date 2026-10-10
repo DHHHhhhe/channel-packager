@@ -61,7 +61,6 @@ function Shell() {
       <AppSidebar
         active={view}
         onSelect={setView}
-        dataDir={store.dataDir}
         appVersion={window.api.appVersion}
         jksCount={store.jksItems.length}
         groupCount={store.groups.length}

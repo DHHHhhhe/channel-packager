@@ -1,6 +1,6 @@
-import { app, BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron'
+import { app, BrowserWindow, Menu, shell, type MenuItemConstructorOptions } from 'electron'
 import { IPC_CHANNELS } from '../shared/constants/channels'
-import { isInstalledLayout } from './paths'
+import { getDataDir, isInstalledLayout } from './paths'
 import { checkForUpdates } from './updater'
 import type { NavCommand } from '../shared/types/api'
 
@@ -108,6 +108,14 @@ export function installApplicationMenu(): void {
               } satisfies MenuItemConstructorOptions,
             ]
           : []),
+        {
+          label: '打开数据目录',
+          click: (): void => {
+            // openPath 失败时返回的是错误字符串、不抛异常；菜单里没有更合适的反馈出口，
+            // 打不开就是没反应 —— 路径本身在排障提示旁边有「复制诊断信息」可拿
+            void shell.openPath(getDataDir())
+          },
+        },
         {
           label: `版本 ${app.getVersion()}`,
           enabled: false,

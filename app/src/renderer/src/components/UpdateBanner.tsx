@@ -8,18 +8,42 @@ import { useNav } from '@/store/nav'
 import type { UpdateState } from '@shared/types/update'
 
 /**
+ * 把 Release 正文里的 HTML 压成纯文本。
+ *
+ * 主进程原样把 Release 正文递过来（它没有 DOM，也不该去解析），转文本在这儿做。
+ * 用 DOMParser 而不是往临时元素里塞 innerHTML：解析出来的是游离文档，图片与事件
+ * 属性都没有机会执行。
+ */
+function notesToText(html: string): string {
+  if (!html) {
+    return ''
+  }
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    return (doc.body.textContent ?? '').replace(/\n{3,}/g, '\n\n').trim()
+  } catch {
+    // 解析不了就原样显示，总比什么都不给强
+    return html
+  }
+}
+
+/**
  * 自动更新的提示条。
  *
  * 只有安装版才会真的出现（便携版与解压即用版没有安装目录，见主进程 updater.ts）。
- * 三种状态各有去处：下载中给进度，下载好了给「立即重启」，其余一律不占位置 ——
- * 「已经是最新」与「检查失败」只会在用户自己点过「检查更新」之后用一句提示收尾，
- * 免得每次启动都冒出「已是最新」这种没人问的话。
+ * 三个阶段各有去处：
+ *   available   —— 发现新版本，把「更新了什么」摆出来，下不下由用户点
+ *   downloading —— 进度条
+ *   downloaded  —— 「立即重启并更新」
+ * 其余一律不占位置：「已经是最新」与「检查失败」只会在用户自己点过「检查更新」
+ * 之后用一句提示收尾，免得每次启动都冒出「已是最新」这种没人问的话。
  */
 export default function UpdateBanner(): JSX.Element | null {
   const { hasUnsaved, allowUnload } = useNav()
   const [state, setState] = useState<UpdateState | null>(null)
   const [dismissed, setDismissed] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [starting, setStarting] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -61,10 +85,24 @@ export default function UpdateBanner(): JSX.Element | null {
     return null
   }
 
-  const downloading = state.phase === 'available' || state.phase === 'downloading'
+  const offering = state.phase === 'available'
+  const downloading = state.phase === 'downloading'
   const ready = state.phase === 'downloaded'
-  if (!downloading && !ready) {
+  if (!offering && !downloading && !ready) {
     return null
+  }
+
+  const notes = offering ? notesToText(state.releaseNotes) : ''
+
+  const startDownload = async (): Promise<void> => {
+    setStarting(true)
+    try {
+      await window.api.downloadUpdate()
+    } finally {
+      // 主进程一开始下载就会把状态推成 downloading，这个按钮随即消失；
+      // 万一没推（比如版本已经被撤下），这里把按钮恢复成可点，别卡在「正在开始下载…」
+      setStarting(false)
+    }
   }
 
   const restart = (): void => {
@@ -115,13 +153,36 @@ export default function UpdateBanner(): JSX.Element | null {
                 style={{ width: `${state.percent}%` }}
               />
             </div>
-          ) : (
+          ) : null}
+
+          {/* 更新内容：Release 正文写了才有，没写就整块不出现 */}
+          {offering && notes ? (
+            <div
+              data-slot="update-notes"
+              className="max-h-40 overflow-y-auto rounded border bg-background/60 px-2 py-1.5 text-xs whitespace-pre-wrap text-muted-foreground"
+            >
+              {notes}
+            </div>
+          ) : null}
+
+          {ready ? (
             <span className="text-xs text-muted-foreground">
               也可以先接着用，下次关窗口时会自己装上。
             </span>
-          )}
+          ) : null}
         </div>
       </div>
+
+      {offering ? (
+        <div className="flex flex-wrap items-center gap-2 pl-6">
+          <Button size="sm" disabled={starting} onClick={() => void startDownload()}>
+            {starting ? '正在开始下载…' : '下载并更新'}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setDismissed(true)}>
+            稍后
+          </Button>
+        </div>
+      ) : null}
 
       {ready ? (
         <div className="flex flex-wrap items-center gap-2 pl-6">

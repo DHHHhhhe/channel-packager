@@ -62,6 +62,8 @@ export const IPC_CHANNELS = {
 
   /** 手动检查一次更新（菜单里的「检查更新」） */
   updateCheck: 'update:check',
+  /** 用户确认后开始下载新版本 —— autoDownload 关着，下载得由用户点出来 */
+  updateDownload: 'update:download',
   /** 下载完成后立即重启并安装 */
   updateInstall: 'update:install',
   /** 读当前更新状态，窗口重新加载后用它把提示条接上 */

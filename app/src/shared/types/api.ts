@@ -208,6 +208,14 @@ export interface RendererApi {
    */
   checkUpdate(): Promise<UpdateState>
 
+  /**
+   * 开始下载已发现的新版本。
+   *
+   * 检查到新版本不会自动下载（主进程把 autoDownload 关了），要等用户点「下载并更新」；
+   * 没有待下载的版本时主进程直接返回当前状态，什么也不做。
+   */
+  downloadUpdate(): Promise<UpdateState>
+
   /** 当前更新状态。窗口重新加载后用它把提示条接上 */
   getUpdateState(): Promise<UpdateState>
 

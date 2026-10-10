@@ -1,7 +1,6 @@
-import { useState } from 'react'
-import { Check, Copy, FolderOpen, KeyRound, ListTree, Package, ScrollText } from 'lucide-react'
-import { toast } from 'sonner'
+import { KeyRound, ListTree, Package, ScrollText } from 'lucide-react'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import UpdateCheckButton from '@/components/UpdateCheckButton'
 import { cn } from '@/lib/utils'
 
 export type AppView = 'pack' | 'jks' | 'channels' | 'template'
@@ -27,8 +26,7 @@ export function viewTitle(view: AppView): string {
 interface AppSidebarProps {
   active: AppView
   onSelect: (view: AppView) => void
-  dataDir: string
-  /** 当前版本，显示在最下面一行 —— 自动更新之后要能看出确实换了版本 */
+  /** 当前版本，显示在底部工具行右端 —— 自动更新之后要能看出确实换了版本 */
   appVersion: string
   jksCount: number
   groupCount: number
@@ -37,22 +35,20 @@ interface AppSidebarProps {
 export function AppSidebar({
   active,
   onSelect,
-  dataDir,
   appVersion,
   jksCount,
   groupCount,
 }: AppSidebarProps) {
-  const [copied, setCopied] = useState(false)
-
-  const copyDataDir = async (): Promise<void> => {
-    try {
-      await window.api.writeClipboard(dataDir)
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 1500)
-    } catch {
-      toast.error('复制失败，请手动选中路径')
-    }
-  }
+  /*
+   * 家底计数挂在导航项右侧，不再堆在底部当一行文字。
+   *
+   * 它们本来就是「这一页里有多少东西」，点了也是跳到那一页 —— 与导航项是同一类，
+   * 摆到底部等于把导航降级成状态。
+   *
+   * 计数为 0 照样显示：这是配置家底，不是「有未读要处理」，0 也是有效信息（还没配）。
+   * 所以样式做成低调的灰色数字，而不是那种提示「有东西要处理」的高亮徽章。
+   */
+  const navCounts: Partial<Record<AppView, number>> = { jks: jksCount, channels: groupCount }
 
   return (
     <aside className="flex w-[var(--sidebar-width)] shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground">
@@ -65,6 +61,7 @@ export function AppSidebar({
         {NAV_ITEMS.map((item, index) => {
           const Icon = item.icon
           const isActive = item.view === active
+          const count = navCounts[item.view]
           return (
             <button
               key={item.view}
@@ -80,9 +77,14 @@ export function AppSidebar({
                   : 'hover:bg-sidebar-accent/60',
               )}
             >
-              <span className="flex items-center gap-2 text-sm font-medium">
+              <span className="flex w-full items-center gap-2 text-sm font-medium">
                 <Icon className="size-4 shrink-0" />
                 {item.label}
+                {count === undefined ? null : (
+                  <span className="ml-auto text-xs tabular-nums text-muted-foreground">
+                    {count}
+                  </span>
+                )}
               </span>
               <span className="pl-6 text-xs text-muted-foreground">{item.hint}</span>
             </button>
@@ -91,65 +93,32 @@ export function AppSidebar({
       </nav>
 
       <div className="shrink-0 border-t p-3">
-        <div className="flex items-center justify-between gap-2 pb-2">
+        <div className="flex items-center justify-between gap-2">
           <span className="text-xs text-muted-foreground">主题</span>
           <ThemeToggle />
         </div>
 
         {/*
-         * 数据目录做成可点、可复制。
-         * 这个路径的用处是「去里面看看渠道文件长什么样」「备份一份」「发给同事
-         * 让他照着放」—— 原来只是一行截断的文字，人只能照着念一遍再手敲。
+         * 这一块统一成「左列放信息、右列放能点的东西」：上面一行是「主题」在左、
+         * 主题切换在右，下面一行是版本号在左、检查更新在右。
+         *
+         * 之前是反的（检查更新在左、版本号在右），于是左列上静下动、右列上动下静，
+         * 可点性正好交叉 —— 扫一眼看不出规律，只能逐个 hover 去试。静态文字与
+         * 可点元素共用一套视觉处理是可点性的典型毛病，NN/g 的建议是两者绝不能用
+         * 同一种外观。
+         *
+         * -mr-2 抵消按钮自身的右内边距，让它的右端与上面那组主题切换对齐。
          */}
-        <div className="flex items-start gap-1 text-xs text-muted-foreground">
-          <button
-            type="button"
-            onClick={() => void window.api.openPath(dataDir)}
-            disabled={dataDir === ''}
-            title={dataDir ? `在文件资源管理器里打开：${dataDir}` : '数据目录未就绪'}
-            className="flex min-w-0 flex-1 items-center gap-1.5 rounded px-1 py-0.5 text-left transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
-          >
-            <FolderOpen className="size-3.5 shrink-0" />
-            <span className="truncate">{dataDir || '数据目录未就绪'}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => void copyDataDir()}
-            disabled={dataDir === ''}
-            aria-label="复制数据目录路径"
-            title="复制数据目录路径"
-            className="shrink-0 rounded p-0.5 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
-          >
-            {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-          </button>
-        </div>
-
-        <div className="flex items-center gap-1 pt-1 text-xs text-muted-foreground">
+        <div className="mt-2 flex items-center justify-between gap-2">
           {appVersion ? (
-            <>
-              <span className="px-1 py-0.5" title={`当前版本 ${appVersion}`}>
-                v{appVersion}
-              </span>
-              <span aria-hidden="true">·</span>
-            </>
+            <span className="text-xs text-muted-foreground" title={`当前版本 ${appVersion}`}>
+              v{appVersion}
+            </span>
           ) : null}
-          <button
-            type="button"
-            onClick={() => onSelect('jks')}
-            title="去「签名配置」"
-            className="rounded px-1 py-0.5 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none"
-          >
-            {jksCount} 个签名文件
-          </button>
-          <span aria-hidden="true">·</span>
-          <button
-            type="button"
-            onClick={() => onSelect('channels')}
-            title="去「渠道配置」"
-            className="rounded px-1 py-0.5 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none"
-          >
-            {groupCount} 个分组
-          </button>
+
+          <div className="-mr-2 flex items-center">
+            <UpdateCheckButton />
+          </div>
         </div>
       </div>
     </aside>

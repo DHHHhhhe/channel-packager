@@ -69,6 +69,12 @@ publish:
   owner: your-account
   repo: your-repo
 
+# Release 的正文。客户端「发现新版本」时显示的更新内容就是这里（见 src/main/updater.ts
+# 的 releaseNotes）：构建时读这个文件，写进 GitHub Release 的 body。
+# 路径相对 app/；文件缺失只是没有更新内容，不影响发版。
+releaseInfo:
+  releaseNotesFile: build/release-notes.md
+
 nsis:
   # 一键装，不问路径：per-user 安装到 %LOCALAPPDATA%\Programs\channel-packager
   # （目录名取自 package.json 的 name），不需要管理员权限，也就没有 UAC 弹窗。

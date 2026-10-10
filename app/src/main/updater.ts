@@ -33,7 +33,9 @@ let state: UpdateState = {
   version: '',
   percent: 0,
   message: '',
+  releaseNotes: '',
   manual: false,
+  canUpdate: !app.isPackaged || isInstalledLayout(),
 }
 
 function broadcast(): void {
@@ -72,6 +74,28 @@ function describeFailure(error: unknown): string {
     return '更新服务器上找不到这个版本的信息，可能还没发布新版本。'
   }
   return `检查更新失败：${raw.split('\n')[0]}`
+}
+
+/** release notes 在 electron-updater 里的形状：一个字符串，或者按版本分的数组 */
+type ReleaseNotes = import('electron-updater').UpdateInfo['releaseNotes']
+
+/**
+ * 把 release notes 统一成一段文本。
+ *
+ * fullChangelog 关着（默认）时它是一整个字符串；开着时是数组，每个版本一条。
+ * 拿不到就是 null / undefined —— 一律当空串，界面上据此不显示「更新内容」那一块。
+ */
+function normalizeReleaseNotes(notes: ReleaseNotes): string {
+  if (notes == null) {
+    return ''
+  }
+  if (typeof notes === 'string') {
+    return notes
+  }
+  return notes
+    .map((item) => (item.note ?? '').trim())
+    .filter((note) => note !== '')
+    .join('\n\n')
 }
 
 /** 读数据目录里的 update.json（可选），返回里面的更新地址 */
@@ -124,8 +148,12 @@ async function ensureUpdater(): Promise<AutoUpdater | null> {
       autoUpdater.setFeedURL({ provider: 'generic', url: feedUrl })
     }
 
-    // 发现新版本就直接下：内网工具，用户不用做「要不要下」这种决定
-    autoUpdater.autoDownload = true
+    /*
+     * 发现新版本不自动下载：先让用户看到「更新了什么」，下不下由他点。
+     * 关掉之后 electron-updater 停在 update-available，下载要显式调 downloadUpdate()
+     * （见下面导出的 downloadUpdate）。
+     */
+    autoUpdater.autoDownload = false
     // 下好了但用户没点「立即重启」时，下次关窗口顺手装上
     autoUpdater.autoInstallOnAppQuit = true
 
@@ -138,7 +166,8 @@ async function ensureUpdater(): Promise<AutoUpdater | null> {
         phase: 'available',
         version: info.version,
         percent: 0,
-        message: `发现新版本 ${info.version}，正在下载…`,
+        releaseNotes: normalizeReleaseNotes(info.releaseNotes),
+        message: `发现新版本 ${info.version}。`,
       })
     })
 
@@ -226,6 +255,37 @@ export async function checkForUpdates(manual: boolean): Promise<UpdateState> {
 }
 
 /**
+ * 用户确认后开始下载新版本。
+ *
+ * 只有「已经发现新版本」时才动手：正在检查、已经下好、或者压根没有更新时调用都
+ * 没有意义，直接返回当前状态，让界面自己看着办。
+ */
+export async function downloadUpdate(): Promise<UpdateState> {
+  if (state.phase !== 'available') {
+    return state
+  }
+
+  if (!updater) {
+    patch({
+      phase: 'error',
+      version: '',
+      percent: 0,
+      message: '这个版本里没有带上更新组件，请重新下载安装包。',
+    })
+    return state
+  }
+
+  patch({ phase: 'downloading', percent: 0, message: `正在下载新版本 ${state.version}…` })
+  try {
+    await updater.downloadUpdate()
+  } catch (error) {
+    // downloadUpdate 同时也会发 error 事件，这里兜住被拒的 promise，避免变成未处理拒绝
+    patch({ phase: 'error', percent: 0, message: describeFailure(error) })
+  }
+  return state
+}
+
+/**
  * 下载完成后立即重启并安装。
  *
  * 界面在调用前必须先确认两件事：没有出包任务在跑（重启会掐掉它），
@@ -252,6 +312,7 @@ export function initUpdater(): void {
 
 export function registerUpdateIpc(): void {
   ipcMain.handle(IPC_CHANNELS.updateCheck, () => checkForUpdates(true))
+  ipcMain.handle(IPC_CHANNELS.updateDownload, () => downloadUpdate())
   ipcMain.handle(IPC_CHANNELS.updateGetState, () => state)
   ipcMain.handle(IPC_CHANNELS.updateInstall, () => {
     installUpdate()
