@@ -46,15 +46,28 @@ win:
   # build/icon.ico 由 scripts/make-icon.ps1 生成，改图形重跑该脚本即可
   icon: build/icon.ico
 
-# 自动更新（electron-updater）去哪里取新版本：这个地址下的 latest.yml 与安装包。
-# 改成本公司能访问的地址即可，末尾要带 /；装好的应用会把这份配置固化进
-# resources/app-update.yml，改完必须重新构建安装包才会生效。
+# 自动更新（electron-updater）去 GitHub Releases 取新版本。
 #
-# 也可以不改这里：在数据目录放一份 update.json（{"url":"http://内网服务器/渠道分包工具/"}），
-# 装好的机器改一行 JSON 就能换地址，不用重新打包 —— 见 src/main/updater.ts。
+# 下面 owner / repo 是**占位值**，正式发版由 scripts/release.ps1 覆盖：
+# electron-builder 只从 package.json 的 repository 或 **app 目录下的** .git/config
+# 推断账号与仓库名，而本仓库的 .git 在上一层（渠道工具/），它找不到 —— 实测会直接
+# 构建失败（Cannot read properties of null (reading 'provider')），所以这里必须给值。
+#
+# 发版流程：
+#     git remote add origin https://github.com/<你的账号>/<仓库名>.git
+#     $env:GH_TOKEN = '<令牌>'        # 公开仓库勾 public_repo，私有仓库勾 repo
+#     pwsh -File app/scripts/release.ps1
+# release.ps1 会从 origin 读出账号/仓库名，用 -c.publish.owner=… -c.publish.repo=…
+# 覆盖下面两个值，再 --publish always 上传；上传完 Release 默认是草稿，要去网页点 Publish。
+#
+# 只做本地构建、不发布：留着占位值即可（装出来的应用检查更新会报错，其他功能不受影响）。
+# 客户端认的地址固化在安装包的 resources/app-update.yml 里，换地址要重新构建。
+# 想临时换地址（不用重新打包）：在数据目录放一份 update.json
+# （{"url":"http://内网服务器/渠道分包工具/"}），见 src/main/updater.ts。
 publish:
-  provider: generic
-  url: https://UPDATE_HOST/渠道分包工具/
+  provider: github
+  owner: your-account
+  repo: your-repo
 
 nsis:
   # 一键装，不问路径：per-user 安装到 %LOCALAPPDATA%\Programs\channel-packager

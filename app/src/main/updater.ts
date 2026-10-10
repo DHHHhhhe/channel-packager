@@ -62,6 +62,12 @@ function describeFailure(error: unknown): string {
   if (/ERR_INVALID_URL|ERR_UNESCAPED_CHARACTERS|ERR_INVALID_ARGUMENT/i.test(raw)) {
     return '更新地址填得不对，检查一下 update.json 里的 url。'
   }
+  if (/Unable to find latest version on GitHub|Cannot parse releases feed|releases\/latest/i.test(raw)) {
+    return 'GitHub 上还没有「已发布」的版本（草稿 Release 不算），先把 Release 发布出来。'
+  }
+  if (/\b403\b/.test(raw)) {
+    return 'GitHub 拒绝了这次请求（403），多半是同一网络里查得太频繁，过一会儿再试。'
+  }
   if (/\b404\b/.test(raw)) {
     return '更新服务器上找不到这个版本的信息，可能还没发布新版本。'
   }

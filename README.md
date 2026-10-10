@@ -140,6 +140,24 @@ pnpm dist              # 出便携版 exe，产物在 release/
 
 脚本幂等：产物存在且体积与 `resources/bin/.manifest.json` 记录一致就跳过，加 `-Force` 强制重建。
 
+### 发布新版本（GitHub Releases）
+
+安装包版本带自动更新（electron-updater），更新地址就是 GitHub 的 Release。发一版：
+
+```powershell
+git remote add origin https://github.com/<账号>/<仓库>.git   # 只需一次
+$env:GH_TOKEN = 'ghp_xxx'                                   # 公开仓库勾 public_repo，私有仓库勾 repo
+pwsh -File app/scripts/release.ps1
+```
+
+脚本从 `origin` 读出账号与仓库名（`electron-builder.yml` 里那两个是占位值，构建机器上必须覆盖，否则会直接构建失败），先 `pnpm build`，再用 `electron-builder --win nsis --publish always` 构建并上传：安装包 + `.blockmap` + `latest.yml`。上传完 Release 是**草稿**，要去网页点 Publish，同事那边才看得到。
+
+要点：
+
+- 版本号（`app/package.json` 的 `version`）必须比线上大，同号不会被升级。
+- 装好的机器把更新地址固化在安装包的 `resources/app-update.yml` 里，**换地址要重新构建安装包**；临时换地址可以在数据目录放一份 `update.json`（`{"url":"http://内网服务器/渠道分包工具/"}`）。
+- 便携版与解压即用版不带自动更新，只有安装包会自己升级。
+
 ## 已知注意事项
 
 ### 发给别人时，第一次打开会被 Windows 拦一下

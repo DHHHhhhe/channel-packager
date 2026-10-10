@@ -45,11 +45,28 @@ cd app
 
 改完至少核对一次：产物的修改时间要晚于最后一次源码改动。
 
-### 自动更新的地址
+要**发布一个新版本给同事**（而不是自己本地构建），用 `app/scripts/release.ps1`，见下一节。
 
-`app/electron-builder.yml` 的 `publish.url` 会在构建时固化进安装包的 `resources/app-update.yml`，所以改地址要重新构建安装包。
+### 自动更新：走 GitHub Releases
 
-不想重新打包也行：在数据目录放一份 `update.json`（内容是 `{"url":"http://内网服务器/渠道分包工具/"}`），应用启动时用它覆盖构建时的地址 —— 见 `app/src/main/updater.ts`。安装版与便携版都认这个文件。
+`app/electron-builder.yml` 的 `publish` 是 `provider: github`，构建时会写进安装包的 `resources/app-update.yml` —— 客户端只认这里，所以换发布方式必须重新构建安装包。
+
+- 里面 `owner` / `repo` 是**占位值**：electron-builder 只从 `package.json` 的 `repository` 或 **`app/.git/config`** 推断，而本仓库的 `.git` 在上一层（`渠道工具/`），它找不到 —— 所以必须显式给值，不给会直接构建失败（`Cannot read properties of null (reading 'provider')`）。
+- 正式发版走 `app/scripts/release.ps1`：它从 `origin` 读出账号与仓库名，用 `--config.publish.owner/repo` 覆盖占位值，再 `--publish always` 上传。
+
+```powershell
+git remote add origin https://github.com/<账号>/<仓库>.git   # 只需一次
+$env:GH_TOKEN = 'ghp_xxx'                                   # 公开仓库勾 public_repo，私有仓库勾 repo
+pwsh -File app/scripts/release.ps1
+```
+
+顺序是：改 `app/package.json` 的 `version` → 跑脚本（内部先 `pnpm build`，再构建并上传）。版本号必须比线上大，同号不会被升级。上传完 Release 默认是**草稿**，客户端看不见，要去网页点 Publish。
+
+GitHub 只接受它允许的字符做附件名，中文产物名会被换成 `channel-packager-setup-<版本>.exe`；`latest.yml` 里写的也是这个名字，两边一致，不用管。
+
+不想重新打包也能换地址：在数据目录放一份 `update.json`（内容是 `{"url":"http://内网服务器/渠道分包工具/"}`），应用启动时用它覆盖构建时的地址 —— 见 `app/src/main/updater.ts`。安装版与便携版都认这个文件。
+
+已知限制：装好的应用把地址固化在 `app-update.yml` 里，**换地址之前装出去的旧包看不到新地址的 Release**，只能重装，或者让它读 `update.json`。
 
 ### 构建产物目录里不能放 data/
 
