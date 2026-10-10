@@ -4,6 +4,16 @@
 appId: com.example.channelpackager
 productName: 渠道分包工具
 
+# 这是 zip 目标的命名（portable 在下面单独指定 artifactName，不受这里影响）。
+# 名字里写明用途：解压一次之后直接跑文件夹里的 exe，不用每次等自解压。
+artifactName: ${productName}-${version}-解压即用.zip
+
+# 只打包中文和英文语言包。Electron 自带 55 个 .pak 约 48 MB，
+# 而便携版每次启动都要把它们完整解压一遍，留着纯属拖慢启动。
+electronLanguages:
+  - zh-CN
+  - en-US
+
 directories:
   output: release
   buildResources: build
@@ -24,7 +34,11 @@ extraResources:
     to: bin
 
 win:
-  target: portable
+  # portable：单个 exe，每次启动都要自解压（约 8 秒），用来发给别人；
+  # zip：解压一次后直接跑文件夹里的 exe（约 0.4 秒），日常用这个。
+  target:
+    - portable
+    - zip
   # build/icon.ico 由 scripts/make-icon.ps1 生成，改图形重跑该脚本即可
   icon: build/icon.ico
 
