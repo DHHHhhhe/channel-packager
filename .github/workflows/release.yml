@@ -2,8 +2,10 @@
 #
 # 发一版的完整流程：
 #     1. 改 app/package.json 的 version（必须比线上大，同号不会被升级）
-#     2. git add app/package.json && git commit -m "chore: 升到 0.3.0"
-#     3. git tag v0.3.0 && git push origin main --tags
+#     2. 把这一版要说的写进 app/build/release-notes.md —— 它会成为 Release 正文，
+#        也是客户端「发现新版本」时显示的更新内容
+#     3. git add -A && git commit -m "chore: 升到 0.3.0"
+#     4. git tag v0.3.0 && git push origin main --tags
 # 推完标签不用再做别的：Actions 跑完会在 Releases 里出现一个新版本，
 # 已装旧版的同事下次打开应用会自动下到它。
 #
@@ -26,7 +28,7 @@ on:
         type: boolean
         default: false
 
-# electron-builder 要用 GITHUB_TOKEN 建 Release、传附件
+# gh CLI 要用 GITHUB_TOKEN 建 Release、传附件
 permissions:
   contents: write
 
@@ -64,25 +66,42 @@ jobs:
         working-directory: app
         run: pnpm prepare:runtime
 
-      - name: 构建并发布到 Releases
+      # 构建与上传分成两步。electron-builder 自带的 GitHub 上传是并发的，会撞上
+      # GitHub 的资产元数据竞态：同一个 tag 下建出两个 Release，资产被劈成两半
+      # （v0.2.1 中过一次 —— 客户端请求的 download/v0.2.1/latest.yml 直接 404）。
+      # 它还把失败静默吞掉，job 照样绿。gh CLI 是串行的，传完一个再传下一个，没这问题。
+      - name: 构建（不发布）
         working-directory: app
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # 注意末尾的 || 'false' 不能省：electron-builder 的 isEnvTrue() 把**空字符串也算 true**
-          # （value === "true" || value === "" || value === "1"），所以这个变量一旦被设成空串，
-          # 每次发版都会变成草稿。必须给它一个明确的 "false"。
-          # EP_DRAFT 在 electron-builder 里优先级最高，会盖掉下面的 releaseType。
-          EP_DRAFT: ${{ inputs.draft || vars.EP_DRAFT || 'false' }}
-          # 不加这个，往「发布超过 2 小时」的既有 Release 补传附件会被 electron-builder 静默跳过，
-          # 失败重跑同一个标签时就白跑了
-          EP_GH_IGNORE_TIME: true
         run: |
           pnpm build
-          .\node_modules\.bin\electron-builder.CMD --win nsis --publish always `
-            --config.publish.provider=github `
-            --config.publish.owner=${{ github.repository_owner }} `
-            --config.publish.repo=${{ github.event.repository.name }} `
-            --config.publish.releaseType=release
+          .\node_modules\.bin\electron-builder.CMD --win nsis --publish never
+
+      - name: 发布到 Releases
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = (Get-Content app/package.json -Raw | ConvertFrom-Json).version
+          $tag = "v$version"
+          # 安装包在 Release 里必须用 GitHub 能接受的名字；latest.yml 的 path 写的也是这个，
+          # 两边必须一致，否则客户端拿着清单下不到东西
+          $setup = "channel-packager-setup-$version.exe"
+          $draft = '${{ inputs.draft || vars.EP_DRAFT || 'false' }}' -eq 'true'
+
+          if (gh release view $tag --repo $env:GITHUB_REPOSITORY 2>$null) {
+            Write-Host "Release $tag 已存在，只补传资产"
+          } else {
+            $args = @($tag, '--repo', $env:GITHUB_REPOSITORY, '--title', $version, '--notes-file', 'app/build/release-notes.md')
+            if ($draft) { $args += '--draft' }
+            gh release create @args
+          }
+
+          # 逐个上传：gh 会等每个文件传完再传下一个。--clobber 让重跑同一个标签时覆盖旧资产
+          gh release upload $tag --repo $env:GITHUB_REPOSITORY --clobber "app/release/渠道分包工具-$version-安装包.exe#$setup"
+          gh release upload $tag --repo $env:GITHUB_REPOSITORY --clobber "app/release/渠道分包工具-$version-安装包.exe.blockmap#$setup.blockmap"
+          gh release upload $tag --repo $env:GITHUB_REPOSITORY --clobber "app/release/latest.yml"
+
+          Write-Host "已上传：$setup / $setup.blockmap / latest.yml"
 
       - name: 提示
         if: ${{ !(inputs.draft || vars.EP_DRAFT) }}
