@@ -275,7 +275,7 @@ The repository's `.gitignore` already excludes `*.jks`, `*.keystore`, `*.apk`, `
 
 ### There is no exe in the repository
 
-`app/release/` is in `.gitignore`, so a fresh clone contains **no exe at all** — run a build yourself (see [Building from source](#building-from-source)). The output is `app/release/渠道分包工具-<version>.exe`, about 114 MB.
+`app/release/` is in `.gitignore`, so a fresh clone contains **no exe at all** — run a build yourself (see [Building from source](#building-from-source)). The output is app/release/渠道分包工具-&lt;version&gt;.exe, about 114 MB.
 
 It is kept out of version control because it is a build artifact: hundreds of megabytes, and byte-different on every build (timestamps, signatures), so committing it would only bloat the repository.
 
