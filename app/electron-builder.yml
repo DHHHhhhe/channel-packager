@@ -76,11 +76,21 @@ releaseInfo:
   releaseNotesFile: build/release-notes.md
 
 nsis:
-  # 一键装，不问路径：per-user 安装到 %LOCALAPPDATA%\Programs\channel-packager
-  # （目录名取自 package.json 的 name），不需要管理员权限，也就没有 UAC 弹窗。
+  # 向导式安装，让用户能自己选装到哪 —— allowToChangeInstallationDirectory
+  # 只对向导式生效，所以 oneClick 必须是 false。
+  #
+  # 默认目录仍是 %LOCALAPPDATA%\Programs\channel-packager（模板拿 APP_FILENAME 拼的，
+  # 与原来一键装的位置一模一样），已经装过的机器会读注册表里的 InstallLocation
+  # 装回原目录，不会装出两份；自动更新走静默安装，不弹任何页面。
   # 数据目录另算：见 src/main/paths.ts 的 installedDataDir()。
-  oneClick: true
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  # 保持 per-user：不写 Program Files，不需要管理员权限，也就没有 UAC 弹窗。
+  # 代价是向导里会多一步「为所有用户 / 仅为我」的选择页。
   perMachine: false
+  # 向导文案只留中文（electron-builder 模板自带 zh_CN 条目）
+  installerLanguages:
+    - zh_CN
   artifactName: 渠道分包工具-${version}-安装包.exe
   createDesktopShortcut: true
   createStartMenuShortcut: true
