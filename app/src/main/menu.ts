@@ -1,5 +1,7 @@
 import { app, BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron'
 import { IPC_CHANNELS } from '../shared/constants/channels'
+import { isInstalledLayout } from './paths'
+import { checkForUpdates } from './updater'
 import type { NavCommand } from '../shared/types/api'
 
 /**
@@ -87,6 +89,29 @@ export function installApplicationMenu(): void {
         { type: 'separator' },
         { role: 'togglefullscreen', label: '全屏' },
         ...devItems,
+      ],
+    },
+    {
+      label: '帮助',
+      submenu: [
+        /*
+         * 只有安装版才摆这一项：便携版与解压即用版没有安装目录，
+         * 自动更新没有可落脚的地方（见 updater.ts）。
+         */
+        ...(isInstalledLayout()
+          ? [
+              {
+                label: '检查更新',
+                click: (): void => {
+                  void checkForUpdates(true)
+                },
+              } satisfies MenuItemConstructorOptions,
+            ]
+          : []),
+        {
+          label: `版本 ${app.getVersion()}`,
+          enabled: false,
+        },
       ],
     },
   ]

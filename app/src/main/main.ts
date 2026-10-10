@@ -11,6 +11,7 @@ import { registerShellIpc } from './ipc/shell'
 import { installApplicationMenu } from './menu'
 import { initPaths } from './paths'
 import { currentBackgroundColor, initTheme } from './theme'
+import { initUpdater, registerUpdateIpc } from './updater'
 import type { ThemeChoice } from '../shared/types/settings'
 
 /** dev 时由 vite-plugin-electron 注入；打包后不存在 */
@@ -44,7 +45,11 @@ function createWindow(theme: ThemeChoice): void {
       // preload 用 CJS require('electron') 取 webUtils，沙箱下拿不到
       sandbox: false,
       // 渲染层要在第一帧之前就知道选的是哪一档，异步问一遍来不及
-      additionalArguments: [`--dsh-theme=${theme}`],
+      additionalArguments: [
+        `--dsh-theme=${theme}`,
+        // 侧边栏底部要显示版本号：自动更新之后用户得能看出确实换了版本
+        `--dsh-version=${app.getVersion()}`,
+      ],
     },
   })
 
@@ -95,6 +100,7 @@ app.whenReady().then(() => {
   registerClipboardIpc()
   registerShellIpc()
   registerDialogIpc()
+  registerUpdateIpc()
 
   // 建窗口之前定下主题：底色与渲染层的 prefers-color-scheme 都取它
   const theme = initTheme()
@@ -103,6 +109,9 @@ app.whenReady().then(() => {
   installApplicationMenu()
 
   createWindow(theme)
+
+  // 查更新要联网，放在窗口起来之后（见 updater.ts 里的延迟）
+  initUpdater()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

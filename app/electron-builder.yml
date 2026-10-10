@@ -1,5 +1,10 @@
-# 免安装单文件 exe。portable 目标每次启动都会自解压到 %TEMP%，
-# 因此 data/ 必须落在 PORTABLE_EXECUTABLE_DIR（exe 真实所在目录），
+# 三种产物，用途不同（数据目录规则见 src/main/paths.ts）：
+#
+#   nsis     安装包。装一次之后从快捷方式开（约 0.35 秒），支持自动更新 —— 日常和分发的默认选择。
+#   portable 单文件 exe。每次启动都要自解压到 %TEMP%（约 10 秒），发给不想装东西的人。
+#   zip      解压即用。解压一次之后跑文件夹里的 exe（约 0.4 秒），留作绿色版。
+#
+# portable 的 data/ 必须落在 PORTABLE_EXECUTABLE_DIR（exe 真实所在目录），
 # 不能用 app.getPath('exe') —— 那指向临时解压目录，用户加完配置一关就丢。
 appId: com.example.channelpackager
 productName: 渠道分包工具
@@ -34,13 +39,36 @@ extraResources:
     to: bin
 
 win:
-  # portable：单个 exe，每次启动都要自解压（约 8 秒），用来发给别人；
-  # zip：解压一次后直接跑文件夹里的 exe（约 0.4 秒），日常用这个。
   target:
+    - nsis
     - portable
     - zip
   # build/icon.ico 由 scripts/make-icon.ps1 生成，改图形重跑该脚本即可
   icon: build/icon.ico
+
+# 自动更新（electron-updater）去哪里取新版本：这个地址下的 latest.yml 与安装包。
+# 改成本公司能访问的地址即可，末尾要带 /；装好的应用会把这份配置固化进
+# resources/app-update.yml，改完必须重新构建安装包才会生效。
+#
+# 也可以不改这里：在数据目录放一份 update.json（{"url":"http://内网服务器/渠道分包工具/"}），
+# 装好的机器改一行 JSON 就能换地址，不用重新打包 —— 见 src/main/updater.ts。
+publish:
+  provider: generic
+  url: https://UPDATE_HOST/渠道分包工具/
+
+nsis:
+  # 一键装，不问路径：per-user 安装到 %LOCALAPPDATA%\Programs\channel-packager
+  # （目录名取自 package.json 的 name），不需要管理员权限，也就没有 UAC 弹窗。
+  # 数据目录另算：见 src/main/paths.ts 的 installedDataDir()。
+  oneClick: true
+  perMachine: false
+  artifactName: 渠道分包工具-${version}-安装包.exe
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: 渠道分包工具
+  # 只写标记文件（见 build/installer.nsh），应用据此把数据放到安装目录之外。
+  # 卸载时删的只有安装目录，渠道配置和 jks 留在 %LOCALAPPDATA%\渠道分包工具\data。
+  include: build/installer.nsh
 
 portable:
   artifactName: 渠道分包工具-${version}.exe

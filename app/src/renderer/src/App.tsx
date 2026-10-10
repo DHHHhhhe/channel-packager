@@ -4,6 +4,7 @@ import { CopyDiagnosticsButton } from '@/components/CopyDiagnosticsButton'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import RuntimeBanner from '@/components/RuntimeBanner'
 import StoreProblemBanner from '@/components/StoreProblemBanner'
+import UpdateBanner from '@/components/UpdateBanner'
 import { AppSidebar, viewTitle, type AppView } from '@/components/AppSidebar'
 import { TaskIndicator } from '@/components/TaskIndicator'
 import { Button } from '@/components/ui/button'
@@ -61,6 +62,7 @@ function Shell() {
         active={view}
         onSelect={setView}
         dataDir={store.dataDir}
+        appVersion={window.api.appVersion}
         jksCount={store.jksItems.length}
         groupCount={store.groups.length}
       />
@@ -76,6 +78,8 @@ function Shell() {
         <main className="flex-1 overflow-y-auto">
           <div className="mx-auto flex max-w-5xl flex-col gap-4 p-6">
             <RuntimeBanner />
+
+            <UpdateBanner />
 
             {store.loadError ? (
               <div className="flex flex-col gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">

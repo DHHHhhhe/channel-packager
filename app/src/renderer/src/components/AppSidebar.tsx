@@ -28,6 +28,8 @@ interface AppSidebarProps {
   active: AppView
   onSelect: (view: AppView) => void
   dataDir: string
+  /** 当前版本，显示在最下面一行 —— 自动更新之后要能看出确实换了版本 */
+  appVersion: string
   jksCount: number
   groupCount: number
 }
@@ -36,6 +38,7 @@ export function AppSidebar({
   active,
   onSelect,
   dataDir,
+  appVersion,
   jksCount,
   groupCount,
 }: AppSidebarProps) {
@@ -122,6 +125,14 @@ export function AppSidebar({
         </div>
 
         <div className="flex items-center gap-1 pt-1 text-xs text-muted-foreground">
+          {appVersion ? (
+            <>
+              <span className="px-1 py-0.5" title={`当前版本 ${appVersion}`}>
+                v{appVersion}
+              </span>
+              <span aria-hidden="true">·</span>
+            </>
+          ) : null}
           <button
             type="button"
             onClick={() => onSelect('jks')}

@@ -59,6 +59,15 @@ export const IPC_CHANNELS = {
 
   /** 菜单里的页面/保存命令，由主进程推给渲染层。快捷键的键位写在菜单上才有人看得见 */
   navCommand: 'nav:command',
+
+  /** 手动检查一次更新（菜单里的「检查更新」） */
+  updateCheck: 'update:check',
+  /** 下载完成后立即重启并安装 */
+  updateInstall: 'update:install',
+  /** 读当前更新状态，窗口重新加载后用它把提示条接上 */
+  updateGetState: 'update:getState',
+  /** 主进程推给渲染层的状态变化 */
+  updateState: 'update:state',
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]

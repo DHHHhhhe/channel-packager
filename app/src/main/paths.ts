@@ -6,8 +6,45 @@ const DATA_DIR_NAME = 'data'
 const RUNTIME_DIR_NAME = '.runtime'
 const SUB_DIRS = ['keystores', 'channels', 'logs'] as const
 
+/** 安装包在安装目录里留的标记文件，见 build/installer.nsh */
+const INSTALLED_MARKER = '.installed'
+
+/** 安装版的数据目录名，与 electron-builder.yml 的 productName 一致 */
+const INSTALLED_DIR_NAME = '渠道分包工具'
+
 let dataDir = ''
 let usedFallback = false
+
+/**
+ * 是不是安装包装出来的（安装目录里有标记文件）。
+ *
+ * 不能只看 exe 路径像不像 Program Files：解压即用的文件夹被人挪到那儿也不该算，
+ * 而一键安装的默认位置是 %LOCALAPPDATA%\Programs，两者都会落进「像」的范围里。
+ */
+export function isInstalledLayout(): boolean {
+  if (!app.isPackaged) {
+    return false
+  }
+  try {
+    return fs.existsSync(path.join(path.dirname(app.getPath('exe')), INSTALLED_MARKER))
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 安装版的数据目录：%LOCALAPPDATA%\渠道分包工具\data。
+ *
+ * 为什么不放 exe 旁边：安装在 %LOCALAPPDATA%\Programs 下，卸载会连安装目录一起删，
+ * 渠道配置、jks 副本和明文口令就跟着没了。
+ *
+ * 为什么不用漫游的 %APPDATA%：那里会跟着域账号漫游同步，而 data 里还有 .runtime
+ * （Chromium 缓存，几百 MB），同步它纯属浪费。
+ */
+function installedDataDir(): string {
+  const localAppData = process.env.LOCALAPPDATA ?? app.getPath('appData')
+  return path.join(localAppData, INSTALLED_DIR_NAME, DATA_DIR_NAME)
+}
 
 /**
  * 便携版 exe 每次启动自解压到 %TEMP%，`path.dirname(app.getPath('exe'))` 指向的是临时目录，
@@ -20,6 +57,9 @@ function preferredDataDir(): string {
   const portableDir = process.env.PORTABLE_EXECUTABLE_DIR
   if (portableDir) {
     return path.join(portableDir, DATA_DIR_NAME)
+  }
+  if (isInstalledLayout()) {
+    return installedDataDir()
   }
   const base = app.isPackaged ? path.dirname(app.getPath('exe')) : app.getAppPath()
   return path.join(base, DATA_DIR_NAME)

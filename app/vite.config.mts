@@ -32,7 +32,23 @@ export default defineConfig(async () => ({
         // vite-plugin-electron 会把外层 root 继承给主/预加载构建
         // （options.vite.root ??= userConfig.root）。外层 root 是 src/renderer，
         // 不在这里改回 app 根目录，入口与 dist-electron 都会解析到错误位置。
-        vite: { root: appRoot },
+        vite: {
+          root: appRoot,
+          build: {
+            /*
+             * electron-updater 里有一堆运行时才决定的 require（惰性加载各平台的
+             * 更新器、读 app-update.yml），交给 Vite 打成一个文件会散架。
+             * 留成外部依赖，由 electron-builder 把 node_modules 一起装进包里。
+             *
+             * 键名两个都写：vite-plugin-electron 在 Vite 8（rolldown 版）下把
+             * external 归到 build.rolldownOptions（见其 dist/utils-*.cjs 的
+             * createElectronViteDefaults），只写 rollupOptions 会被无声忽略 ——
+             * 实测那样打出来的 main-*.js 里全是 electron-updater 的代码。
+             */
+            rolldownOptions: { external: ['electron-updater'] },
+            rollupOptions: { external: ['electron-updater'] },
+          },
+        },
       },
       preload: {
         input: 'src/preload/preload.ts',

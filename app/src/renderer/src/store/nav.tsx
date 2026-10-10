@@ -33,6 +33,10 @@ interface NavValue {
   setUnsaved: (key: string, label: string | null) => void
   /** 内部用：按页面注册保存动作，Ctrl+S 只会调当前页那一个 */
   setSaveHandler: (view: AppView, handler: (() => void) | null) => void
+  /** 现在有没有没保存的修改。安装更新要重启进程，界面得先问一句 */
+  hasUnsaved: () => boolean
+  /** 内部用：放行一次关窗口。调用方必须先跟用户确认过改动会丢 */
+  allowUnload: () => void
 }
 
 const NavContext = createContext<NavValue | null>(null)
@@ -50,8 +54,15 @@ export function NavProvider({ children }: { children: ReactNode }) {
    */
   const unsavedRef = useRef<Map<string, string>>(new Map())
   const saveRef = useRef<Map<AppView, () => void>>(new Map())
+  const allowUnloadRef = useRef(false)
   const viewRef = useRef(view)
   viewRef.current = view
+
+  const hasUnsaved = useCallback(() => unsavedRef.current.size > 0, [])
+
+  const allowUnload = useCallback(() => {
+    allowUnloadRef.current = true
+  }, [])
 
   const setUnsaved = useCallback((key: string, label: string | null) => {
     if (label === null) {
@@ -130,7 +141,7 @@ export function NavProvider({ children }: { children: ReactNode }) {
    */
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (unsavedRef.current.size === 0) {
+      if (allowUnloadRef.current || unsavedRef.current.size === 0) {
         return
       }
       event.preventDefault()
@@ -142,8 +153,8 @@ export function NavProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo<NavValue>(
-    () => ({ view, go, setUnsaved, setSaveHandler }),
-    [view, go, setUnsaved, setSaveHandler],
+    () => ({ view, go, setUnsaved, setSaveHandler, hasUnsaved, allowUnload }),
+    [view, go, setUnsaved, setSaveHandler, hasUnsaved, allowUnload],
   )
 
   return <NavContext.Provider value={value}>{children}</NavContext.Provider>

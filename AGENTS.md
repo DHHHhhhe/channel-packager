@@ -22,20 +22,34 @@ Managed by Trellis. Edits outside this block are preserved; edits inside may be 
 
 ## 本项目约定
 
-### 改完逻辑必须重新构建便携版 exe
+### 改完逻辑必须重新构建产物
 
-`pnpm build` 只更新 `app/dist/` 与 `app/dist-electron/`，**不会**动 `app/release/渠道分包工具-<版本>.exe`。不重新构建的话，从 `app/release/` 打开的永远是上一版。
+`pnpm build` 只更新 `app/dist/` 与 `app/dist-electron/`，**不会**动 `app/release/` 下的任何产物。不重新构建的话，从 `app/release/` 打开的永远是上一版。
 
 所以每次改完渲染层或主进程的逻辑，都要在 `app/` 下跑一次：
 
 ```powershell
 cd app
-.\node_modules\.bin\electron-builder.CMD --win portable
+.\node_modules\.bin\electron-builder.CMD --win nsis portable zip
 ```
 
-本机不能用 `pnpm dist`（原因见 README「已知注意事项」）。产物约 114 MB，位于 `app/release/`，不入库。
+本机不能用 `pnpm dist`（原因见 README「已知注意事项」）。产物都落在 `app/release/`，不入库：
 
-改完至少核对一次：exe 的修改时间要晚于最后一次源码改动。
+| 产物 | 给谁用 | 数据目录 |
+| --- | --- | --- |
+| `渠道分包工具-<版本>-安装包.exe` | 发给同事安装，带自动更新 | `%LOCALAPPDATA%\渠道分包工具\data` |
+| `渠道分包工具-<版本>.exe` | 便携版，双击就跑 | exe 旁边的 `data\` |
+| `渠道分包工具-<版本>-解压即用.zip` | 解压后跑里面的 exe | 同上 |
+
+版本号在 `app/package.json` 的 `version`，改完要重新构建才会进产物名与「帮助 → 版本」里。
+
+改完至少核对一次：产物的修改时间要晚于最后一次源码改动。
+
+### 自动更新的地址
+
+`app/electron-builder.yml` 的 `publish.url` 会在构建时固化进安装包的 `resources/app-update.yml`，所以改地址要重新构建安装包。
+
+不想重新打包也行：在数据目录放一份 `update.json`（内容是 `{"url":"http://内网服务器/渠道分包工具/"}`），应用启动时用它覆盖构建时的地址 —— 见 `app/src/main/updater.ts`。安装版与便携版都认这个文件。
 
 ### 构建产物目录里不能放 data/
 

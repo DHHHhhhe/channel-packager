@@ -3,6 +3,7 @@ import { IPC_CHANNELS } from '../shared/constants/channels'
 import type { NavCommand, RendererApi } from '../shared/types/api'
 import type { RuntimeCheckResult } from '../shared/types/runtime'
 import { parseThemeChoice, type ThemeChoice } from '../shared/types/settings'
+import type { UpdateState } from '../shared/types/update'
 import type {
   ChannelConfig,
   ChannelEntry,
@@ -41,10 +42,19 @@ import type {
  */
 const THEME_ARG_PREFIX = '--dsh-theme='
 
+/** 主进程注入的版本号参数前缀，同上：同步可读，首帧就能显示在侧边栏 */
+const VERSION_ARG_PREFIX = '--dsh-version='
+
 /** 取不到或认不出都当「跟随系统」，主进程那边还有一份落盘的真值兜底 */
 function readInitialTheme(): ThemeChoice {
   const arg = process.argv.find((value) => value.startsWith(THEME_ARG_PREFIX))
   return parseThemeChoice(arg?.slice(THEME_ARG_PREFIX.length))
+}
+
+/** 版本号取不到就留空，界面上少一行而已，不值得因此报错 */
+function readAppVersion(): string {
+  const arg = process.argv.find((value) => value.startsWith(VERSION_ARG_PREFIX))
+  return arg ? arg.slice(VERSION_ARG_PREFIX.length) : ''
 }
 
 /**
@@ -67,6 +77,8 @@ const api: RendererApi = {
   },
 
   initialTheme: readInitialTheme(),
+
+  appVersion: readAppVersion(),
 
   setTheme(choice: ThemeChoice): Promise<ThemeChoice> {
     return ipcRenderer.invoke(IPC_CHANNELS.storeSaveTheme, choice)
@@ -199,6 +211,29 @@ const api: RendererApi = {
 
   openPath(targetPath: string): Promise<string> {
     return ipcRenderer.invoke(IPC_CHANNELS.shellOpenPath, targetPath)
+  },
+
+  checkUpdate(): Promise<UpdateState> {
+    return ipcRenderer.invoke(IPC_CHANNELS.updateCheck)
+  },
+
+  getUpdateState(): Promise<UpdateState> {
+    return ipcRenderer.invoke(IPC_CHANNELS.updateGetState)
+  },
+
+  installUpdate(): Promise<void> {
+    return ipcRenderer.invoke(IPC_CHANNELS.updateInstall)
+  },
+
+  onUpdateState(listener: (state: UpdateState) => void): () => void {
+    // 同样只把负载交出去，IpcRendererEvent 不上送
+    const handler = (_event: IpcRendererEvent, payload: UpdateState): void => {
+      listener(payload)
+    }
+    ipcRenderer.on(IPC_CHANNELS.updateState, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.updateState, handler)
+    }
   },
 }
 

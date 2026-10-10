@@ -1,5 +1,6 @@
 import type { RuntimeCheckResult } from './runtime'
 import type { ThemeChoice } from './settings'
+import type { UpdateState } from './update'
 import type {
   ChannelConfig,
   ChannelEntry,
@@ -59,6 +60,12 @@ export interface RendererApi {
    * 之前就把 `.dark` 挂上，否则会先亮一下再变暗。主进程那边还有一份落盘的真值。
    */
   readonly initialTheme: ThemeChoice
+
+  /**
+   * 当前应用版本，显示在侧边栏底部。
+   * 自动更新之后用户得能自己看出「确实换成新版本了」，否则只能靠猜。
+   */
+  readonly appVersion: string
 
   /** 切换主题。主进程落盘并改 nativeTheme，返回实际生效的选择 */
   setTheme(choice: ThemeChoice): Promise<ThemeChoice>
@@ -194,4 +201,22 @@ export interface RendererApi {
    * 直接返回一句中文说明，不会弹出系统自己的报错框。
    */
   openPath(targetPath: string): Promise<string>
+
+  /**
+   * 手动检查一次更新。菜单里的「检查更新」走这里。
+   * 启动后主进程也会自己查一遍（只有安装版才有这条路，见 main/updater.ts）。
+   */
+  checkUpdate(): Promise<UpdateState>
+
+  /** 当前更新状态。窗口重新加载后用它把提示条接上 */
+  getUpdateState(): Promise<UpdateState>
+
+  /**
+   * 下载完成后立即重启并安装。
+   * 有出包任务在跑时不要调 —— 重启会把它掐掉，界面要先拦一道。
+   */
+  installUpdate(): Promise<void>
+
+  /** 订阅更新状态变化，返回取消订阅函数 */
+  onUpdateState(listener: (state: UpdateState) => void): () => void
 }

@@ -1,6 +1,6 @@
 {
   "name": "channel-packager",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Android 渠道分包工具 GUI 版（Electron + React）",
   "author": "dhhheee",
@@ -17,6 +17,9 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "dist": "electron-builder --win portable"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   },
   "devDependencies": {
     "@fontsource-variable/geist": "^5.3.0",
