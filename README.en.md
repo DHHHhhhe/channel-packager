@@ -43,7 +43,7 @@ Drop in an APK, tick the channels you want, and get a batch of channel packages 
 
 ## Quick start
 
-1. Grab `channel-packager-setup-<version>.exe` from [Releases](https://github.com/DHHHhhhe/channel-packager/releases) and install it (you can choose the install directory)
+1. Grab channel-packager-setup-&lt;version&gt;.exe from [Releases](https://github.com/DHHHhhhe/channel-packager/releases) and install it (you can choose the install directory)
 2. Open the app and go to the "签名配置" (Signing) page to add a keystore: pick the `.jks` file, confirm the alias and passwords, then click "新增并校验" (Add and verify)
 3. Go to "渠道配置" (Channels), create a group and maintain its channel list; the "模板与配置包" (Templates & Config Packs) page holds the suffix templates you can apply when adding a keystore
 4. Go to "出包" (Pack), drop the APK in, tick the channels, and click "开始出包" (Start packing)
@@ -52,7 +52,7 @@ Drop in an APK, tick the channels you want, and get a batch of channel packages 
 
 Installed builds **check for updates automatically**: when a new version is found the release notes are shown first and you decide whether to download; once downloaded you can restart immediately or let it install when you next close the window.
 
-> The portable build (`渠道分包工具-<version>.exe`) and the unzip-and-run build have no auto-update — you replace those by hand. Neither is in the repository; build them yourself (see [Building from source](#building-from-source)).
+> The portable build (渠道分包工具-&lt;version&gt;.exe) and the unzip-and-run build have no auto-update — you replace those by hand. Neither is in the repository; build them yourself (see [Building from source](#building-from-source)).
 
 ## The interface
 
@@ -99,7 +99,7 @@ If all you have is a package someone else already signed and no private key, set
 | Pack | "自定义渠道导出" (Custom channel export) | Build a one-off channel list for this pack: import a channel JSON or type channel ids directly (one per line, alias optional). **Nothing is persisted** by default — only rows you tick "存入分组" (Save into group) are appended to the chosen group |
 | Pack | "查看渠道" (View channels) | Shows the channel ids inside the package; if none were ever written it says so instead of mistaking a file path for a channel id |
 | Pack | Result card on failure | Names **which step failed, the exit code, and the last 15 lines of that step's output** — no digging through logs. The neighbouring "复制诊断信息" (Copy diagnostics) button copies it all, with the home directory rewritten to `%USERPROFILE%` so it is safe to paste to someone else |
-| Pack | "跳过签名" (Skip signing) | When re-signing, a `<original name>_已签名_未写渠道.apk` is left next to the original. Drop that in later with signing mode set to "Skip signing" to save the zipalign + apksigner pass. Before packing, the signature certificate of that file is compared against the selected keystore and the run aborts on a mismatch — otherwise you would ship a batch whose signatures do not match, and only find out at install or update time |
+| Pack | "跳过签名" (Skip signing) | When re-signing, a &lt;original name&gt;_已签名_未写渠道.apk is left next to the original. Drop that in later with signing mode set to "Skip signing" to save the zipalign + apksigner pass. Before packing, the signature certificate of that file is compared against the selected keystore and the run aborts on a mismatch — otherwise you would ship a batch whose signatures do not match, and only find out at install or update time |
 | Pack | "不用签名文件" (No keystore) | For when you only have a package someone else signed: writes channels without re-signing. Needs no keystore at all, and before packing it confirms the input can actually be skipped (an unreadable certificate, or no v2 signature, stops it). Afterwards every output is checked against the input's certificate and flagged on a mismatch |
 | Pack | `.work/` in the output directory | Each "Start packing" wipes the previous `.work/` so it cannot grow forever; on failure it is kept so you can inspect the intermediate files |
 | Pack | Hung subprocess | If zipalign / apksigner / walle produces **no output for 10 minutes** it is treated as stuck, killed, and the card says so — the UI never spins forever |
@@ -108,7 +108,7 @@ If all you have is a package someone else already signed and no private key, set
 | Pack | "加入队列" / "开始队列" (Add to queue / Start queue) | Collect several sets (different APKs, keystores, channels) and run them together. They run **serially**; a failing item is flagged on its own and does not stop the rest. Per-item status lives in the queue card, and "详情" (Details) shows that item's result card. "Add to queue" only records the current form's parameters; "Start queue" is what actually packs |
 | Templates | Ticking "导出时不带签名凭据" (Export without credentials) | The pack then holds only the channel templates and an empty keystore list — no private keys, no passwords, no groups or channel lists. Importing it leaves the recipient's own keystores and groups untouched; they add a keystore and apply the templates |
 | Data location | `data/logs/` | Keeps at most 30 files and 50 MB total, dropping the oldest first, always keeping at least the 10 most recent |
-| Data location | When a config file is corrupted | A banner names **which file, why it could not be read, and its absolute path**, saves the broken content as `<name>.broken`, then continues with an empty list — **the original file is not modified at all**. Fix or delete it and reopen; "知道了" (Got it) dismisses the banner (it comes back if another file turns out to be broken) |
+| Data location | When a config file is corrupted | A banner names **which file, why it could not be read, and its absolute path**, saves the broken content as &lt;name&gt;.broken, then continues with an empty list — **the original file is not modified at all**. Fix or delete it and reopen; "知道了" (Got it) dismisses the banner (it comes back if another file turns out to be broken) |
 
 </details>
 
@@ -134,7 +134,7 @@ Copying the whole folder migrates everything; copying only the exe gives you a c
 
 `groups.json` is the index of the channel files — it and `channels/` must stay paired, or those channel files have no owner (config-pack import pairs them the same way). When upgrading from an older version, the channel lists that used to hang off each keystore are adopted as a group of the same name, and the old "English app name" is merged into the Chinese one; the process is idempotent and does not create duplicates on repeated launches.
 
-If one of these `.json` files gets corrupted (a missing brace from hand-editing, power loss mid-write), a banner on startup names the file, the reason and the absolute path, saves the broken content as `<name>.broken`, then continues with an empty list — **the original file is not modified at all**. Fix it or delete it and reopen. Note that "file missing" and "file broken" are different things: the former is a normal "not configured yet" and does not warn; only an unreadable file is a problem.
+If one of these `.json` files gets corrupted (a missing brace from hand-editing, power loss mid-write), a banner on startup names the file, the reason and the absolute path, saves the broken content as &lt;name&gt;.broken, then continues with an empty list — **the original file is not modified at all**. Fix it or delete it and reopen. Note that "file missing" and "file broken" are different things: the former is a normal "not configured yet" and does not warn; only an unreadable file is a problem.
 
 Adding a keystore copies it into `data/keystores/`, and signing only ever uses that copy — moving or deleting the original `.jks` afterwards does not affect packing. Deleting a keystore **does not** touch any group or channel list: the two are decoupled.
 
@@ -150,7 +150,7 @@ Adding a keystore copies it into `data/keystores/`, and signing only ever uses t
 | A config pack | Keystore copies + credentials + groups and channel lists + templates, zipped | Migrate to another machine, keep a team's setup in sync |
 | A config pack with "不含签名凭据" ticked | Templates + an empty keystore list, zipped | Give a colleague the channel templates and let them add their own keystores |
 
-Before importing, the manifest and the SHA256 of every file are verified and conflicts are listed; conflict handling can **skip**, **keep both** (the new entry is renamed `<id>_2`) or **overwrite**.
+Before importing, the manifest and the SHA256 of every file are verified and conflicts are listed; conflict handling can **skip**, **keep both** (the new entry is renamed &lt;id&gt;_2) or **overwrite**.
 
 Groups and channel lists travel in the pack's `groups.json` + `channels/`. **Packs exported by older versions (only `channels/`, no `groups.json`) still import** — they are restored as "one group per keystore with the same name", and the old "English app name" field is merged into the Chinese one. The pack format version did not change, so old and new exes interoperate.
 
@@ -200,7 +200,7 @@ The script is idempotent: if an artifact exists and its size matches `resources/
 
 ## Releasing a new version
 
-Push a `v<version>` tag and GitHub Actions builds on Windows and uploads the **installer + `.blockmap` + `latest.yml`** to Releases. No local Node / Android SDK and no token needed.
+Push a v&lt;version&gt; tag and GitHub Actions builds on Windows and uploads the **installer + `.blockmap` + `latest.yml`** to Releases. No local Node / Android SDK and no token needed.
 
 ```powershell
 # 1. Bump app/package.json's version (must be greater than the released one; the same number will not upgrade)
