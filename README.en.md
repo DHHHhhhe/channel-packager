@@ -239,9 +239,17 @@ Both routes upload only the **installer** (the only artifact with auto-update); 
 
 ### Windows blocks the first launch
 
-The exe has no code-signing certificate, so SmartScreen shows "Windows protected your PC" with an unknown publisher. The file is not corrupt — click "More info" → "Run anyway".
+The installer has no code-signing certificate, so SmartScreen shows "Windows protected your PC" with an unknown publisher. The file is not corrupt — click "More info" → "Run anyway".
 
-What the recipient needs to know (where to put it, how to get past the prompt, which files must not be shared) is written up in [交付说明.md](交付说明.md) (Chinese); it can be sent along with the installer.
+If you only see "Don't run" and "More info", "Run anyway" is folded behind "More info" — open it and it is there. Related prompts:
+
+| Prompt | What to do |
+| --- | --- |
+| The browser warns about an uncommon or unsafe download | Choose "Keep" |
+| Antivirus flags an unknown publisher and offers to block it | Allow it; this is the missing signature, not a virus detection |
+| Right-click the installer → Properties shows an "Unblock" checkbox at the bottom | Tick it and confirm — one fewer prompt next time |
+
+When handing the tool to someone, **send the installer only** — never the `data/` directory alongside it. It holds the **plaintext passwords** in `jks.json`, the private-key copies in `keystores/`, your groups and channel lists, and logs containing local paths. To share a channel table for reference, use "导出 JSON" / "导出示例 JSON" on the Channels page — those carry only channel ids and aliases.
 
 ### Local `pnpm dist` fails with `Unknown argument: …electron-builder\cli.js`
 
