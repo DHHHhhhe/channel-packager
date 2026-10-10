@@ -143,14 +143,17 @@ export function CustomChannelExportDialog({
   const duplicates = useMemo(() => findDuplicates(rows.map((row) => row.key)), [rows])
 
   /*
-   * 红字只在「用户动过」或「点过确认」之后出现。
+   * 红字只在点过「确认」之后出现。
    *
    * 弹窗一打开就摆一张空行、同时报红「有渠道号还空着的行」，说的是设计者
    * 自己的事 —— 用户还没开始填。所以初始态用中性灰字交代怎么填，
    * 真有问题再变红。
+   *
+   * 刻意不跟「离开过某行」（touchedIds）联动：点「取消」时输入框会先失焦，
+   * 那条红字就跟着冒出来，看着像「点取消反而被报错」。行里那圈红边
+   * （aria-invalid）仍旧按 touchedIds 走 —— 它不改变布局，不会挪动按钮。
    */
-  const showEmptyWarning =
-    hasEmpty && (attempted || rows.some((row) => touchedIds.includes(row.rowId)))
+  const showEmptyWarning = hasEmpty && attempted
 
   const toEntry = (row: PairRow): ChannelEntry => {
     const channel = row.key.trim()
@@ -382,14 +385,25 @@ export function CustomChannelExportDialog({
           </Button>
         </div>
 
-        {showEmptyWarning ? (
-          <p className="flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-            <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
-            <span>有渠道号还空着的行，补全或删除后才能确认。</span>
-          </p>
-        ) : hasEmpty ? (
-          <p className="text-xs text-muted-foreground">
-            每行填一个渠道号，别名选填；填完点「确认并用它出包」。
+        {/*
+          中性提示与红字用同一个框、同一份高度：红字是失焦那一刻冒出来的，
+          如果它同时把下面的按钮往下推，鼠标抬起就落在别处，点击不生效 ——
+          表现成「点取消没关掉，反而冒出红字」。
+        */}
+        {hasEmpty ? (
+          <p
+            className={
+              showEmptyWarning
+                ? 'flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive'
+                : 'flex items-start gap-1.5 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground'
+            }
+          >
+            {showEmptyWarning ? <TriangleAlert className="mt-0.5 size-3.5 shrink-0" /> : null}
+            <span>
+              {showEmptyWarning
+                ? '有渠道号还空着的行，补全或删除后才能确认。'
+                : '每行填一个渠道号，别名选填；填完点「确认并用它出包」。'}
+            </span>
           </p>
         ) : null}
 
