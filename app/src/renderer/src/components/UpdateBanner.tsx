@@ -8,23 +8,32 @@ import { useNav } from '@/store/nav'
 import type { UpdateState } from '@shared/types/update'
 
 /**
- * 把 Release 正文里的 HTML 压成纯文本。
+ * 把更新内容压成一段纯文本。
  *
- * 主进程原样把 Release 正文递过来（它没有 DOM，也不该去解析），转文本在这儿做。
+ * 两条更新源给的格式不一样：GitHub 那条路给的是 HTML（atom feed 的 content），
+ * 内网 generic 源（数据目录里的 update.json）给的是 latest.yml 里原样的 markdown。
+ * 所以先按 HTML 解一次，再把 markdown 的记号收拾掉 —— 不然界面上会直接冒出
+ * 「### 」这种字符。
+ *
  * 用 DOMParser 而不是往临时元素里塞 innerHTML：解析出来的是游离文档，图片与事件
  * 属性都没有机会执行。
  */
-function notesToText(html: string): string {
-  if (!html) {
+function notesToText(raw: string): string {
+  if (!raw) {
     return ''
   }
+  let text = raw
   try {
-    const doc = new DOMParser().parseFromString(html, 'text/html')
-    return (doc.body.textContent ?? '').replace(/\n{3,}/g, '\n\n').trim()
+    text = new DOMParser().parseFromString(raw, 'text/html').body.textContent ?? raw
   } catch {
-    // 解析不了就原样显示，总比什么都不给强
-    return html
+    text = raw
   }
+  return text
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/^\s*[-*]\s+/gm, '• ')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 /**
