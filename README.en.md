@@ -38,9 +38,9 @@ No Java to install, no Android SDK to configure — the JRE, apksigner, zipalign
 | Channels organised in groups | One channel list per group, decoupled from keystores, several can coexist; add channels from a template |
 | Passwords stored per keystore | Each keystore's password is kept separately, editable in the UI, with an eye button to check the plaintext |
 | No local toolchain | The JRE, apksigner, zipalign and walle are all bundled — no Java to install, no Android SDK to configure |
-| Portable configuration | Export a config pack (optionally without credentials) to move machines or sync a team in one shot |
+| Portable configuration | Export a config pack (optionally without credentials) to move machines or sync a team in a single step |
 | Failures you can act on | The result card names the failing step, its exit code and the tail of its output, plus a full log |
-| Auto-update | Installed builds check for new versions themselves; the release notes come first and you decide whether to download |
+| Auto-update | Installed builds check for updates automatically; the release notes are shown first and you decide whether to download |
 
 ## Quick start
 
@@ -68,7 +68,7 @@ Four pages in the sidebar:
 | 渠道配置 (Channels) | Maintain groups and their channel lists |
 | 模板与配置包 (Templates & Config Packs) | Suffix templates, import/export config |
 
-The number on the right of a nav item is an inventory count (how many keystores, how many groups); the bottom of the sidebar holds the theme switch, the update check and the current version.
+The number on the right of a nav item is the item count for that page (keystores, groups); the bottom of the sidebar holds the theme switch, the update check and the current version.
 
 ## Channel lists belong to groups, not to keystores
 
@@ -98,13 +98,13 @@ If all you have is a package someone else already signed and no private key, set
 | Channels | "按模板生成" (Generate from template) | Replaces the whole list, so if there are unsaved edits it asks first; cancelling leaves the list untouched |
 | Channels | "渠道前缀" (Channel prefix) | **Has no default** — fill in whatever this batch needs. It only records the prefix and **does not touch the list**; the list is recomputed when you click "Generate from template", which again asks first if you have hand-edited rows |
 | Pack | "自定义渠道导出" (Custom channel export) | Build a one-off channel list for this pack: import a channel JSON or type channel ids directly (one per line, alias optional). **Nothing is persisted** by default — only rows you tick "存入分组" (Save into group) are appended to the chosen group |
-| Pack | "查看渠道" (View channels) | Shows the channel ids inside the package; if none were ever written it says so instead of mistaking a file path for a channel id |
+| Pack | "查看渠道" (View channels) | Shows the channel ids inside the package; if none were ever written it reports this explicitly instead of mistaking a file path for a channel id |
 | Pack | Result card on failure | Names **which step failed, the exit code, and the last 15 lines of that step's output** — no digging through logs. The neighbouring "复制诊断信息" (Copy diagnostics) button copies it all, with the home directory rewritten to `%USERPROFILE%` so it is safe to paste to someone else |
-| Pack | "跳过签名" (Skip signing) | When re-signing, a &lt;original name&gt;_已签名_未写渠道.apk is left next to the original. Drop that in later with signing mode set to "Skip signing" to save the zipalign + apksigner pass. Before packing, the signature certificate of that file is compared against the selected keystore and the run aborts on a mismatch — otherwise you would ship a batch whose signatures do not match, and only find out at install or update time |
+| Pack | "跳过签名" (Skip signing) | When re-signing, a &lt;original name&gt;_已签名_未写渠道.apk is left next to the original. Use that file later with signing mode set to "Skip signing" to save the zipalign + apksigner pass. Before packing, the signature certificate of that file is compared against the selected keystore and the run aborts on a mismatch — otherwise you would ship a batch whose signatures do not match, and only find out at install or update time |
 | Pack | "不用签名文件" (No keystore) | For when you only have a package someone else signed: writes channels without re-signing. Needs no keystore at all, and before packing it confirms the input can actually be skipped (an unreadable certificate, or no v2 signature, stops it). Afterwards every output is checked against the input's certificate and flagged on a mismatch |
 | Pack | `.work/` in the output directory | Each "Start packing" wipes the previous `.work/` so it cannot grow forever; on failure it is kept so you can inspect the intermediate files |
-| Pack | Hung subprocess | If zipalign / apksigner / walle produces **no output for 10 minutes** it is treated as stuck, killed, and the card says so — the UI never spins forever |
-| Pack | "打开输出目录" / "打开日志" on the result card | Opens the output directory in Explorer; the log line opens in the system default program. If the path was moved or deleted it says so instead of throwing a system error dialog |
+| Pack | Hung subprocess | If zipalign / apksigner / walle produces **no output for 10 minutes** it is treated as stuck, killed, and the card states this — the UI does not hang indefinitely |
+| Pack | "打开输出目录" / "打开日志" on the result card | Opens the output directory in Explorer; the log line opens in the system default program. If the path was moved or deleted it reports this explicitly instead of raising a system error dialog |
 | Pack | "重跑本次" (Re-run this) on the result card | Puts the previous run's parameters (APK, keystore, ticked channels, signing mode, output directory) **back into the form** without starting — handy when you want to swap a couple of channels and go again |
 | Pack | "加入队列" / "开始队列" (Add to queue / Start queue) | Collect several sets (different APKs, keystores, channels) and run them together. They run **serially**; a failing item is flagged on its own and does not stop the rest. Per-item status lives in the queue card, and "详情" (Details) shows that item's result card. "Add to queue" only records the current form's parameters; "Start queue" is what actually packs |
 | Templates | Ticking "导出时不带签名凭据" (Export without credentials) | The pack then holds only the channel templates and an empty keystore list — no private keys, no passwords, no groups or channel lists. Importing it leaves the recipient's own keystores and groups untouched; they add a keystore and apply the templates |
