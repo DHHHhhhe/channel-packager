@@ -96,10 +96,19 @@ jobs:
             gh release create @args
           }
 
+          # 先复制成 GitHub 能接受的名字再传：中文产物名会被 GitHub 剥成「-0.2.2-.exe」，
+          # 而 latest.yml 里的 path 写的是 $setup，两边对不上客户端就 404。
+          # （gh 的 `文件#标签` 只加显示标签，不改资产名，别指望它。）
+          $staging = "app/release/upload"
+          New-Item -ItemType Directory -Path $staging -Force | Out-Null
+          Copy-Item "app/release/渠道分包工具-$version-安装包.exe" "$staging/$setup" -Force
+          Copy-Item "app/release/渠道分包工具-$version-安装包.exe.blockmap" "$staging/$setup.blockmap" -Force
+          Copy-Item "app/release/latest.yml" "$staging/latest.yml" -Force
+
           # 逐个上传：gh 会等每个文件传完再传下一个。--clobber 让重跑同一个标签时覆盖旧资产
-          gh release upload $tag --repo $env:GITHUB_REPOSITORY --clobber "app/release/渠道分包工具-$version-安装包.exe#$setup"
-          gh release upload $tag --repo $env:GITHUB_REPOSITORY --clobber "app/release/渠道分包工具-$version-安装包.exe.blockmap#$setup.blockmap"
-          gh release upload $tag --repo $env:GITHUB_REPOSITORY --clobber "app/release/latest.yml"
+          gh release upload $tag --repo $env:GITHUB_REPOSITORY --clobber "$staging/$setup"
+          gh release upload $tag --repo $env:GITHUB_REPOSITORY --clobber "$staging/$setup.blockmap"
+          gh release upload $tag --repo $env:GITHUB_REPOSITORY --clobber "$staging/latest.yml"
 
           Write-Host "已上传：$setup / $setup.blockmap / latest.yml"
 
