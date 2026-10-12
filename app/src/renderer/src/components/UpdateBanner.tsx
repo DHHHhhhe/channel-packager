@@ -37,7 +37,10 @@ function notesToText(raw: string): string {
 }
 
 /**
- * 自动更新的提示条。
+ * 自动更新的提示条，浮在窗口右下角。
+ *
+ * 为什么不占内容区顶部：更新是异步事件，而用户多半正在出包流程里。摆在内容流里会把
+ * 页面往下顶、把「输入 APK」那一块推走，可这件事并不需要立即处理 —— 放角落才不打断。
  *
  * 只有安装版才会真的出现（便携版与解压即用版没有安装目录，见主进程 updater.ts）。
  * 三个阶段各有去处：
@@ -46,6 +49,9 @@ function notesToText(raw: string): string {
  *   downloaded  —— 「立即重启并更新」
  * 其余一律不占位置：「已经是最新」与「检查失败」只会在用户自己点过「检查更新」
  * 之后用一句提示收尾，免得每次启动都冒出「已是最新」这种没人问的话。
+ *
+ * 点「稍后」只是把这一条收起来，主进程的状态不动 —— 侧边栏底部的「检查更新」
+ * 会跟着阶段变成「下载更新」或「重启并更新」，从那里接着走。
  */
 export default function UpdateBanner(): JSX.Element | null {
   const { hasUnsaved, allowUnload } = useNav()
@@ -71,9 +77,17 @@ export default function UpdateBanner(): JSX.Element | null {
       }
     })
 
+    /*
+     * 侧边栏那个按钮在「已下载」阶段点一下会发这个事件 —— 重启前要核对未保存的改动
+     * 与正在跑的任务，那段判断在这里，所以它把提示条叫回来，而不是自己走一遍。
+     */
+    const reveal = (): void => setDismissed(false)
+    window.addEventListener('update:reveal', reveal)
+
     return () => {
       cancelled = true
       unsubscribe()
+      window.removeEventListener('update:reveal', reveal)
     }
   }, [])
 
@@ -137,7 +151,7 @@ export default function UpdateBanner(): JSX.Element | null {
   return (
     <div
       data-slot="update-banner"
-      className="flex flex-col gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm"
+      className="fixed right-4 bottom-4 z-50 flex w-96 max-w-[calc(100vw-2rem)] flex-col gap-2 rounded-lg border border-primary/30 bg-background px-3 py-2 text-sm shadow-lg"
     >
       <div className="flex items-start gap-2">
         {downloading ? (
