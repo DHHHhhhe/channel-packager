@@ -215,7 +215,7 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
       setFeedback({
         kind: 'error',
         text: lower.endsWith('.json')
-          ? '这是渠道 JSON 文件，不是签名文件；请用下方「渠道数据 → 导入 JSON」里的「选择 JSON」。'
+          ? '这是渠道 JSON 文件，不是签名文件；请用下方「渠道数据 → 导入渠道 JSON」里的「选择 JSON」。'
           : `只认 .jks / .keystore 格式的签名文件，这个是「${file.name}」。`,
       })
       return
@@ -757,7 +757,7 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
                 <SelectContent>
                   <SelectItem value="empty">不套用模板，得到空列表</SelectItem>
                   <SelectItem value="template">套用模板</SelectItem>
-                  <SelectItem value="json">导入 JSON（先预览，可改）</SelectItem>
+                  <SelectItem value="json">导入渠道 JSON（先预览，可改）</SelectItem>
                 </SelectContent>
               </Select>
 

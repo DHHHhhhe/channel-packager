@@ -323,7 +323,7 @@ export function ChannelsScreen() {
         kind: 'ok',
         text: `已导出示例 ${result.count ?? 0} 条：${result.path}${
           result.fromTemplate ? '（条目取自「渠道模板」页的模板）' : '（模板为空，用的是内置兜底示例）'
-        }。改好后用「导入 JSON」读回来。`,
+        }。改好后用「导入渠道 JSON」读回来。`,
         path: result.path,
       })
     } catch (error) {
@@ -510,7 +510,7 @@ export function ChannelsScreen() {
               签名文件只负责签名：需要重签名时才要用到，只写渠道时可以完全不选。
             </p>
             <p className="text-sm text-muted-foreground">
-              建好之后无需逐条输入：「按模板生成」可以按「渠道模板」页的后缀一次生成整份列表，「导入 JSON」可以直接读入现成的列表。
+              建好之后无需逐条输入：「按模板生成」可以按「渠道模板」页的后缀一次生成整份列表，「导入渠道 JSON」可以直接读入现成的列表。
             </p>
             <div className="flex flex-wrap gap-2">
               <Button onClick={() => setGroupForm({ open: true, editing: null })}>
@@ -532,14 +532,19 @@ export function ChannelsScreen() {
         actions={
           <>
             {dirty ? <span className="text-xs text-muted-foreground">有未保存的修改</span> : null}
+            {/*
+              文案里必须带「渠道」：只写「导入 / 导出 JSON」时，「JSON」是格式不是对象，
+              用户看不出操作的是当前分组的这份列表，还是全部分组。旁边那个「保存渠道列表」
+              本来就有宾语，三个按钮的粒度这才一致。
+            */}
             <Button
               variant="outline"
               onClick={handleImportJson}
               disabled={saving || loading || importing}
-              title="读一份渠道 JSON 进来，先预览、改完再确认"
+              title="把一份渠道 JSON 读进当前分组的列表，先预览、改完再确认"
             >
               {importing ? <Spinner /> : null}
-              {importing ? '读取中…' : '导入 JSON'}
+              {importing ? '读取中…' : '导入渠道 JSON'}
             </Button>
             <Button
               variant="outline"
@@ -547,11 +552,11 @@ export function ChannelsScreen() {
               disabled={saving || loading || rows.length === 0}
               title={
                 rows.length === 0
-                  ? '渠道列表为空，没有可导出的内容'
-                  : '导出界面上的渠道列表（含尚未保存的修改）'
+                  ? '当前分组的渠道列表为空，没有可导出的内容'
+                  : '导出当前分组的渠道列表（含尚未保存的修改）'
               }
             >
-              导出 JSON
+              导出渠道 JSON
             </Button>
             <Button onClick={handleSave} disabled={saving || loading || !dirty}>
               {saving ? <Spinner /> : null}
@@ -712,7 +717,7 @@ export function ChannelsScreen() {
             列表里已经有条目时，会先把要生成的内容列出来让你确认，生成后还能在状态栏上撤销。
           </p>
           <p className="text-xs text-muted-foreground">
-            「导入 JSON」会把文件里的条目读进一个预览框，可以在里面直接增删改；确认后只填进下面的列表，
+            「导入渠道 JSON」会把文件里的条目读进一个预览框，可以在里面直接增删改；确认后只填进下面的列表，
             点「保存渠道列表」才会写入文件。
           </p>
 
@@ -720,7 +725,7 @@ export function ChannelsScreen() {
           {rows.length === 0 && !loading ? (
             <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
               <span className="text-sm text-muted-foreground">
-                列表是空的。可以从一份空白示例起步：导出后照着改，再用「导入 JSON」读回来。
+                列表是空的。可以从一份空白示例起步：导出后照着改，再用「导入渠道 JSON」读回来。
               </span>
               <Button
                 variant="outline"
