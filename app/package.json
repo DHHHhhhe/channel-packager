@@ -1,6 +1,6 @@
 {
   "name": "channel-packager",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "private": true,
   "description": "Android 渠道分包工具 GUI 版（Electron + React）",
   "author": "dhhheee",

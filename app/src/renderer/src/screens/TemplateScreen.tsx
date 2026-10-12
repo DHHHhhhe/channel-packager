@@ -152,7 +152,7 @@ export function TemplateScreen() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
-        description="新增签名文件时套用的后缀表。模板独立于签名文件，改动不影响已有副本。"
+        description="新增签名文件时套用的后缀表，模板独立于签名文件。右上角的「保存模板」保存的是下面的后缀表；配置包的导入导出点完立即生效。"
         actions={
           <>
             {dirty ? <span className="text-xs text-muted-foreground">有未保存的修改</span> : null}
