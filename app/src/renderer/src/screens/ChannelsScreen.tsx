@@ -761,6 +761,7 @@ export function ChannelsScreen() {
               selectable
               filterable
               bulkPaste
+              bulkKeyOnly
               duplicates={duplicates}
               errorRowIds={errorRowIds}
               resetFilterToken={filterResetToken}
