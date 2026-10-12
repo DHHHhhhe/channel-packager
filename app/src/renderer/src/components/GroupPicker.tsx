@@ -27,19 +27,56 @@ interface GroupPickerProps {
 }
 
 /**
- * 分组的显示文本。
+ * 分组的显示文本（纯字符串，供搜索匹配用）。
  *
  * 名称与应用名相同时只显示一个 —— 实测数据里绝大多数分组两者本来就一样，
  * 照原样拼成「demo（demo）」既占宽度又干扰扫读。不同名时才用「·」并列，
  * 比括号更像「两个属性」而不是「补充说明」。
  */
 export function groupLabel(group: GroupOption): string {
+  const { primary, secondary } = groupLabelParts(group)
+  return secondary === '' ? primary : `${primary} · ${secondary}`
+}
+
+/**
+ * 把显示文本拆成主次两段，供渲染时上不同的颜色。
+ *
+ * 两个名称同色同字号时层级是塌的 —— 用户得逐字读完才知道哪半截是分组名。
+ * 视觉层级要求相邻两层至少差一种编码手段（大小 / 字重 / 颜色 / 间距），这里给颜色：
+ * 分组名用正文色，应用名与中间的「·」用弱化色。
+ */
+export function groupLabelParts(group: GroupOption): { primary: string; secondary: string } {
   const name = group.name.trim()
   const appLabel = group.appLabel.trim()
   if (name === '') {
-    return appLabel
+    return { primary: appLabel, secondary: '' }
   }
-  return appLabel !== '' && appLabel !== name ? `${name} · ${appLabel}` : name
+  if (appLabel === '' || appLabel === name) {
+    return { primary: name, secondary: '' }
+  }
+  return { primary: name, secondary: appLabel }
+}
+
+/** 主名用正文色、应用名与分隔符用弱化色 —— 一眼能分出哪半截是分组名 */
+function GroupLabelText({
+  group,
+  className,
+}: {
+  group: GroupOption
+  className?: string
+}) {
+  const { primary, secondary } = groupLabelParts(group)
+  return (
+    <span className={cn('flex min-w-0 items-baseline gap-1.5', className)}>
+      <span className="truncate">{primary}</span>
+      {secondary !== '' ? (
+        <>
+          <span className="shrink-0 text-muted-foreground">·</span>
+          <span className="truncate text-muted-foreground">{secondary}</span>
+        </>
+      ) : null}
+    </span>
+  )
 }
 
 /**
@@ -130,9 +167,11 @@ export default function GroupPicker({
           disabled={disabled}
           className={cn('justify-between gap-2 font-normal', className)}
         >
-          <span className={cn('truncate', selected ? '' : 'text-muted-foreground')}>
-            {selected ? groupLabel(selected) : placeholder}
-          </span>
+          {selected ? (
+            <GroupLabelText group={selected} />
+          ) : (
+            <span className="truncate text-muted-foreground">{placeholder}</span>
+          )}
           {selected ? (
             <Badge variant="secondary" className="shrink-0 tabular-nums">
               {selected.channelCount}
@@ -182,7 +221,7 @@ export default function GroupPicker({
                 <Check
                   className={cn('size-4 shrink-0', group.id === value ? 'opacity-100' : 'opacity-0')}
                 />
-                <span className="min-w-0 flex-1 truncate text-left">{groupLabel(group)}</span>
+                <GroupLabelText group={group} className="flex-1 text-left" />
                 <Badge variant="secondary" className="shrink-0 tabular-nums">
                   {group.channelCount}
                 </Badge>
