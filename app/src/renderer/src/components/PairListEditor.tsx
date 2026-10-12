@@ -36,12 +36,29 @@ export function newPairRow(key = '', alias = ''): PairRow {
 /**
  * 把粘贴进来的一大段文本拆成行。
  *
- * 一行一条，键与别名之间用空格、逗号（中英文）或制表符隔开都认 ——
- * 从表格软件里复制出来的多半是制表符，手写的多半是空格或逗号。
+ * 两种解析方式，由 keyOnly 决定：
+ *
+ * - keyOnly = true（渠道列表用）：**所有分隔符都当条目边界，不解析别名**。
+ *   渠道号里不会带别名，运营给的多半是一整串 `demo_cps_001,demo_cps_002`，
+ *   按分隔符拆开正合适 —— 别名在表格里手工补，或干脆不填。
+ * - keyOnly = false（后缀表用）：一行一条，行内的键与别名用空格、逗号（中英文）
+ *   或制表符隔开。这里不能把空格也当条目边界，否则「gf 官方」会被拆成两个后缀。
+ *
  * 空行跳过；只有键没有别名的行也收，别名本来就选填。
  */
-function parseBulkText(text: string): { key: string; alias: string }[] {
+function parseBulkText(text: string, keyOnly = false): { key: string; alias: string }[] {
   const parsed: { key: string; alias: string }[] = []
+
+  if (keyOnly) {
+    for (const part of text.split(/[\s,，、;；\t\r\n]+/)) {
+      const key = part.trim()
+      if (key !== '') {
+        parsed.push({ key, alias: '' })
+      }
+    }
+    return parsed
+  }
+
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.trim()
     if (line === '') {
@@ -87,6 +104,11 @@ interface PairListEditorProps {
   errorRowIds?: readonly string[]
   /** 打开「批量粘贴」：从表格软件或文档里一次贴一整批进来 */
   bulkPaste?: boolean
+  /**
+   * 批量粘贴时只取条目本身，不解析别名。
+   * 渠道列表用它：渠道号里不会有别名，一整串粘进来就该拆成多条渠道号。
+   */
+  bulkKeyOnly?: boolean
   /**
    * 表格自己限高滚动（默认开）：几百行时表头钉在顶上，不用滚回去对列名。
    * 放进对话框里时关掉 —— 外层已经在滚，套两层滚动条更难用。
@@ -222,6 +244,7 @@ export function PairListEditor({
   duplicates,
   errorRowIds,
   bulkPaste = false,
+  bulkKeyOnly = false,
   scrollTable = true,
 }: PairListEditorProps) {
   const [picked, setPicked] = useState<string[]>([])
@@ -244,7 +267,7 @@ export function PairListEditor({
   }
 
   /* 批量粘贴的预览：解析出来多少条、其中多少条会撞上现有条目或彼此 */
-  const bulkRows = useMemo(() => parseBulkText(bulkText), [bulkText])
+  const bulkRows = useMemo(() => parseBulkText(bulkText, bulkKeyOnly), [bulkText, bulkKeyOnly])
   const bulkDuplicateCount = useMemo(() => {
     const taken = new Set(
       rows.map((row) => row.key.trim().toLowerCase()).filter((key) => key !== ''),
@@ -603,13 +626,17 @@ export function PairListEditor({
             <DialogHeader>
               <DialogTitle>批量粘贴{keyLabel}</DialogTitle>
               <DialogDescription>
-                一行一条：{keyLabel}，或者 {keyLabel} 加别名。中间用空格、逗号或制表符隔开都行。
+                {bulkKeyOnly
+                  ? `一行一条，或者一整串用逗号、空格、分号隔开 —— 只取${keyLabel}，别名留空。`
+                  : `一行一条：${keyLabel}，或者 ${keyLabel} 加别名，中间用空格、逗号或制表符隔开；只有一行时按分隔符整串拆开。`}
               </DialogDescription>
             </DialogHeader>
             <Textarea
               value={bulkText}
               onChange={(event) => setBulkText(event.target.value)}
-              placeholder={'gf 官方\nhw 华为\noppo'}
+              placeholder={
+                bulkKeyOnly ? 'demo_cps_001,demo_cps_002,demo_cps_003' : 'gf 官方\nhw 华为\noppo'
+              }
               aria-label="批量粘贴内容"
               rows={8}
             />
