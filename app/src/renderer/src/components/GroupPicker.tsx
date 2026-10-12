@@ -167,10 +167,15 @@ export default function GroupPicker({
           disabled={disabled}
           className={cn('justify-between gap-2 font-normal', className)}
         >
+          {/*
+            名称占满剩余宽度（flex-1），渠道数与箭头才会被推到右侧 ——
+            下拉菜单的常规布局是「文本左对齐、辅助信息右对齐」，数字贴着名称反而
+            看着像名称的一部分。
+          */}
           {selected ? (
-            <GroupLabelText group={selected} />
+            <GroupLabelText group={selected} className="flex-1" />
           ) : (
-            <span className="truncate text-muted-foreground">{placeholder}</span>
+            <span className="flex-1 truncate text-left text-muted-foreground">{placeholder}</span>
           )}
           {selected ? (
             <Badge variant="secondary" className="shrink-0 tabular-nums">
