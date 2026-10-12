@@ -9,8 +9,16 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { toast } from 'sonner'
 import { NAV_ITEMS, type AppView } from '@/components/AppSidebar'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 
 /*
  * 页面切换放在 context 里，而不是一路当 prop 传。
@@ -32,7 +40,7 @@ interface NavValue {
   /** 内部用：按调用方注册「未保存改动」的描述，null 表示清掉 */
   setUnsaved: (key: string, label: string | null) => void
   /** 内部用：按页面注册保存动作，Ctrl+S 只会调当前页那一个 */
-  setSaveHandler: (view: AppView, handler: (() => void) | null) => void
+  setSaveHandler: (view: AppView, handler: (() => void | Promise<void>) | null) => void
   /** 现在有没有没保存的修改。安装更新要重启进程，界面得先问一句 */
   hasUnsaved: () => boolean
   /** 内部用：放行一次关窗口。调用方必须先跟用户确认过改动会丢 */
@@ -53,10 +61,13 @@ export function NavProvider({ children }: { children: ReactNode }) {
    * 共用一个槽位会被最后渲染的那个页面盖掉。
    */
   const unsavedRef = useRef<Map<string, string>>(new Map())
-  const saveRef = useRef<Map<AppView, () => void>>(new Map())
+  // 保存动作可能异步（要等落盘），关窗口那条路得等它结束再关
+  const saveRef = useRef<Map<AppView, () => void | Promise<void>>>(new Map())
   const allowUnloadRef = useRef(false)
   const viewRef = useRef(view)
   viewRef.current = view
+  /** 关窗口被未保存改动拦下时打开：给用户「保存并关」「放弃并关」「取消」三个出口 */
+  const [pendingClose, setPendingClose] = useState(false)
 
   const hasUnsaved = useCallback(() => unsavedRef.current.size > 0, [])
 
@@ -72,7 +83,7 @@ export function NavProvider({ children }: { children: ReactNode }) {
     unsavedRef.current.set(key, label)
   }, [])
 
-  const setSaveHandler = useCallback((target: AppView, handler: (() => void) | null) => {
+  const setSaveHandler = useCallback((target: AppView, handler: (() => void | Promise<void>) | null) => {
     if (handler === null) {
       saveRef.current.delete(target)
       return
@@ -135,9 +146,9 @@ export function NavProvider({ children }: { children: ReactNode }) {
   /*
    * 关窗口是唯一还会丢东西的出口，拦一下。
    *
-   * 拦住之后 Electron 会取消这次关闭，窗口什么反应都没有 —— 所以顺手弹一句提示，
-   * 否则人只会以为程序卡死了。浏览器不允许自定义那个原生确认框的文案，
-   * 说明只能由我们自己给。
+   * 拦下之后不弹 toast，而是打开自己的对话框：toast 几秒就没了，用户回到窗口只看到
+   * 「关不掉」，不知道该做什么；而 Electron 里 beforeunload 的原生提示连文案都写不了，
+   * 更给不出「保存 / 放弃」这类出口。事件被阻止后页面并没有卸载，可以放心 setState。
    */
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -146,18 +157,83 @@ export function NavProvider({ children }: { children: ReactNode }) {
       }
       event.preventDefault()
       event.returnValue = ''
-      toast.warning('还有未保存的修改，保存后再关闭窗口。', { id: 'unsaved-before-unload' })
+      setPendingClose(true)
     }
     window.addEventListener('beforeunload', onBeforeUnload)
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
   }, [])
+
+  const closeNow = useCallback((): void => {
+    allowUnload()
+    window.close()
+  }, [allowUnload])
+
+  /** 放弃改动直接关 */
+  const discardAndClose = useCallback((): void => {
+    setPendingClose(false)
+    closeNow()
+  }, [closeNow])
+
+  /**
+   * 保存并关。等保存动作结束再关 —— 保存是异步落盘，立刻 close 会把写入掐断。
+   * 保存失败时页面会把未保存标记留着，这时不关：关掉等于默默丢掉。
+   */
+  const saveAndClose = useCallback(async (): Promise<void> => {
+    const save = saveRef.current.get(viewRef.current)
+    if (save) {
+      await save()
+    }
+    setPendingClose(false)
+    if (hasUnsaved()) {
+      return
+    }
+    closeNow()
+  }, [closeNow, hasUnsaved])
+
+  // 对话框里要说清会丢什么。依赖 pendingClose：每次打开时取当下的那一份
+  const unsavedLabels = useMemo(() => [...unsavedRef.current.values()], [pendingClose])
 
   const value = useMemo<NavValue>(
     () => ({ view, go, setUnsaved, setSaveHandler, hasUnsaved, allowUnload }),
     [view, go, setUnsaved, setSaveHandler, hasUnsaved, allowUnload],
   )
 
-  return <NavContext.Provider value={value}>{children}</NavContext.Provider>
+  return (
+    <NavContext.Provider value={value}>
+      {children}
+      {/*
+        关窗口被拦下时的对话框。三个出口缺一不可：只给「保存」等于逼着人保存，
+        只给「放弃」又太容易误丢 —— 「取消」让人能回到窗口接着编辑。
+      */}
+      <Dialog
+        open={pendingClose}
+        onOpenChange={(next) => (next ? undefined : setPendingClose(false))}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>还有未保存的修改</DialogTitle>
+            <DialogDescription>关掉窗口会丢掉下面这些改动，也可以先保存再关。</DialogDescription>
+          </DialogHeader>
+
+          {unsavedLabels.length > 0 ? (
+            <p className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs text-warning">
+              {unsavedLabels.join('、')}
+            </p>
+          ) : null}
+
+          <DialogFooter className="flex-wrap gap-2 sm:justify-end">
+            <Button variant="outline" onClick={() => setPendingClose(false)}>
+              取消
+            </Button>
+            <Button variant="outline" onClick={discardAndClose}>
+              放弃修改并关闭
+            </Button>
+            <Button onClick={() => void saveAndClose()}>保存并关闭</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </NavContext.Provider>
+  )
 }
 
 export function useNav(): NavValue {

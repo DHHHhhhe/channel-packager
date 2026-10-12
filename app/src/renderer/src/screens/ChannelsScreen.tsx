@@ -54,6 +54,8 @@ export function ChannelsScreen() {
   const [selectedId, setSelectedId] = useState('')
   const [rows, setRows] = useState<PairRow[]>([])
   const [dirty, setDirty] = useState(false)
+  /** 加一下就从磁盘重读当前分组。给「放弃修改」用 —— 把手改废的这份换回保存过的 */
+  const [reloadToken, setReloadToken] = useState(0)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [prefix, setPrefix] = useState('')
@@ -139,7 +141,7 @@ export function ChannelsScreen() {
     return () => {
       cancelled = true
     }
-  }, [selectedId, getChannels])
+  }, [selectedId, reloadToken, getChannels])
 
   // 换分组时把前缀清空 —— 前缀由用户按这次要出的渠道自己填，不给默认值
   useEffect(() => {
@@ -559,6 +561,20 @@ export function ChannelsScreen() {
             >
               导出渠道 JSON
             </Button>
+            {/*
+              未保存时的退路。以前只有「保存」一条路可走，关窗口又被拦住，
+              用户只能要么存下来、要么卡在那儿；「放弃」把手改废的这份换回磁盘上那份。
+            */}
+            {dirty ? (
+              <Button
+                variant="ghost"
+                onClick={() => setReloadToken((current) => current + 1)}
+                disabled={saving || loading}
+                title="丢弃这次改动，恢复成上次保存的列表"
+              >
+                放弃修改
+              </Button>
+            ) : null}
             <Button onClick={handleSave} disabled={saving || loading || !dirty}>
               {saving ? <Spinner /> : null}
               {saving ? '保存中…' : '保存渠道列表'}
