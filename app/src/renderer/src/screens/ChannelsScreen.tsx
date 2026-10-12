@@ -494,7 +494,7 @@ export function ChannelsScreen() {
   if (groups.length === 0) {
     return (
       <div className="flex flex-col gap-4">
-        <PageHeader description="一个分组一份渠道列表，导出后可直接用于批量写入渠道。" />
+        <PageHeader description="一个分组一份渠道列表。右上角的导入 / 导出 / 保存只作用于当前分组的这份列表；「选择分组」里的新建、编辑、删除点完立即生效。" />
         <Card>
           <CardHeader>
             <CardTitle>还没有分组</CardTitle>
@@ -609,43 +609,6 @@ export function ChannelsScreen() {
               删除
             </Button>
           </div>
-
-          <div className="flex flex-wrap items-end gap-2">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="channel-prefix">渠道前缀</Label>
-              <Input
-                id="channel-prefix"
-                value={prefix}
-                onChange={(event) => setPrefix(event.target.value)}
-                placeholder="留空则渠道名等于后缀"
-                className="w-64"
-              />
-            </div>
-            <Button variant="outline" onClick={handleApplyTemplateClick}>
-              <Wand2 />
-              按模板生成
-            </Button>
-          </div>
-          {/*
-            点「按模板生成」之前先看到会出来什么，而不是生成完才知道。
-            这段必须留在上面那个 flex 行之外：它是左列里的第三行，留在里面会把
-            items-end 的底边基线一起拽到它下面，按钮就跟输入框错开了。
-          */}
-          <p className="text-xs text-muted-foreground">
-            {template.suffixes.length === 0
-              ? '「渠道模板」页还没有后缀，现在生成出来会是空的。'
-              : `会生成 ${templatePreview.total} 条：${templatePreview.sample.join('、')}${
-                  templatePreview.total > templatePreview.sample.length ? '…' : ''
-                }`}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            生成规则：渠道名 = 前缀 + &quot;_&quot; + 后缀。生成的是独立副本，之后再改模板也不会影响这里。
-            列表里已经有条目时，会先把要生成的内容列出来让你确认，生成后还能在状态栏上撤销。
-          </p>
-          <p className="text-xs text-muted-foreground">
-            「导入 JSON」会把文件里的条目读进一个预览框，可以在里面直接增删改；确认后只填进下面的列表，
-            点「保存渠道列表」才会写入文件。
-          </p>
         </CardContent>
       </Card>
 
@@ -710,6 +673,49 @@ export function ChannelsScreen() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
+          {/*
+            渠道前缀与「按模板生成」原本挂在「选择分组」卡片里，但它们产出的是渠道列表 ——
+            放在分组卡片里会让这一页的职责变得含糊：同一屏里既有立即生效的分组操作
+            （新建 / 编辑 / 删除），又有需要点保存的列表编辑，用户分不清哪个是哪个。
+            挪到列表卡片之后，两张卡各自闭合：一张管分组，一张管列表。
+          */}
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="channel-prefix">渠道前缀</Label>
+              <Input
+                id="channel-prefix"
+                value={prefix}
+                onChange={(event) => setPrefix(event.target.value)}
+                placeholder="留空则渠道名等于后缀"
+                className="w-64"
+              />
+            </div>
+            <Button variant="outline" onClick={handleApplyTemplateClick}>
+              <Wand2 />
+              按模板生成
+            </Button>
+          </div>
+          {/*
+            点「按模板生成」之前先看到会出来什么，而不是生成完才知道。
+            这段必须留在上面那个 flex 行之外：它是左列里的第三行，留在里面会把
+            items-end 的底边基线一起拽到它下面，按钮就跟输入框错开了。
+          */}
+          <p className="text-xs text-muted-foreground">
+            {template.suffixes.length === 0
+              ? '「渠道模板」页还没有后缀，现在生成出来会是空的。'
+              : `会生成 ${templatePreview.total} 条：${templatePreview.sample.join('、')}${
+                  templatePreview.total > templatePreview.sample.length ? '…' : ''
+                }`}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            生成规则：渠道名 = 前缀 + &quot;_&quot; + 后缀。生成的是独立副本，之后再改模板也不会影响这里。
+            列表里已经有条目时，会先把要生成的内容列出来让你确认，生成后还能在状态栏上撤销。
+          </p>
+          <p className="text-xs text-muted-foreground">
+            「导入 JSON」会把文件里的条目读进一个预览框，可以在里面直接增删改；确认后只填进下面的列表，
+            点「保存渠道列表」才会写入文件。
+          </p>
+
           {/* 空白示例原来挤在「按模板生成」旁边，只能靠 hover 才分得清两个按钮 —— 挪到它真正有用的地方 */}
           {rows.length === 0 && !loading ? (
             <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
