@@ -13,6 +13,7 @@ import {
 import { ChannelListPreviewDialog } from '@/components/ChannelListPreviewDialog'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { GroupFormDialog, type GroupFormPayload } from '@/components/GroupFormDialog'
+import GroupPicker from '@/components/GroupPicker'
 import { PageHeader } from '@/components/PageHeader'
 import { PairListEditor, newPairRow, type PairRow } from '@/components/PairListEditor'
 import { Button } from '@/components/ui/button'
@@ -20,13 +21,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import type { ChannelEntry, GroupItem } from '@shared/types/store'
 import type { ChannelImportMode, ChannelListPreview } from '@shared/types/pack'
 import { buildChannelsFromTemplate } from '@shared/utils/channels'
@@ -55,7 +49,8 @@ function describeRows(indices: readonly number[]): string {
 }
 
 export function ChannelsScreen() {
-  const { groups, channelsRevision, template, getChannels, saveChannels, saveGroup } = useAppStore()
+  const { groups, groupChannelCounts, channelsRevision, template, getChannels, saveChannels, saveGroup } =
+    useAppStore()
   const [selectedId, setSelectedId] = useState('')
   const [rows, setRows] = useState<PairRow[]>([])
   const [dirty, setDirty] = useState(false)
@@ -91,6 +86,12 @@ export function ChannelsScreen() {
   const [confirmDelete, setConfirmDelete] = useState(false)
   /** 有未保存改动时想切分组，先拦在这里；值是打算切过去的 id */
   const [confirmSwitch, setConfirmSwitch] = useState<string | null>(null)
+
+  /** 下拉要用的分组：把渠道数并进来，分组多了之后靠它分辨 */
+  const groupOptions = useMemo(
+    () => groups.map((group) => ({ ...group, channelCount: groupChannelCounts[group.id] ?? 0 })),
+    [groups, groupChannelCounts],
+  )
 
   const selected = groups.find((item) => item.id === selectedId)
 
@@ -580,18 +581,12 @@ export function ChannelsScreen() {
         <CardContent className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-2">
             <div className="max-w-sm flex-1">
-              <Select value={selectedId} onValueChange={handleSelectGroup}>
-                <SelectTrigger aria-label="选择分组">
-                  <SelectValue placeholder="请选择分组" />
-                </SelectTrigger>
-                <SelectContent>
-                  {groups.map((item) => (
-                    <SelectItem key={item.id} value={item.id}>
-                      {item.appLabel ? `${item.name}（${item.appLabel}）` : item.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <GroupPicker
+                groups={groupOptions}
+                value={selectedId}
+                onChange={handleSelectGroup}
+                className="w-full"
+              />
             </div>
             <Button variant="outline" onClick={() => setGroupForm({ open: true, editing: null })}>
               <Plus />

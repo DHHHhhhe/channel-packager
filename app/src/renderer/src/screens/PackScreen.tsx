@@ -25,6 +25,7 @@ import {
 } from '@/components/CustomChannelExportDialog'
 import { PageHeader } from '@/components/PageHeader'
 import { PackQueueCard, type QueueItem } from '@/components/PackQueueCard'
+import GroupPicker from '@/components/GroupPicker'
 import { ProgressPanel } from '@/components/ProgressPanel'
 import { TaskResultCard } from '@/components/TaskResultCard'
 import { Badge } from '@/components/ui/badge'
@@ -92,7 +93,8 @@ function clockOf(at: number): string {
 const NO_JKS = '__none__'
 
 export function PackScreen() {
-  const { groups, jksItems, channelsRevision, getChannels, saveChannels, initialized } = useAppStore()
+  const { groups, groupChannelCounts, jksItems, channelsRevision, getChannels, saveChannels, initialized } =
+    useAppStore()
   const { go } = useNav()
   const [apkPath, setApkPath] = useState('')
   const [dragging, setDragging] = useState(false)
@@ -367,6 +369,12 @@ export function PackScreen() {
       window.clearTimeout(timer)
     }
   }, [apkPath, noJks, jksId, signMode])
+
+  /** 下拉要用的分组：把渠道数并进来，分组多了之后靠它分辨 */
+  const groupOptions = useMemo(
+    () => groups.map((group) => ({ ...group, channelCount: groupChannelCounts[group.id] ?? 0 })),
+    [groups, groupChannelCounts],
+  )
 
   const selectedJks = jksItems.find((item) => item.id === jksId)
   const selectedGroup = groups.find((item) => item.id === groupId)
@@ -1089,18 +1097,14 @@ export function PackScreen() {
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="pack-group">渠道分组</Label>
             <div className="flex items-center gap-2">
-              <Select value={groupId} onValueChange={handlePickGroup} disabled={groups.length === 0}>
-                <SelectTrigger id="pack-group">
-                  <SelectValue placeholder="请选择分组" />
-                </SelectTrigger>
-                <SelectContent>
-                  {groups.map((item) => (
-                    <SelectItem key={item.id} value={item.id}>
-                      {item.appLabel ? `${item.name}（${item.appLabel}）` : item.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <GroupPicker
+                id="pack-group"
+                groups={groupOptions}
+                value={groupId}
+                onChange={handlePickGroup}
+                disabled={groups.length === 0}
+                className="w-56"
+              />
               <Button variant="outline" size="sm" onClick={() => go('channels')}>
                 <ListPlus />
                 管理分组
@@ -1404,7 +1408,7 @@ export function PackScreen() {
       <CustomChannelExportDialog
         open={customOpen}
         onOpenChange={setCustomOpen}
-        groups={groups}
+        groups={groupOptions}
         defaultGroupId={groupId}
         initial={customInitial}
         busy={customBusy}

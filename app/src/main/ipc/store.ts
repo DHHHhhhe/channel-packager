@@ -36,6 +36,7 @@ export function registerStoreIpc(): void {
     return {
       jks,
       groups,
+      groupChannelCounts: countChannelsByGroup(groups.items.map((group) => group.id)),
       template,
       dataDir: getDataDir(),
       usedFallback: isUsingFallbackDataDir(),
@@ -111,4 +112,19 @@ export function registerStoreIpc(): void {
   ipcMain.handle(IPC_CHANNELS.storeSaveTheme, (_event, choice: ThemeChoice): ThemeChoice =>
     saveTheme(choice),
   )
+}
+
+/**
+ * 数一下每个分组有几条渠道。
+ *
+ * 渠道列表按分组存成 channels/<id>.json，没有汇总索引，所以只能逐个读。
+ * 文件都很小（实测最大的几 KB），启动时多花几毫秒，换来下拉里能一眼分辨分组。
+ * 读失败由 readChannels 内部记账（走 problems 通道），这里按 0 计，不额外抛。
+ */
+function countChannelsByGroup(groupIds: string[]): Record<string, number> {
+  const counts: Record<string, number> = {}
+  for (const id of groupIds) {
+    counts[id] = readChannels(id).channelInfoList.length
+  }
+  return counts
 }

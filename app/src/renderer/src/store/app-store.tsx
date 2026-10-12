@@ -40,6 +40,13 @@ interface AppStoreValue {
   /** 渠道分组。渠道列表的归属，与 jks 无关 */
   groups: GroupItem[]
   /**
+   * 每个分组的渠道条数，键是分组 id。
+   *
+   * 分组一多，光看名字分不出哪个是你要的，下拉里配上规模信息才好认。
+   * 主进程在 storeLoad 时顺带数好，这里只是转存，不在渲染层再读一遍磁盘。
+   */
+  groupChannelCounts: Record<string, number>
+  /**
    * 渠道列表的保存次数。
    *
    * 四个页面现在一直挂着（切页不再卸载），渠道配置页不会再因为「重新挂载」而重读
@@ -80,6 +87,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const [problems, setProblems] = useState<StoreProblem[]>([])
   const [jksItems, setJksItems] = useState<JksItem[]>([])
   const [groups, setGroups] = useState<GroupItem[]>([])
+  const [groupChannelCounts, setGroupChannelCounts] = useState<Record<string, number>>({})
   const [channelsRevision, setChannelsRevision] = useState(0)
   const [template, setTemplate] = useState<TemplateFile>({ version: 1, suffixes: [] })
 
@@ -107,6 +115,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       setUsedFallback(snapshot.usedFallback)
       setJksItems(snapshot.jks.items)
       setGroups(snapshot.groups.items)
+      setGroupChannelCounts(snapshot.groupChannelCounts)
       setTemplate(snapshot.template)
       setProblems(snapshot.problems)
       setLoadError(null)
@@ -199,6 +208,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       problems,
       jksItems,
       groups,
+      groupChannelCounts,
       channelsRevision,
       template,
       reload,
@@ -220,6 +230,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       problems,
       jksItems,
       groups,
+      groupChannelCounts,
       channelsRevision,
       template,
       reload,

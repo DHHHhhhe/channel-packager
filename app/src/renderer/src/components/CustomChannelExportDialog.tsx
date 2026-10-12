@@ -13,19 +13,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import GroupPicker, { type GroupOption } from '@/components/GroupPicker'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Spinner } from '@/components/ui/spinner'
 import { findDuplicates } from '@/lib/duplicates'
 import { useAppStore } from '@/store/app-store'
 import { parseChannelConfig } from '@shared/utils/channels'
-import type { ChannelEntry, GroupItem } from '@shared/types/store'
+import type { ChannelEntry } from '@shared/types/store'
 
 /** 确认后交回调用方的东西：这次出包用什么、要不要顺手沉淀进分组 */
 export interface CustomChannelExportPayload {
@@ -41,7 +35,7 @@ interface CustomChannelExportDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   /** 可存入的分组。只列已有的 —— 建 / 改 / 删分组仍在「渠道配置」页 */
-  groups: GroupItem[]
+  groups: GroupOption[]
   /** 目标分组的默认值：当前所选分组 */
   defaultGroupId: string
   /** 「重跑本次」把上次那份自定义列表带回来；null = 从空开始 */
@@ -425,18 +419,15 @@ export function CustomChannelExportDialog({
             </div>
           ) : (
             <>
-              <Select value={targetGroupId} onValueChange={setTargetGroupId} disabled={busy}>
-                <SelectTrigger aria-label="存入哪个分组">
-                  <SelectValue placeholder="选择分组" />
-                </SelectTrigger>
-                <SelectContent>
-                  {groups.map((item) => (
-                    <SelectItem key={item.id} value={item.id}>
-                      {item.appLabel ? `${item.name}（${item.appLabel}）` : item.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <GroupPicker
+                groups={groups}
+                value={targetGroupId}
+                onChange={setTargetGroupId}
+                disabled={busy}
+                placeholder="选择分组"
+                aria-label="存入哪个分组"
+                className="w-full"
+              />
               <p className="text-sm">
                 <span className="text-muted-foreground">将新增 </span>
                 <span className="font-medium tabular-nums">{toAdd.length}</span>

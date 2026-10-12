@@ -95,6 +95,13 @@ export interface StoreSnapshot {
   jks: JksFile
   /** 分组索引。读之前已经跑过老数据迁移，所以这里一定是迁移后的结果 */
   groups: GroupFile
+  /**
+   * 每个分组的渠道条数，键是分组 id。
+   *
+   * 不并进 GroupItem：那是持久化结构，加字段会被写进 groups.json，
+   * 而渠道数是派生数据 —— 分组内容一变它就过期。放在这份快照里，每次启动重算。
+   */
+  groupChannelCounts: Record<string, number>
   template: TemplateFile
   dataDir: string
   /** data/ 不可写、已回退到 userData 时为 true，界面需要明示 */
