@@ -51,8 +51,8 @@ cd app
 
 `app/electron-builder.yml` 的 `publish` 是 `provider: github`，构建时会写进安装包的 `resources/app-update.yml` —— 客户端只认这里，所以换发布方式必须重新构建安装包。
 
-- 里面 `owner` / `repo` 是**占位值**：electron-builder 只从 `package.json` 的 `repository` 或 **`app/.git/config`** 推断，而本仓库的 `.git` 在上一层（`渠道工具/`），它找不到 —— 所以必须显式给值，不给会直接构建失败（`Cannot read properties of null (reading 'provider')`）。
-- 正式发版走 `app/scripts/release.ps1`：它从 `origin` 读出账号与仓库名，用 `--config.publish.owner/repo` 覆盖占位值，再 `--publish always` 上传。
+- 里面 `owner` / `repo` 已填成本仓库的真实值，会被原样写进安装包的 `resources/app-update.yml`。**这两个值写错，装出来的应用就查不到更新**，检查更新会报「更新服务器上找不到这个版本的信息」—— v0.2.2 就是带着占位地址发出去的，装了的机器只能手动重装。CI 构建时会用 `github.repository_owner` / `github.event.repository.name` 覆盖，所以 fork 出去也能正常发版。
+- 正式发版走 `app/scripts/release.ps1`：它从 `origin` 读出账号与仓库名，用 `--config.publish.owner/repo` 覆盖，再 `--publish always` 上传。
 
 ```powershell
 git remote add origin https://github.com/<账号>/<仓库>.git   # 只需一次

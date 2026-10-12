@@ -57,17 +57,18 @@ win:
 #     git remote add origin https://github.com/<你的账号>/<仓库名>.git
 #     $env:GH_TOKEN = '<令牌>'        # 公开仓库勾 public_repo，私有仓库勾 repo
 #     pwsh -File app/scripts/release.ps1
-# release.ps1 会从 origin 读出账号/仓库名，用 -c.publish.owner=… -c.publish.repo=…
-# 覆盖下面两个值，再 --publish always 上传；上传完 Release 默认是草稿，要去网页点 Publish。
+# 这两个值会原样写进安装包的 resources/app-update.yml，客户端只认它。
+# 写错（比如留着占位值）装出来的应用就查不到更新，检查更新会报
+# 「更新服务器上找不到这个版本的信息」—— v0.2.2 就是这么坏的，只能重装。
 #
-# 只做本地构建、不发布：留着占位值即可（装出来的应用检查更新会报错，其他功能不受影响）。
-# 客户端认的地址固化在安装包的 resources/app-update.yml 里，换地址要重新构建。
-# 想临时换地址（不用重新打包）：在数据目录放一份 update.json
+# release.ps1 会从 origin 读出账号/仓库名覆盖它们，CI 用 github.repository_owner
+# 覆盖，所以 fork 出去也能正常发版；这里写真实值是为了本机构建出来的包直接可用。
+# 换地址要重新构建安装包；不想重打包就用数据目录里的 update.json 临时覆盖
 # （{"url":"http://内网服务器/渠道分包工具/"}），见 src/main/updater.ts。
 publish:
   provider: github
-  owner: your-account
-  repo: your-repo
+  owner: DHHHhhhe
+  repo: channel-packager
 
 # Release 的正文。客户端「发现新版本」时显示的更新内容就是这里（见 src/main/updater.ts
 # 的 releaseNotes）：构建时读这个文件，写进 GitHub Release 的 body。

@@ -70,11 +70,15 @@ jobs:
       # GitHub 的资产元数据竞态：同一个 tag 下建出两个 Release，资产被劈成两半
       # （v0.2.1 中过一次 —— 客户端请求的 download/v0.2.1/latest.yml 直接 404）。
       # 它还把失败静默吞掉，job 照样绿。gh CLI 是串行的，传完一个再传下一个，没这问题。
+      #
+      # publish.owner/repo 必须显式传：这两个值会被写进安装包的 resources/app-update.yml，
+      # 客户端只认它。不传就落成 electron-builder.yml 里的值，CI 是 fork 来的仓库时可能不对
+      # （v0.2.2 就是带着占位地址发出去的，装了的机器检查更新全部失败，只能手动重装）。
       - name: 构建（不发布）
         working-directory: app
         run: |
           pnpm build
-          .\node_modules\.bin\electron-builder.CMD --win nsis --publish never
+          .\node_modules\.bin\electron-builder.CMD --win nsis --publish never "--config.publish.owner=${{ github.repository_owner }}" "--config.publish.repo=${{ github.event.repository.name }}"
 
       - name: 发布到 Releases
         shell: pwsh
