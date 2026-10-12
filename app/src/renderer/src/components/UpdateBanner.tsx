@@ -3,24 +3,34 @@ import type { JSX } from 'react'
 import { Download, RotateCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useNav } from '@/store/nav'
 import type { UpdateState } from '@shared/types/update'
 
 /**
- * 把更新内容压成一段纯文本。
- *
- * 两条更新源给的格式不一样：GitHub 那条路给的是 HTML（atom feed 的 content），
- * 内网 generic 源（数据目录里的 update.json）给的是 latest.yml 里原样的 markdown。
- * 所以先按 HTML 解一次，再把 markdown 的记号收拾掉 —— 不然界面上会直接冒出
- * 「### 」这种字符。
- *
- * 用 DOMParser 而不是往临时元素里塞 innerHTML：解析出来的是游离文档，图片与事件
- * 属性都没有机会执行。
+ * 更新内容的一节：`### 标题` 加它下面的列表项。
+ * 标题为空表示这段没有小标题，直接是列表。
  */
-function notesToText(raw: string): string {
+interface NoteSection {
+  title: string
+  items: string[]
+}
+
+/**
+ * 把更新内容拆成「标题 + 列表项」，而不是压成一坨纯文本。
+ *
+ * 两条更新源给的格式不一样：GitHub 那条给 HTML（atom feed 的 content），内网 generic 源
+ * 给 latest.yml 里原样的 markdown。先统一成文本，再按 `### 标题` 切段、按 `- ` 收列表项 ——
+ * 拍平成一段的话，分类标题和正文同字号同颜色，扫读时分不出「哪几类改动」。
+ *
+ * 认不出结构的行整行当一条，宁可朴素也不要丢内容。
+ * 用 DOMParser 而不是往临时元素里塞 innerHTML：解析出来的是游离文档，图片与事件属性
+ * 都没有机会执行。
+ */
+function parseNotes(raw: string): NoteSection[] {
   if (!raw) {
-    return ''
+    return []
   }
   let text = raw
   try {
@@ -28,12 +38,57 @@ function notesToText(raw: string): string {
   } catch {
     text = raw
   }
-  return text
-    .replace(/^#{1,6}\s*/gm, '')
-    .replace(/^\s*[-*]\s+/gm, '• ')
-    .replace(/\*\*(.+?)\*\*/g, '$1')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
+
+  const stripBold = (line: string): string => line.replace(/\*\*(.+?)\*\*/g, '$1').trim()
+
+  const sections: NoteSection[] = []
+  let current: NoteSection = { title: '', items: [] }
+
+  const flush = (): void => {
+    if (current.title !== '' || current.items.length > 0) {
+      sections.push(current)
+    }
+    current = { title: '', items: [] }
+  }
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (line === '') {
+      continue
+    }
+    const heading = /^#{1,6}\s*(.+)$/.exec(line)
+    if (heading) {
+      flush()
+      current.title = stripBold(heading[1])
+      continue
+    }
+    const item = /^[-*]\s+(.+)$/.exec(line)
+    if (item) {
+      current.items.push(stripBold(item[1]))
+      continue
+    }
+    current.items.push(stripBold(line))
+  }
+  flush()
+
+  return sections
+}
+
+/**
+ * 分类标题上色：新增用绿、修复用橙、其余用蓝。
+ * 让用户先扫到「这一版有哪几类改动」，再决定要不要看细节。
+ */
+function NoteSectionTitle({ title }: { title: string }): JSX.Element {
+  const variant = /新增|功能|特性/.test(title)
+    ? 'success'
+    : /修复|修正|问题/.test(title)
+      ? 'warning'
+      : 'info'
+  return (
+    <Badge variant={variant} className="self-start">
+      {title}
+    </Badge>
+  )
 }
 
 /**
@@ -115,7 +170,7 @@ export default function UpdateBanner(): JSX.Element | null {
     return null
   }
 
-  const notes = offering ? notesToText(state.releaseNotes) : ''
+  const noteSections = offering ? parseNotes(state.releaseNotes) : []
 
   const startDownload = async (): Promise<void> => {
     setStarting(true)
@@ -179,12 +234,32 @@ export default function UpdateBanner(): JSX.Element | null {
           ) : null}
 
           {/* 更新内容：Release 正文写了才有，没写就整块不出现 */}
-          {offering && notes ? (
+          {noteSections.length > 0 ? (
             <div
               data-slot="update-notes"
-              className="max-h-40 overflow-y-auto rounded border bg-background/60 px-2 py-1.5 text-xs whitespace-pre-wrap text-muted-foreground"
+              className="max-h-48 overflow-y-auto rounded-md border bg-muted/40 px-2.5 py-2"
             >
-              {notes}
+              <div className="flex flex-col gap-2.5">
+                {noteSections.map((section, sectionIndex) => (
+                  <div key={`${section.title}-${sectionIndex}`} className="flex flex-col gap-1">
+                    {section.title !== '' ? <NoteSectionTitle title={section.title} /> : null}
+                    {section.items.length > 0 ? (
+                      <ul className="flex flex-col gap-1 text-xs leading-relaxed text-muted-foreground">
+                        {section.items.map((item, itemIndex) => (
+                          <li key={itemIndex} className="flex gap-1.5">
+                            {/* 用小圆点而不是「• 」字符：换行时悬挂缩进不会错位 */}
+                            <span
+                              aria-hidden="true"
+                              className="mt-1.5 size-1 shrink-0 rounded-full bg-current opacity-60"
+                            />
+                            <span className="min-w-0">{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
             </div>
           ) : null}
 
