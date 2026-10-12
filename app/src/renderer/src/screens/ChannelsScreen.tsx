@@ -620,20 +620,24 @@ export function ChannelsScreen() {
                 placeholder="留空则渠道名等于后缀"
                 className="w-64"
               />
-              {/* 点「按模板生成」之前先看到会出来什么，而不是生成完才知道 */}
-              <p className="text-xs text-muted-foreground">
-                {template.suffixes.length === 0
-                  ? '「渠道模板」页还没有后缀，现在生成出来会是空的。'
-                  : `会生成 ${templatePreview.total} 条：${templatePreview.sample.join('、')}${
-                      templatePreview.total > templatePreview.sample.length ? '…' : ''
-                    }`}
-              </p>
             </div>
             <Button variant="outline" onClick={handleApplyTemplateClick}>
               <Wand2 />
               按模板生成
             </Button>
           </div>
+          {/*
+            点「按模板生成」之前先看到会出来什么，而不是生成完才知道。
+            这段必须留在上面那个 flex 行之外：它是左列里的第三行，留在里面会把
+            items-end 的底边基线一起拽到它下面，按钮就跟输入框错开了。
+          */}
+          <p className="text-xs text-muted-foreground">
+            {template.suffixes.length === 0
+              ? '「渠道模板」页还没有后缀，现在生成出来会是空的。'
+              : `会生成 ${templatePreview.total} 条：${templatePreview.sample.join('、')}${
+                  templatePreview.total > templatePreview.sample.length ? '…' : ''
+                }`}
+          </p>
           <p className="text-xs text-muted-foreground">
             生成规则：渠道名 = 前缀 + &quot;_&quot; + 后缀。生成的是独立副本，之后再改模板也不会影响这里。
             列表里已经有条目时，会先把要生成的内容列出来让你确认，生成后还能在状态栏上撤销。
