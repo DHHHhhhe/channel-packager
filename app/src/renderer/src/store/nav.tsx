@@ -146,7 +146,7 @@ export function NavProvider({ children }: { children: ReactNode }) {
       }
       event.preventDefault()
       event.returnValue = ''
-      toast.warning('还有没保存的修改，保存后再关窗口。', { id: 'unsaved-before-unload' })
+      toast.warning('还有未保存的修改，保存后再关闭窗口。', { id: 'unsaved-before-unload' })
     }
     window.addEventListener('beforeunload', onBeforeUnload)
     return () => window.removeEventListener('beforeunload', onBeforeUnload)

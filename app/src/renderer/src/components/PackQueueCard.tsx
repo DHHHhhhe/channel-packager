@@ -228,7 +228,7 @@ export function PackQueueCard({
                           size="sm"
                           onClick={() => onRetry(item.id)}
                           disabled={running}
-                          title="把这一项退回「待出包」，参数不用重新填"
+                          title="把这一项恢复为「待出包」，参数无需重新填写"
                         >
                           <RotateCcw />
                           重跑

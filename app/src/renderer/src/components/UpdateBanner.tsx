@@ -124,7 +124,7 @@ export default function UpdateBanner(): JSX.Element | null {
     // 出包任务跑在子进程里，重启会把这一单掐断
     const running = await window.api.getRunningTask()
     if (running) {
-      toast.warning('正在出包，等这一单跑完再更新。')
+      toast.warning('正在出包，当前任务结束后再更新。')
       return
     }
     if (hasUnsaved()) {
@@ -209,7 +209,7 @@ export default function UpdateBanner(): JSX.Element | null {
         onOpenChange={setConfirmOpen}
         title="重启并更新？"
         description="重启后就会用上刚下载的新版本。"
-        warning="页面上还有没保存的修改，重启后会丢掉。"
+        warning="页面上还有未保存的修改，重启后会丢失。"
         confirmText="仍然重启"
         onConfirm={() => {
           setConfirmOpen(false)

@@ -959,7 +959,7 @@ export function PackScreen() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader description="勾选渠道后生成渠道包，产物名为 <原包名>_<别名>.apk。渠道来自「渠道配置」中的分组；手上只有别人签好的包、没有私钥时，签名选「不用签名文件」即可只写渠道、不重新签名。" />
+      <PageHeader description="勾选渠道后生成渠道包，产物名为 <原包名>_<别名>.apk。渠道来自「渠道配置」中的分组；只有别人签好的包、没有私钥时，签名选「不用签名文件」即可只写渠道、不重新签名。" />
 
       <Card>
         <CardHeader>
@@ -1387,7 +1387,7 @@ export function PackScreen() {
         onOpenChange={setClearQueueOpen}
         title="清空整个队列？"
         description={`队列里 ${queue.length} 项会一起消失。`}
-        warning={`其中 ${queue.filter((item) => item.status === 'pending').length} 项还没跑 —— 这些参数没有别的地方存着，重新加一遍要回表单重挑 APK 与分组。已经出好的包不受影响。`}
+        warning={`其中 ${queue.filter((item) => item.status === 'pending').length} 项尚未执行 —— 这些参数没有其他副本，需要回到表单重新选择 APK 与分组。已经出好的包不受影响。`}
         confirmText="清空队列"
         destructive
         onConfirm={confirmClearQueue}

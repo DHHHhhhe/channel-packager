@@ -52,7 +52,7 @@ const STRATEGY_LABELS: Record<ConflictStrategy, string> = {
 }
 
 const STRATEGY_HINTS: Record<ConflictStrategy, string> = {
-  'keep-both': '包内那份会自动改成别的名字，本机现有的原样不动。',
+  'keep-both': '包内那份会自动改名，本机现有的保持不变。',
   skip: '本机保持不变，包里这几项不会导入。',
   overwrite: '用包内的替换本机同名条目，本机那几份会被删掉。',
 }

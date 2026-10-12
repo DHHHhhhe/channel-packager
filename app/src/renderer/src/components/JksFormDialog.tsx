@@ -838,12 +838,12 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
                 disabled={noJks}
                 emptyHint={
                   noJks
-                    ? '选择签名文件后，这里就能编辑渠道了。'
+                    ? '选择签名文件后，即可在这里编辑渠道。'
                     : channelMode === 'empty'
-                      ? '还没有渠道条目。点下面的「添加一行」就能直接给它加渠道。'
+                      ? '还没有渠道条目。点击下面的「添加一行」可直接添加。'
                       : channelMode === 'template'
                         ? '模板为空，生成不出条目。可改用「不套用模板」手工添加。'
-                        : '还没读到渠道。选一份渠道 JSON 文件就会出现在这里。'
+                        : '尚未读到渠道。选择一份渠道 JSON 文件后会显示在这里。'
                 }
               />
             </div>
@@ -893,7 +893,7 @@ export function JksFormDialog({ open, onOpenChange, item, onFinished }: JksFormD
         onOpenChange={(next) => (next ? undefined : setPendingMode(null))}
         title="切换渠道数据来源？"
         description={`会按新的来源重算下面的渠道列表，现在这 ${draftChannels.length} 条会被替换掉。`}
-        warning="被替换的条目没有别的地方存着，撤销不了。"
+        warning="被替换的条目没有其他副本，无法撤销。"
         confirmText="切换并重算"
         destructive
         onConfirm={() => {

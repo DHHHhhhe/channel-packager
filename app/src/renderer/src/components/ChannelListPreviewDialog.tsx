@@ -96,7 +96,7 @@ export function ChannelListPreviewDialog({
                     overwrite
                       ? '确认后替换界面列表里的内容。'
                       : '确认后与界面列表合并，同名渠道不重复。'
-                  }落盘要再点「保存渠道列表」。`
+                  }需要再点「保存渠道列表」才会写入文件。`
                 : `从「${preview.fileName}」读到 ${preview.count} 条渠道，可在下面直接改。`
               : '还没有读到内容。'}
           </DialogDescription>

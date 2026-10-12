@@ -108,7 +108,7 @@ export function suggestFix(result: TaskResult): FixSuggestion | null {
       }
     case 'publish':
       return {
-        text: '产物没能移到输出目录。常见原因是那个目录被别的程序占着（资源管理器里开着，或里面的表格正被 Excel 打开），也可能没有写权限。换一个目录再试。',
+        text: '产物没能移到输出目录。常见原因是该目录正被其他程序占用（资源管理器打开着，或其中的表格正被 Excel 打开），也可能没有写权限。换一个目录再试。',
         action: 'output-dir',
         actionLabel: '换个输出目录',
       }
@@ -120,7 +120,7 @@ export function suggestFix(result: TaskResult): FixSuggestion | null {
       }
     case 'walle':
       return {
-        text: '往包里写渠道信息这一步没过。加固过的包、以及已经被别的工具写过渠道的包，这一步会失败 —— 换一个没有写过渠道的原始包再试。',
+        text: '往包里写渠道信息这一步会失败。加固过的包、以及已经被别的工具写过渠道的包都会如此 —— 换一个没有写过渠道的原始包再试。',
       }
     default:
       return null

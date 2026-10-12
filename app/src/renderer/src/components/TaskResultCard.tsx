@@ -139,7 +139,7 @@ export function TaskResultCard({
                 重跑本次
               </Button>
               <span className="text-xs text-muted-foreground">
-                「重跑本次」只把参数填回上面的表单，不会立刻开跑。
+                「重跑本次」只把参数填回上面的表单，不会立即执行。
               </span>
             </>
           ) : null}

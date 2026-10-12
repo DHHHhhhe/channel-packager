@@ -239,7 +239,7 @@ export function ChannelsScreen() {
         run: () => {
           setRows(beforeTemplateRef.current)
           setDirty(wasDirty)
-          setStatus({ kind: 'ok', text: '已退回生成前的那份列表。' })
+          setStatus({ kind: 'ok', text: '已恢复到生成前的列表。' })
         },
       },
     })
@@ -510,7 +510,7 @@ export function ChannelsScreen() {
               签名文件只负责签名：需要重签名时才要用到，只写渠道时可以完全不选。
             </p>
             <p className="text-sm text-muted-foreground">
-              建好之后不用一条条敲：「按模板生成」可以照「渠道模板」页的后缀一次铺出一整份列表，「导入 JSON」可以直接读入现成的列表。
+              建好之后无需逐条输入：「按模板生成」可以按「渠道模板」页的后缀一次生成整份列表，「导入 JSON」可以直接读入现成的列表。
             </p>
             <div className="flex flex-wrap gap-2">
               <Button onClick={() => setGroupForm({ open: true, editing: null })}>
@@ -644,7 +644,7 @@ export function ChannelsScreen() {
           </p>
           <p className="text-xs text-muted-foreground">
             「导入 JSON」会把文件里的条目读进一个预览框，可以在里面直接增删改；确认后只填进下面的列表，
-            点「保存渠道列表」才落盘。
+            点「保存渠道列表」才会写入文件。
           </p>
         </CardContent>
       </Card>

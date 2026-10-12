@@ -497,7 +497,7 @@ export function CustomChannelExportDialog({
         }}
         title="用这份 JSON 换掉表里的内容？"
         description={`导入会替换当前表里 ${rows.length} 行。`}
-        warning="正在编辑的内容没有别的地方存着，替换后要靠「撤销导入」退回。"
+        warning="正在编辑的内容没有其他副本，替换后需要靠「撤销导入」还原。"
         confirmText="替换"
         destructive
         onConfirm={confirmImport}
