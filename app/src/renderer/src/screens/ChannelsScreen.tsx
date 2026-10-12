@@ -580,7 +580,7 @@ export function ChannelsScreen() {
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="max-w-sm flex-1">
+            <div className="w-72 shrink-0">
               <GroupPicker
                 groups={groupOptions}
                 value={selectedId}

@@ -141,10 +141,16 @@ export default function GroupPicker({
           <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
         </Button>
       </PopoverPrimitive.Trigger>
-      {/* 宽度跟随触发器，否则长分组名会把面板撑得比按钮还宽 */}
+      {/*
+        radix 的原始 Popover.Content 不带任何视觉样式 —— 背景、边框、圆角、阴影都得自己给，
+        漏了就是「文字浮在页面上、底下的内容透出来」。这里的取值对齐项目里 Dialog 那一套
+        （bg-popover + ring-foreground/10 + 圆角），保证两个浮层看起来是一家的。
+        宽度跟随触发器，否则长分组名会把面板撑得比按钮还宽。
+      */}
       <PopoverPrimitive.Content
         align="start"
-        className="w-[var(--radix-popover-trigger-width)] p-0"
+        sideOffset={4}
+        className="z-50 w-[var(--radix-popover-trigger-width)] overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-lg ring-1 ring-foreground/10"
         onKeyDown={handleKeyDown}
       >
         <div className="border-b px-2 py-1.5">
