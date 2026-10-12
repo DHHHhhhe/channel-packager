@@ -1236,16 +1236,24 @@ export function PackScreen() {
                             onCheckedChange={(value) => toggleChannel(entry.channel, value === true)}
                             aria-label={entry.channel}
                           />
-                          <span className="flex min-w-0 flex-col leading-tight">
+                          {/*
+                           * 别名与渠道号并排，而不是上下两行。
+                           *
+                           * 上下两行时，只有「有别名」的条目占两行、其余占一行，网格里每块
+                           * 矩形的高度就参差不齐 —— Material 的列表规范要求同一列表里各行的
+                           * 内容结构相似、元素落在一致的位置，横排正好满足。
+                           * 字号不同，所以按基线对齐，视觉上坐在同一条线上。
+                           */}
+                          <span className="flex min-w-0 items-baseline gap-1.5 leading-tight">
                             <span
-                              className="truncate"
+                              className="shrink-0"
                               title={alias ? `${alias}（${entry.channel}）` : entry.channel}
                             >
                               {alias || entry.channel}
                             </span>
                             {alias ? (
                               <span
-                                className="truncate font-mono text-xs text-muted-foreground"
+                                className="min-w-0 truncate font-mono text-xs text-muted-foreground"
                                 title={entry.channel}
                               >
                                 {entry.channel}
