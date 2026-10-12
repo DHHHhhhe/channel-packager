@@ -760,6 +760,7 @@ export function ChannelsScreen() {
               emptyHint="还没有渠道条目。可手工添加，或用上面的「按模板生成」。"
               selectable
               filterable
+              bulkPaste
               duplicates={duplicates}
               errorRowIds={errorRowIds}
               resetFilterToken={filterResetToken}

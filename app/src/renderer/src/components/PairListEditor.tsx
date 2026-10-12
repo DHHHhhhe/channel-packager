@@ -36,17 +36,34 @@ export function newPairRow(key = '', alias = ''): PairRow {
 /**
  * 把粘贴进来的一大段文本拆成行。
  *
- * 一行一条，键与别名之间用空格、逗号（中英文）或制表符隔开都认 ——
- * 从表格软件里复制出来的多半是制表符，手写的多半是空格或逗号。
+ * 两种输入形态都要认：
+ *
+ * 1. 多行（从表格软件里复制出来的多半是这样）—— 一行一条，行内的键与别名用空格、
+ *    逗号（中英文）或制表符隔开。
+ * 2. 一整串（运营给的渠道清单常常是 `demo_cps_001,demo_cps_002,...` 这样一行逗号到底）
+ *    —— 整行按分隔符拆成多个条目。只有「整个文本就一行」时才走这条：多行输入里
+ *    的「一行 key,alias」不该被拆散。
+ *
  * 空行跳过；只有键没有别名的行也收，别名本来就选填。
  */
 function parseBulkText(text: string): { key: string; alias: string }[] {
   const parsed: { key: string; alias: string }[] = []
-  for (const rawLine of text.split(/\r?\n/)) {
-    const line = rawLine.trim()
-    if (line === '') {
-      continue
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== '')
+
+  if (lines.length === 1) {
+    for (const part of lines[0].split(/[\s,，\t]+/)) {
+      const key = part.trim()
+      if (key !== '') {
+        parsed.push({ key, alias: '' })
+      }
     }
+    return parsed
+  }
+
+  for (const line of lines) {
     const parts = line.split(/[\s,，\t]+/)
     const key = (parts[0] ?? '').trim()
     if (key === '') {
@@ -603,13 +620,14 @@ export function PairListEditor({
             <DialogHeader>
               <DialogTitle>批量粘贴{keyLabel}</DialogTitle>
               <DialogDescription>
-                一行一条：{keyLabel}，或者 {keyLabel} 加别名。中间用空格、逗号或制表符隔开都行。
+                多行时一行一条：{keyLabel}，或者 {keyLabel} 加别名，中间用空格、逗号或制表符隔开；
+                只有一行时按分隔符整串拆开。
               </DialogDescription>
             </DialogHeader>
             <Textarea
               value={bulkText}
               onChange={(event) => setBulkText(event.target.value)}
-              placeholder={'gf 官方\nhw 华为\noppo'}
+              placeholder={'gf 官方\nhw 华为\noppo\n\n或者一整串：\ndemo_cps_001,demo_cps_002'}
               aria-label="批量粘贴内容"
               rows={8}
             />
