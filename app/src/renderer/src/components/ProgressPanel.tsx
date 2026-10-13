@@ -69,7 +69,12 @@ export function ProgressPanel({
   }, [failed])
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border">
+    /*
+     * 整块给一层比卡片深一档的底：进度区是「嵌进卡片里的一个面板」，
+     * 之前它和卡片同为白色、只靠一条边框分界，扫一眼分不出哪里是日志。
+     * 详细日志再深一档，于是卡片 → 进度区 → 原始输出形成三级层次。
+     */
+    <div className="flex flex-col gap-2 rounded-lg border bg-muted/60">
       <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2 text-sm">
         <Terminal className="size-4 shrink-0" />
         <span className="font-medium">进度</span>
@@ -112,7 +117,7 @@ export function ProgressPanel({
       </div>
 
       {showLog && lines.length > 0 ? (
-        <div ref={logRef} className="max-h-64 overflow-y-auto border-t bg-muted/40 px-3 py-2">
+        <div ref={logRef} className="max-h-64 overflow-y-auto border-t bg-muted px-3 py-2">
           <pre className="font-mono text-xs whitespace-pre-wrap">{lines.join('\n')}</pre>
         </div>
       ) : null}

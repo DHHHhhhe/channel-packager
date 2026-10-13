@@ -1,4 +1,6 @@
+import { useRef } from 'react'
 import { KeyRound, ListTree, Package, ScrollText } from 'lucide-react'
+import { SidebarResizer } from '@/components/SidebarResizer'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import UpdateCheckButton from '@/components/UpdateCheckButton'
 import { cn } from '@/lib/utils'
@@ -50,8 +52,17 @@ export function AppSidebar({
    */
   const navCounts: Partial<Record<AppView, number>> = { jks: jksCount, channels: groupCount }
 
+  /*
+   * 手柄拖动时直接改这个元素的宽度，不走 React state ——
+   * 每帧 setState 会让整棵侧栏重渲染，拖起来会顿。
+   */
+  const asideRef = useRef<HTMLElement>(null)
+
   return (
-    <aside className="flex w-[var(--sidebar-width)] shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground">
+    <aside
+      ref={asideRef}
+      className="relative flex w-[var(--sidebar-width)] shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground"
+    >
       <div className="flex h-[var(--topbar-height)] shrink-0 items-center gap-2 border-b px-4">
         <Package className="size-4 shrink-0" />
         <span className="text-sm font-medium">渠道分包工具</span>
@@ -125,6 +136,8 @@ export function AppSidebar({
           </div>
         </div>
       </div>
+
+      <SidebarResizer targetRef={asideRef} />
     </aside>
   )
 }

@@ -37,3 +37,6 @@ app/*.exe
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# 界面预览截图，只用于本地对照，不入库
+preview/
