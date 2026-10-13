@@ -1,6 +1,17 @@
 import * as React from "react"
 import { cn } from "cn"
 
+/*
+ * Double-Bezel（外壳 + 内芯）：卡片看起来像嵌在托盘里的一块板子，
+ * 而不是浮在背景上的一片色。
+ *
+ * 外壳给一圈浅底、一条 hairline 与落影；内芯是自己的白底加一道顶部内高光。
+ * 内圆角按「外圆角 − 内边距」算（1.75rem − 0.375rem），两条弧才同心 ——
+ * 直接套同一个圆角会出现肉眼可见的宽度不均。
+ *
+ * 分层注意：has-data-* 查的是后代，留在外壳上仍然有效；
+ * 而 *:[img:first-child] 是直接子元素选择器，必须跟着内容一起挪到内芯。
+ */
 function Card({
   className,
   size = "default",
@@ -8,14 +19,19 @@ function Card({
 }: React.ComponentProps<"div"> & { size?: "default" | "sm" }) {
   return (
     <div
-      data-slot="card"
+      data-slot="card-shell"
       data-size={size}
-      className={cn(
-        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl bg-card py-(--card-spacing) text-sm text-card-foreground ring-1 ring-foreground/10 [--card-px:--spacing(4)] [--card-spacing:--spacing(3)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
-        className
-      )}
-      {...props}
-    />
+      className="rounded-[1.75rem] bg-black/[0.025] p-1.5 ring-1 ring-black/[0.04] card-shadow dark:bg-white/[0.04] dark:ring-white/[0.06]"
+    >
+      <div
+        data-slot="card"
+        className={cn(
+          "group/card flex h-full flex-col gap-(--card-spacing) overflow-hidden rounded-[calc(1.75rem-0.375rem)] bg-card py-(--card-spacing) text-sm text-card-foreground [--card-px:--spacing(4)] [--card-spacing:--spacing(3)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-[calc(1.75rem-0.375rem)] *:[img:last-child]:rounded-b-[calc(1.75rem-0.375rem)]",
+          className
+        )}
+        {...props}
+      />
+    </div>
   )
 }
 
@@ -24,7 +40,7 @@ function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="card-header"
       className={cn(
-        "group/card-header @container/card-header grid auto-rows-min items-start gap-1 rounded-t-xl px-(--card-px) has-data-[slot=card-action]:grid-cols-[1fr_auto] has-data-[slot=card-description]:grid-rows-[auto_auto] [.border-b]:pb-(--card-spacing)",
+        "group/card-header @container/card-header grid auto-rows-min items-start gap-1 rounded-t-[calc(1.75rem-0.375rem)] px-(--card-px) has-data-[slot=card-action]:grid-cols-[1fr_auto] has-data-[slot=card-description]:grid-rows-[auto_auto] [.border-b]:pb-(--card-spacing)",
         className
       )}
       {...props}
@@ -88,7 +104,7 @@ function CardFooter({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="card-footer"
       className={cn(
-        "flex items-center rounded-b-xl border-t bg-muted/50 p-(--card-spacing) px-(--card-px)",
+        "flex items-center rounded-b-[calc(1.75rem-0.375rem)] border-t bg-muted/50 p-(--card-spacing) px-(--card-px)",
         className
       )}
       {...props}

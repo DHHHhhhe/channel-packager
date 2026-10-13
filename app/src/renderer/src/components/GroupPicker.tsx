@@ -194,7 +194,7 @@ export default function GroupPicker({
       <PopoverPrimitive.Content
         align="start"
         sideOffset={4}
-        className="z-50 w-[var(--radix-popover-trigger-width)] overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-float ring-1 ring-foreground/10"
+        className="z-50 w-[var(--radix-popover-trigger-width)] overflow-hidden rounded-lg bg-popover text-popover-foreground float-shadow border border-border"
         onKeyDown={handleKeyDown}
       >
         <div className="border-b px-2 py-1.5">

@@ -108,14 +108,12 @@
   --radius-4xl:
     calc(var(--radius) * 2.6);
   /*
-   * 浮层阴影：三层叠加（贴边 / 中层 / 扩散）比单层 shadow-lg 更接近真实光照 ——
-   * 单层大模糊会让边缘发虚、看起来像「贴了块灰」，分层才有「离表面多高」的层次感。
-   * 不透明度逐层递减，且第一层几乎不模糊，负责勾出贴边的那条硬边。
+   * 缓动曲线。0.32, 0.72, 0, 1 是「起步快、收尾极慢」的形状，
+   * 接近有质量的物体停下来；不用 linear / ease-in-out，那两种没有重量感。
+   * 消费方式：ease-fluid（Tailwind 会由 --ease-* 生成这个工具类）。
    */
-  --shadow-float:
-    0 1px 2px oklch(0.145 0 0 / 6%),
-    0 4px 8px -2px oklch(0.145 0 0 / 8%),
-    0 12px 24px -6px oklch(0.145 0 0 / 12%);
+  --ease-fluid:
+    cubic-bezier(0.32, 0.72, 0, 1);
 }
 /*
  ---break---
@@ -124,54 +122,77 @@
   /* 布局尺寸：来自参考站实测值，类名里用 w-[var(--sidebar-width)] 消费，不散落魔法数字 */
   --sidebar-width: 272px;
   --topbar-height: 48px;
-  --background:
-    oklch(1 0 0);
-  --foreground:
-    oklch(0.145 0 0);
-  --card:
-    oklch(1 0 0);
-  --card-foreground:
-    oklch(0.145 0 0);
-  --popover:
-    oklch(1 0 0);
-  --popover-foreground:
-    oklch(0.145 0 0);
-  --primary:
-    oklch(0.205 0 0);
-  --primary-foreground:
-    oklch(0.985 0 0);
-  --secondary:
-    oklch(0.97 0 0);
-  --secondary-foreground:
-    oklch(0.205 0 0);
-  --muted:
-    oklch(0.97 0 0);
-  --muted-foreground:
-    oklch(0.556 0 0);
-  --accent:
-    oklch(0.97 0 0);
-  --accent-foreground:
-    oklch(0.205 0 0);
-  --destructive:
-    oklch(0.577 0.245 27.325);
-  /* emerald-700 / amber-700 / blue-700 */
-  --success:
-    oklch(0.508 0.118 165.612);
-  --warning:
-    oklch(0.555 0.163 48.998);
-  --info:
-    oklch(0.488 0.243 264.376);
-  --border:
-    oklch(0.922 0 0);
-  --input:
-    oklch(0.922 0 0);
   /*
-   * 焦点环。原来取 0.708（浅灰），在白底上对比只有约 2.2:1 —— 键盘用户几乎看不到
-   * 焦点在哪。压到 0.556 后约 3.5:1，达到 WCAG 对非文本 UI 组件的 3:1 要求，
-   * 同时仍比正文浅，不喧宾夺主。
+   * 极柔扩散阴影。三层各自负责一段距离：贴边的一圈、中景的落影、远景的散光。
+   * 每层都很淡（4%~6%），合起来才有「浮起来」的错觉 —— 单层大模糊只会让边缘发虚。
+   *
+   * 不用 Tailwind 的 shadow-* 工具类：那条链路把值塞进 --tw-shadow，再由 box-shadow
+   * 一次引用五个 --tw-* 变量合成，其中任何一个在计算时无效，整条声明就作废。
+   * 直接写 box-shadow 没有这个风险。
+   */
+  --shadow-float:
+    0 1px 2px oklch(0 0 0 / 4%),
+    0 8px 24px -4px oklch(0 0 0 / 6%),
+    0 24px 48px -12px oklch(0 0 0 / 5%);
+  /* 卡片外壳的落影，比浮层浅一档 —— 卡片是贴在画布上，不是飘在上面 */
+  --shadow-card:
+    0 1px 2px oklch(0 0 0 / 3%),
+    0 8px 24px -8px oklch(0 0 0 / 6%);
+  /*
+   * 冷银单色：画布是带一点蓝的浅灰（#f2f2f4），卡片才是纯白。
+   * 层次由「外壳 + 内芯」的嵌套结构建立，不是靠边框。
+   */
+  --background:
+    #f2f2f4;
+  --foreground:
+    #0a0a0b;
+  --card:
+    #ffffff;
+  --card-foreground:
+    #0a0a0b;
+  --popover:
+    #ffffff;
+  --popover-foreground:
+    #0a0a0b;
+  --primary:
+    #0a0a0b;
+  --primary-foreground:
+    #fafafa;
+  --secondary:
+    #f4f4f6;
+  --secondary-foreground:
+    #0a0a0b;
+  --muted:
+    #f4f4f6;
+  --muted-foreground:
+    #6b6b73;
+  --accent:
+    #f4f4f6;
+  --accent-foreground:
+    #0a0a0b;
+  --destructive:
+    #b3261e;
+  /* 语义色取饱和度更低的一档，避免在冷银底上显得刺眼 */
+  --success:
+    #2f6b3f;
+  --warning:
+    #8a5a00;
+  --info:
+    #1a5fb4;
+  /*
+   * 边框走 hairline：6% 的黑在浅灰底上刚好看得见一条线，又不会把卡片框死。
+   * 这版里卡片靠「外壳 + 内芯」的嵌套结构分层，边框只负责收边。
+   */
+  --border:
+    oklch(0 0 0 / 6%);
+  --input:
+    oklch(0 0 0 / 8%);
+  /*
+   * 焦点环用近黑：冷银底上对比够高，而且与主色同源，
+   * 不会在几乎没有彩色的界面里突然冒出一圈彩色。
    */
   --ring:
-    oklch(0.556 0 0);
+    #0a0a0b;
   --chart-1:
     oklch(0.87 0 0);
   --chart-2:
@@ -182,72 +203,80 @@
     oklch(0.371 0 0);
   --chart-5:
     oklch(0.269 0 0);
+  /*
+   * 大圆角。这版刻意把基准调到 20px —— rounded-lg 消费它，
+   * 于是按钮、输入框、卡片一起变大，接近 squircle 的观感。
+   */
   --radius:
-    0.625rem;
+    1.25rem;
   --sidebar:
-    oklch(0.985 0 0);
+    #f7f7f9;
   --sidebar-foreground:
-    oklch(0.145 0 0);
+    #0a0a0b;
   --sidebar-primary:
-    oklch(0.205 0 0);
+    #0a0a0b;
   --sidebar-primary-foreground:
-    oklch(0.985 0 0);
+    #fafafa;
   --sidebar-accent:
-    oklch(0.97 0 0);
+    #ebebef;
   --sidebar-accent-foreground:
-    oklch(0.205 0 0);
+    #0a0a0b;
   --sidebar-border:
-    oklch(0.922 0 0);
+    oklch(0 0 0 / 6%);
   --sidebar-ring:
-    oklch(0.708 0 0);
+    #0a0a0b;
 }
 /*
  ---break---
  */
 .dark {
+  /*
+   * 深色也是冷调：近黑的蓝灰，与浅色的冷银同源。
+   * 卡片比画布亮一档，配合外壳结构形成层次。
+   */
   --background:
-    oklch(0.145 0 0);
+    #0c0c0e;
   --foreground:
-    oklch(0.985 0 0);
+    #fafafa;
   --card:
-    oklch(0.205 0 0);
+    #161618;
   --card-foreground:
-    oklch(0.985 0 0);
+    #fafafa;
   --popover:
-    oklch(0.205 0 0);
+    #1c1c1f;
   --popover-foreground:
-    oklch(0.985 0 0);
+    #fafafa;
   --primary:
-    oklch(0.922 0 0);
+    #fafafa;
   --primary-foreground:
-    oklch(0.205 0 0);
+    #0a0a0b;
   --secondary:
-    oklch(0.269 0 0);
+    #1f1f22;
   --secondary-foreground:
-    oklch(0.985 0 0);
+    #fafafa;
   --muted:
-    oklch(0.269 0 0);
+    #1f1f22;
   --muted-foreground:
-    oklch(0.708 0 0);
+    #8b8b93;
   --accent:
-    oklch(0.269 0 0);
+    #1f1f22;
   --accent-foreground:
-    oklch(0.985 0 0);
+    #fafafa;
   --destructive:
-    oklch(0.704 0.191 22.216);
-  /* emerald-400 / amber-400 / blue-400 */
+    #e5766f;
+  /* 深底上取各色的浅档，保证小字仍有对比 */
   --success:
-    oklch(0.765 0.177 163.223);
+    #7fbf92;
   --warning:
-    oklch(0.828 0.189 84.429);
+    #d9a441;
   --info:
-    oklch(0.707 0.165 254.624);
+    #7aa7e0;
   --border:
-    oklch(1 0 0 / 10%);
+    oklch(1 0 0 / 8%);
   --input:
-    oklch(1 0 0 / 15%);
+    oklch(1 0 0 / 12%);
   --ring:
-    oklch(0.556 0 0);
+    #fafafa;
   --chart-1:
     oklch(0.87 0 0);
   --chart-2:
@@ -259,21 +288,21 @@
   --chart-5:
     oklch(0.269 0 0);
   --sidebar:
-    oklch(0.205 0 0);
+    #161618;
   --sidebar-foreground:
-    oklch(0.985 0 0);
+    #fafafa;
   --sidebar-primary:
-    oklch(0.488 0.243 264.376);
+    #fafafa;
   --sidebar-primary-foreground:
-    oklch(0.985 0 0);
+    #0a0a0b;
   --sidebar-accent:
-    oklch(0.269 0 0);
+    #24242a;
   --sidebar-accent-foreground:
-    oklch(0.985 0 0);
+    #fafafa;
   --sidebar-border:
-    oklch(1 0 0 / 10%);
+    oklch(1 0 0 / 8%);
   --sidebar-ring:
-    oklch(0.556 0 0);
+    #fafafa;
 }
 /*
  ---break---
@@ -304,4 +333,20 @@
       scroll-behavior: auto !important;
     }
   }
+}
+
+/*
+ * 浮层与卡片的阴影。
+ *
+ * 必须用 @utility 而不是 @layer base 里的普通类：ring-* 与 shadow-* 都在设
+ * box-shadow，谁的声明生效由「层」决定 —— utilities 层压过 base 层，所以写在
+ * base 里会被同一元素上的 ring-1 整条覆盖掉（实测浮层的阴影会变成透明）。
+ * 进 utilities 层之后两者同层，按源顺序后者胜。
+ */
+@utility float-shadow {
+  box-shadow: var(--shadow-float);
+}
+
+@utility card-shadow {
+  box-shadow: var(--shadow-card);
 }
