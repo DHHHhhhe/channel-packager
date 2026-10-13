@@ -1,11 +1,11 @@
 ---
 version: "1.0"
-name: 渠道分包工具
+name: 中性单色桌面界面
 description: >-
-  桌面工具的中性单色界面规范。冷银画布 + 纯白卡片，层次由嵌套结构与温度差建立，
-  不依赖边框和重阴影。生成同类工具时以本文件为准，保证多个工具的页面观感一致。
-platform: Windows 桌面（Electron + React + Tailwind v4）
-source: app/src/renderer/src/styles/index.css（本文件的值全部从该文件提取）
+  一套中性单色的桌面工具界面规范。冷银画布 + 纯白卡片，层次由嵌套结构与温度差建立，
+  不依赖边框和重阴影。适用于需要长时间盯着看、内容密度偏高的工具类界面。
+platform: 桌面端（Electron / Tauri / 浏览器），实现无关
+license: 可自由复制、修改、分发
 
 colors:
   light:
@@ -15,7 +15,7 @@ colors:
     foreground: "#0a0a0b"
     # 卡片内芯：纯白。与画布形成温度差，这是层次的主要来源
     card: "#ffffff"
-    # 浮层（对话框、下拉、更新通知）：纯白
+    # 浮层（对话框、下拉、浮出通知）：纯白
     popover: "#ffffff"
     # 主操作：墨色底 + 近白字
     primary: "#0a0a0b"
@@ -76,7 +76,7 @@ typography:
     note: 只用这三档。不要用 700 —— 中文粗体在小字号下发糊
   numeric:
     tabular: true
-    note: 表格里的数字、渠道数、版本号一律加 tabular-nums，避免逐行跳动
+    note: 表格里的数字、计数、版本号一律加 tabular-nums，避免逐行跳动
 
 rounded:
   sm: "6px"
@@ -98,11 +98,11 @@ shadows:
   float: "0 1px 2px oklch(0 0 0 / 4%), 0 8px 24px -4px oklch(0 0 0 / 6%), 0 24px 48px -12px oklch(0 0 0 / 5%)"
   note: >-
     极柔扩散，每层都很淡。卡片贴面用 card，浮层用 float。
-    不要用 Tailwind 的 shadow-* 工具类 —— 见正文「实现注意」。
+    不要用 Tailwind 的 shadow-* 工具类 —— 见正文第 4 节。
 
 layout:
   sidebar-width: "272px（可拖动，200–420px）"
-  sidebar-width-storage: "channel-packager:sidebar-width"
+  sidebar-width-storage-key: "sidebar-width"
   topbar-height: "48px"
   min-window: "1024×680"
   content-max-width: "无硬上限，内容列吸收剩余宽度"
@@ -163,13 +163,16 @@ components:
     textColor: "{colors.light.muted-foreground}"
 ---
 
-# 渠道分包工具 · 界面规范
+# 中性单色桌面界面规范
 
-这份规范是**生成同类桌面工具时的唯一依据**。值全部从 `app/src/renderer/src/styles/index.css`
-提取，不是设计意图的描述 —— 改代码就要同步改这里，两边不一致时以代码为准并回来修正本文件。
+这是一份**自包含**的界面规范，可以直接复制给任何人或任何 AI 使用。它不依赖任何特定的
+代码库、构建工具或框架 —— 第 11 节有一份完整的 CSS，复制进项目就能用。
 
 上面 YAML 里的令牌是**规范性**的：需要精确取用时读它。下面的正文是**语境**：解释这些值为什么
 长这样、什么情况下可以偏离。
+
+适用场景：需要长时间盯着看、内容密度偏高的桌面工具。不适合营销页、品牌页、内容型站点 ——
+那些需要更强的视觉表达，这份规范刻意把表达欲压到了很低。
 
 ---
 
@@ -196,7 +199,7 @@ components:
 1. **画布不是纯白。** 画布 `#f2f2f4`、卡片 `#ffffff` —— 这个温度差是层次的主要来源。
    两个都用纯白的话，卡片只能靠边框分界，整个界面会显得平。
 2. **语义色与品牌色分开。** 主按钮是墨色，不是彩色。`success` / `warning` / `info`
-   只在真正表达状态时出现（出包成功、渠道数异常、更新可用），不做装饰。
+   只在真正表达状态时出现（操作成功、数据异常、有新版本），不做装饰。
    如果主色改成了某个彩色，**成功色必须换一个色相** —— 否则绿色按钮和绿色状态分不清。
 3. **深色不是浅色反转。** 深色的画布是冷调近黑 `#0c0c0e`，卡片**比画布亮**一档
    `#161618`。深色下阴影几乎看不见，明度才是深度线索。深色的次要文字也要取更亮的一档。
@@ -205,10 +208,18 @@ components:
 
 状态色一律「浅底 + 同色深字」，不铺满：
 
-```
-成功  bg-success/10  text-success
-提醒  bg-warning/10  text-warning
-错误  bg-destructive/10  text-destructive
+```css
+/* 成功 */
+background: color-mix(in srgb, var(--success) 10%, transparent);
+color: var(--success);
+
+/* 提醒 */
+background: color-mix(in srgb, var(--warning) 10%, transparent);
+color: var(--warning);
+
+/* 错误 */
+background: color-mix(in srgb, var(--destructive) 10%, transparent);
+color: var(--destructive);
 ```
 
 ---
@@ -229,7 +240,7 @@ components:
 **只用三档字重**：400（正文）、500（标签与按钮）、600（标题）。
 不要用 700 —— 中文粗体在 12–14px 下发糊，反而降低可读性。
 
-**数字加 `tabular-nums`**：表格里的渠道数、版本号、时间戳一律加。
+**数字加 `tabular-nums`**：表格里的计数、版本号、时间戳一律加。
 不加的话数字宽度不等，逐行往下看会左右跳。
 
 ---
@@ -266,23 +277,49 @@ components:
 | 令牌 | 用在哪 |
 | --- | --- |
 | `--shadow-card` | 卡片外壳。贴面，落影浅 |
-| `--shadow-float` | 对话框、下拉、更新通知。三层，负责「浮起来」 |
+| `--shadow-float` | 对话框、下拉、浮出通知。三层，负责「浮起来」 |
 
-**不要用 Tailwind 的 `shadow-*` 工具类。** 那条链路把值塞进 `--tw-shadow`，
-再由 `box-shadow` 一次引用五个 `--tw-*` 变量合成，其中任何一个在计算时无效，
-**整条声明就作废**。实测 `shadow-lg` 和自定义值都会算出 `none`。
+### 如果把 Tailwind 的 `shadow-*` 和 `ring-*` 一起用，会踩两个坑
 
-正确做法是在 `index.css` 里用 `@utility` 直接写：
+Tailwind 的 `shadow-*` 不是直接写 `box-shadow`，而是把值塞进变量，再由一条声明同时引用：
 
 ```css
-@utility float-shadow {
+/* 工具类实际生成的东西 */
+.shadow-lg { --tw-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1); }
+.ring-1    { --tw-ring-shadow: 0 0 0 1px var(--tw-ring-color); }
+
+/* 两者最终共用同一条声明 */
+box-shadow:
+  var(--tw-ring-offset-shadow, 0 0 #0000),
+  var(--tw-ring-shadow, 0 0 #0000),
+  var(--tw-shadow);
+```
+
+问题有两个：
+
+1. **任一变量在计算时无效，整条声明就作废。** 五个 `--tw-*` 里只要有一个算出非法值，
+   整个 `box-shadow` 失效 —— 表现是「写了阴影，但完全没有」。
+2. **`ring-*` 会挡住 `shadow-*`。** 这是 Tailwind 有意为之（描边要盖在阴影上面当焦点层），
+   但 CSS 没有「阴影偏移」这个概念，两者都是 `box-shadow`，只能叠在一起。
+
+### 避开的方法：固定用一套，另一套不用
+
+**浮层的描边用 `border` 而不是 `ring-1`**，从根上不产生第二个 `box-shadow`。
+
+阴影则写成**不带 `@layer` 的普通类**。CSS 层叠顺序是：
+
+```
+@layer theme < base < components < utilities < 不带层的样式
+```
+
+**不带层的样式永远赢过任何带层的样式**，跟选择器特异性无关。所以直接写就能生效：
+
+```css
+/* 不带任何 @layer，优先级最高 */
+.float-shadow {
   box-shadow: var(--shadow-float);
 }
 ```
-
-`@utility` 而不是 `@layer base` 里的普通类，是因为 `ring-*` 也在设 `box-shadow`，
-两者抢同一个属性时由「层」决定胜负 —— utilities 层压过 base 层。
-浮层的描边用 `border` 而不是 `ring-1`，从根上避免这个冲突。
 
 ---
 
@@ -301,6 +338,9 @@ components:
 这样卡片看起来像**嵌在托盘里的一块板子**，而不是浮在背景上的一片色。
 只加边框的卡片在这个配色下会显得单薄。
 
+内芯那道顶部内高光用 `box-shadow: inset` 实现，很淡（白色 60% 左右），
+作用是在卡片上边缘拉出一条极细的亮线，让平面有厚度感。
+
 ---
 
 ## 6. 组件规格
@@ -315,8 +355,9 @@ components:
 | `ghost` | 透明 | 正文色 | 列表行内、工具条 |
 | `destructive` | 危险色 10% | 危险色 | 删除。**必须与主操作分开** |
 
-高度 36px（`h-9`）。列表行内的小按钮用 `h-7`。
-所有按钮都有按下反馈：`active:translate-y-px`（有弹出菜单的除外）。
+高度 36px，列表行内的小按钮 28px。
+所有按钮都要有按下反馈（向下位移 1px 或底色再深一档），有弹出菜单的除外 ——
+点了会弹面板的按钮不适合位移，会让人以为页面抖了一下。
 
 **每屏只有一个主按钮。** 两个同级的实心按钮会让人不知道该点哪个。
 
@@ -328,8 +369,8 @@ components:
 ### 对话框
 
 纯白底、圆角 28px、`--shadow-float`、`max-height: 85vh` 且内容区可滚动。
-窗口最小能缩到 1024×680，长表单必须能在小窗口里滚到底部的按钮 ——
-配合 sticky 的底部按钮条，按钮始终露在外面。
+窗口可能被缩得很小，长表单必须能在小窗口里滚到底部的按钮 ——
+配合 sticky 的底部按钮条，让按钮始终露在外面。
 
 ### 表格
 
@@ -338,7 +379,7 @@ components:
 
 ### 徽章
 
-胶囊形，12px。**只用于状态与计数**（渠道数、成功/失败），不做装饰性标签。
+胶囊形，12px。**只用于状态与计数**（条目数、成功/失败），不做装饰性标签。
 
 ---
 
@@ -353,7 +394,7 @@ components:
 | 按下 | 位移 1px 或底色再深一档 |
 | 焦点 | 可见的焦点环（`--ring`），**键盘用户必须看得见** |
 
-**焦点环不是可选项。** 用 `focus-visible` 而不是 `focus`，
+**焦点环不是可选项。** 用 `:focus-visible` 而不是 `:focus`，
 鼠标点击时不显示、键盘 Tab 时才显示。
 
 ---
@@ -376,22 +417,21 @@ components:
 
 - **不要用纯白画布 + 纯白卡片。** 层次只能靠边框撑，界面会平。
 - **不要用纯黑 `#000` 和纯白 `#fff` 做正文色。** 用 `#0a0a0b` 和 `#fafafa`。
-- **不要用 Tailwind 的 `shadow-*` 工具类。** 见第 4 节。
 - **不要在同一个元素上同时用 `ring-*` 和 `shadow-*`。** 它们抢 `box-shadow`。
 - **不要用超过三档字号或三档字重。**
 - **不要用彩色做品牌色。** 主色是墨色，彩色只留给语义状态。
 - **不要给非浮层元素加阴影。** 卡片用 `--shadow-card`，仅此而已。
 - **不要用装饰性动画。** 动效只表达状态变化。
 - **不要在单色界面里加彩色发光环。**
-- **不要写死侧栏宽度。** 它可拖动（200–420px），值存在 `localStorage`。
-- **不要用 `100vh`。** 桌面端窗口可缩放，用 flex 布局让内容列吸收宽度。
-- **不要用 emoji 当图标。** 用 SVG 图标，全项目一套。
+- **不要写死侧栏宽度。** 做成可拖动（200–420px），值存 `localStorage`。
+- **不要用 `100vh` 做布局高度。** 桌面端窗口可缩放，用 flex 让内容列吸收剩余宽度。
+- **不要用 emoji 当图标。** 用一套 SVG 图标，全项目统一。
 
 ---
 
 ## 10. 给生成工具的 Agent
 
-生成新的同类工具时：
+生成新界面时：
 
 1. **直接抄令牌**，不要重新发明配色。YAML 里的值是规范性的。
 2. **保留角色的语义**：`--background` 永远是画布，`--card` 永远是内容面。
@@ -401,18 +441,214 @@ components:
 5. **嵌套容器的圆角按公式算**，不要内外套同一个值。
 6. **每屏一个主按钮。**
 7. **焦点环、`prefers-reduced-motion`、`aria-label` 是底线**，不是加分项。
-8. 偏离本规范时**说明理由**。规范是默认值，不是牢笼 —— 但偏离必须是有意的。
+8. **卡片用双层结构**，不要退回单层加边框。
+9. 偏离本规范时**说明理由**。规范是默认值，不是牢笼 —— 但偏离必须是有意的。
 
 ---
 
-## 11. 与实现同步
+## 11. 完整令牌（直接复制）
 
-本文件的值来自：
+以下 CSS 可以整段粘进任何项目，不依赖构建工具。粘在样式表最前面，之后用 `var(--token)` 引用。
 
+```css
+:root {
+  /* ── 面与文字 ── */
+  --background: #f2f2f4;          /* 画布 */
+  --foreground: #0a0a0b;          /* 正文与标题 */
+  --card: #ffffff;                /* 卡片内芯 */
+  --card-foreground: #0a0a0b;
+  --popover: #ffffff;             /* 浮层 */
+  --popover-foreground: #0a0a0b;
+
+  /* ── 主操作 ── */
+  --primary: #0a0a0b;
+  --primary-foreground: #fafafa;
+
+  /* ── 次级面与次要文字 ── */
+  --secondary: #f4f4f6;
+  --secondary-foreground: #0a0a0b;
+  --muted: #f4f4f6;
+  --muted-foreground: #6b6b73;
+  --accent: #f4f4f6;
+  --accent-foreground: #0a0a0b;
+
+  /* ── 语义状态 ── */
+  --destructive: #b3261e;
+  --success: #2f6b3f;
+  --warning: #8a5a00;
+  --info: #1a5fb4;
+
+  /* ── 线 ── */
+  --border: oklch(0 0 0 / 6%);    /* hairline，看得见但不框死 */
+  --input: oklch(0 0 0 / 8%);
+  --ring: #0a0a0b;                /* 焦点环 */
+
+  /* ── 侧栏 ── */
+  --sidebar: #f7f7f9;
+  --sidebar-foreground: #0a0a0b;
+  --sidebar-accent: #ebebef;
+  --sidebar-accent-foreground: #0a0a0b;
+  --sidebar-border: oklch(0 0 0 / 6%);
+
+  /* ── 圆角 ── */
+  --radius: 1.25rem;              /* 20px，按钮/输入框/卡片内芯用它 */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-xl: 28px;              /* 对话框、卡片外壳 */
+
+  /* ── 间距基准 ── */
+  --space-unit: 4px;
+
+  /* ── 布局 ── */
+  --sidebar-width: 272px;         /* 可拖动时改这个值，范围 200–420px */
+  --topbar-height: 48px;
+
+  /* ── 动效 ── */
+  --duration-micro: 150ms;
+  --duration-base: 200ms;
+
+  /* ── 阴影：极柔扩散，每层都很淡 ── */
+  --shadow-card:
+    0 1px 2px oklch(0 0 0 / 3%),
+    0 8px 24px -8px oklch(0 0 0 / 6%);
+  --shadow-float:
+    0 1px 2px oklch(0 0 0 / 4%),
+    0 8px 24px -4px oklch(0 0 0 / 6%),
+    0 24px 48px -12px oklch(0 0 0 / 5%);
+}
+
+/* ── 字体：必须显式带中文回退 ── */
+:root {
+  --font-sans:
+    'Geist Variable', 'Microsoft YaHei UI', 'Microsoft YaHei',
+    'PingFang SC', 'Noto Sans CJK SC', system-ui, sans-serif;
+}
+
+.dark {
+  --background: #0c0c0e;
+  --foreground: #fafafa;
+  /* 深色下卡片比画布亮一档 —— 阴影不起作用，明度才是深度线索 */
+  --card: #161618;
+  --card-foreground: #fafafa;
+  --popover: #1c1c1f;
+  --popover-foreground: #fafafa;
+
+  --primary: #fafafa;
+  --primary-foreground: #0a0a0b;
+
+  --secondary: #1f1f22;
+  --secondary-foreground: #fafafa;
+  --muted: #1f1f22;
+  --muted-foreground: #8b8b93;    /* 比浅色那档更亮，否则过不了 4.5:1 */
+  --accent: #1f1f22;
+  --accent-foreground: #fafafa;
+
+  /* 深底上取各色的浅档 */
+  --destructive: #e5766f;
+  --success: #7fbf92;
+  --warning: #d9a441;
+  --info: #7aa7e0;
+
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: #fafafa;
+
+  --sidebar: #161618;
+  --sidebar-foreground: #fafafa;
+  --sidebar-accent: #24242a;
+  --sidebar-accent-foreground: #fafafa;
+  --sidebar-border: oklch(1 0 0 / 8%);
+}
+
+/* ── 基础应用 ── */
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* ── 卡片：外壳 + 内芯 ── */
+.card-shell {
+  background: rgb(0 0 0 / 2.5%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: 6px;
+  box-shadow: var(--shadow-card);
+}
+.card-core {
+  background: var(--card);
+  /* 内圆角 = 外圆角 − 内边距，两条弧才同心 */
+  border-radius: calc(var(--radius-xl) - 6px);
+  /* 顶部内高光：在上边缘拉出一条极细的亮线，让平面有厚度 */
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 60%);
+}
+
+/* ── 浮层阴影：不带 @layer，优先级最高 ── */
+.float-shadow {
+  box-shadow: var(--shadow-float);
+}
+
+/* ── 数字等宽 ── */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 尊重减少动效 ── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 ```
-app/src/renderer/src/styles/index.css   ← 所有颜色、圆角、阴影令牌
-app/src/renderer/src/components/ui/     ← 12 个基础组件
+
+### 如果项目用 Tailwind v4
+
+把上面的 `:root` / `.dark` 整段放进入口 CSS，再加一段映射，让工具类能读到这些变量：
+
+```css
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-popover: var(--popover);
+  --color-primary: var(--primary);
+  --color-secondary: var(--secondary);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 14px);
+  --radius-md: calc(var(--radius) - 10px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 8px);
+
+  --font-sans: var(--font-sans);
+}
 ```
 
-改了这些文件就同步改本文件。**两边不一致时以代码为准**，并回来修正本文件 ——
-一份过时的规范比没有规范更糟，因为它会让生成的工具跑偏。
+`@theme inline` 而不是 `@theme`：值需要跟随 `:root` / `.dark` 切换变化，
+写成 `inline` 才能让工具类引用变量本身，而不是在构建时把值固化进去。
+
+注意第 4 节说的问题 —— 阴影用不带层的普通类写，不要用 `shadow-*` 工具类。
+
+---
+
+## 12. 修改这份规范
+
+这份规范是按「拿出去就能用」写的，所以：
+
+- 改配色、字号、圆角、阴影时，**YAML 和正文表格要一起改**，别只改一处。
+- 第 11 节的 CSS 是规范性产物，**改了令牌就要同步改它** —— 那份 CSS 是别人真正会复制的部分。
+- 加新颜色时**起新的角色名**，不要挪用 `--primary` 或 `--accent`。
+- 规范与代码不一致时，**以能跑的那个为准**，然后回来修正规范。
+  过时的规范比没有规范更糟，它会让照着做的人跑偏。
