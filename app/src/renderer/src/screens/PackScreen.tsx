@@ -18,6 +18,7 @@ import {
   Upload,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { cn } from 'cn'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import {
   CustomChannelExportDialog,
@@ -995,7 +996,7 @@ export function PackScreen() {
             <Package className="size-6 text-muted-foreground" />
             <p className="text-sm">将 APK 拖到此处。</p>
             <label className="cursor-pointer">
-              <span className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium hover:bg-muted">
+              <span className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted active:bg-muted/70">
                 <Upload className="size-4" />
                 选择 APK
               </span>
@@ -1232,7 +1233,17 @@ export function PackScreen() {
                       return (
                         <label
                           key={entry.channel}
-                          className="flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm"
+                          className={cn(
+                            'flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm transition-colors',
+                            /*
+                             * 选中态给整块上色，而不是只靠那个小方框 —— 一屏几十条渠道时，
+                             * 勾选框太小，扫一眼数不清勾了哪些。hover 与按下共用一套底色，
+                             * 只有深浅差别，鼠标移开时不会跳变。
+                             */
+                            picked.has(entry.channel)
+                              ? 'border-primary/40 bg-primary/5'
+                              : 'hover:bg-muted/50 active:bg-muted',
+                          )}
                           onClick={(event) => handleChannelShiftClick(event, index)}
                         >
                           <Checkbox

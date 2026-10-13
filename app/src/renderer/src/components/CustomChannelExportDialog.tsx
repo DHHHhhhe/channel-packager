@@ -264,7 +264,7 @@ export function CustomChannelExportDialog({
 
         <div className="flex flex-wrap items-center gap-2">
           <label className="cursor-pointer">
-            <span className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium hover:bg-muted">
+            <span className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted active:bg-muted/70">
               <Upload className="size-4" />
               导入渠道 JSON
             </span>

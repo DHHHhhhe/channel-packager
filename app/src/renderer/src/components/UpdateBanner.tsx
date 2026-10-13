@@ -206,7 +206,7 @@ export default function UpdateBanner(): JSX.Element | null {
   return (
     <div
       data-slot="update-banner"
-      className="fixed right-4 bottom-4 z-50 flex w-96 max-w-[calc(100vw-2rem)] flex-col gap-2 rounded-lg border border-primary/30 bg-background px-3 py-2 text-sm shadow-lg"
+      className="fixed right-4 bottom-4 z-50 flex w-96 max-w-[calc(100vw-2rem)] flex-col gap-2 rounded-lg border border-primary/30 bg-background px-3 py-2 text-sm shadow-float"
     >
       <div className="flex items-start gap-2">
         {downloading ? (

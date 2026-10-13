@@ -72,9 +72,13 @@ export function AppSidebar({
               className={cn(
                 'flex flex-col items-start gap-0.5 rounded-lg px-3 py-2 text-left transition-colors',
                 'focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none',
+                /*
+                 * 按下时用背景加深而不是位移：导航项是一整块，位移会带动旁边的内容一起晃。
+                 * 激活态与按下态取同一个底色 —— 点当前项时不该再跳一下。
+                 */
                 isActive
                   ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                  : 'hover:bg-sidebar-accent/60',
+                  : 'hover:bg-sidebar-accent/60 active:bg-sidebar-accent',
               )}
             >
               <span className="flex w-full items-center gap-2 text-sm font-medium">
