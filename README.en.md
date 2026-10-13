@@ -8,6 +8,8 @@
 
 Drop in an APK, tick the channels you want, and get a batch of channel packages back.
 
+Channels are written with Meituan's [Walle](https://github.com/Meituan-Dianping/walle) into the APK's V2 signing block, so **the app side must also read them with Walle** — see [Scope](#scope-it-produces-walle-channel-packages).
+
 No Java to install, no Android SDK to configure — the JRE, apksigner, zipalign and walle are all bundled.
 
 ![Main window](docs/images/main.png)
@@ -17,6 +19,7 @@ No Java to install, no Android SDK to configure — the JRE, apksigner, zipalign
 ## Contents
 
 - [What it does](#what-it-does)
+- [Scope: it produces Walle channel packages](#scope-it-produces-walle-channel-packages)
 - [Quick start](#quick-start)
 - [The interface](#the-interface)
 - [Channel lists belong to groups, not to keystores](#channel-lists-belong-to-groups-not-to-keystores)
@@ -41,6 +44,19 @@ No Java to install, no Android SDK to configure — the JRE, apksigner, zipalign
 | Portable configuration | Export a config pack (optionally without credentials) to move machines or sync a team in a single step |
 | Failures you can act on | The result card names the failing step, its exit code and the tail of its output, plus a full log |
 | Auto-update | Installed builds check for updates automatically; the release notes are shown first and you decide whether to download |
+
+## Scope: it produces Walle channel packages
+
+**This is not a general-purpose splitter that works with any APK.** It drives Meituan's [Walle](https://github.com/Meituan-Dianping/walle), which writes channel info into the APK's `APK Signing Block` — a block that only exists under **Android Signature V2 Scheme**. That imposes a few hard prerequisites:
+
+| Prerequisite | Why |
+| --- | --- |
+| **The APK must be V2-signed** | Walle only handles V2. A V1-only APK fails outright with `has no v2 signature in Apk Signing Block`. V2 exists from Android 7.0 |
+| **The reader must use Walle's SDK** | The app needs `WalleChannelReader` (or `payload_reader`). Code written for Umeng, `META-INF/channel_xxx` files, `packer-ng-plugin` or other schemes **cannot read what this tool writes** — and vice versa |
+| **Don't re-sign with apksigner** | Re-signing drops the channel info (stated in Walle's own README). To change the signature, write channels *after* signing — which is the order this tool follows |
+| **Harden before writing channels** | Tools like 360 hardening modify the signing block; writing channels first makes them unreadable, so write again after hardening |
+
+In short: **your app's channel-reading code and this tool must use the same scheme (Walle)**. Check what your app uses before adopting this.
 
 ## Quick start
 
