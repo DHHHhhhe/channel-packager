@@ -148,6 +148,22 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const saveGroup = useCallback(async (mutation: GroupMutation): Promise<GroupMutationResult> => {
     const result = await window.api.saveGroup(mutation)
     setGroups(result.items)
+    /*
+     * 分组的增删会让 groupChannelCounts 的键对不上：新建的分组还没有渠道文件，
+     * 删掉的分组会留下一个查不到的键 —— 下拉里新分组会顶着别的数字。
+     * 「改名」不动它：id 没变，渠道数也不会变。
+     */
+    if (mutation.action === 'add' && result.item) {
+      const addedId = result.item.id
+      setGroupChannelCounts((current) => ({ ...current, [addedId]: 0 }))
+    } else if (mutation.action === 'remove') {
+      const removedId = mutation.id
+      setGroupChannelCounts((current) => {
+        const next = { ...current }
+        delete next[removedId]
+        return next
+      })
+    }
     return result
   }, [])
 
@@ -169,6 +185,14 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const saveChannels = useCallback(async (id: string, config: ChannelConfig): Promise<void> => {
     await window.api.saveChannels(id, config)
     setChannelsRevision((current) => current + 1)
+    /*
+     * 顺手把这一组的数量改掉。
+     *
+     * groupChannelCounts 是启动时 storeLoad 算一次的派生数据，保存不会让它重算 ——
+     * 不回填的话下拉里的数字会一直停在保存前的值（列表已经变了、数字没变）。
+     * 这里不回源重读：手上这份 config 就是刚写下去的内容，数量直接数得出来。
+     */
+    setGroupChannelCounts((current) => ({ ...current, [id]: config.channelInfoList.length }))
   }, [])
 
   const refreshJks = useCallback(
