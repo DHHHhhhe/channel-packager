@@ -13,4 +13,21 @@
   FileOpen $0 "$INSTDIR\.installed" w
   FileWrite $0 "1"
   FileClose $0
+
+  ; 通知资源管理器刷新图标缓存。
+  ;
+  ; 桌面与开始菜单的快捷方式图标是从 exe 里读的，而安装过程把旧 exe 删掉换成了新的。
+  ; 资源管理器不会重新读文件，它拿缓存的图标去匹配，新 exe 对不上旧缓存 ——
+  ; 结果就是快捷方式变成一片空白，看起来像程序坏了（微软官方文档里
+  ; "application-shortcuts-show-blank-icons" 说的就是这个）。
+  ;
+  ; 两条通知缺一不可：
+  ;   1) 对被替换的这个 exe 精确通知（SHCNE_UPDATEITEM | SHCNF_PATHW）
+  ;      只发目录级的 SHCNE_UPDATEDIR 是不够的：系统不会去遍历哪个文件变了，多数情况没反应
+  ;   2) 再全局刷新一次，把文件系统元数据、资源管理器内存、系统图标数据库
+  ;      这三层缓存一起清掉。
+  ;      微软文档要求 SHCNE_ASSOCCHANGED 必须带 SHCNF_IDLIST，而 SHCNF_FLUSH
+  ;      只是修饰位、不能单独用 —— 两个相或就是 0x1000（IDLIST 本身是 0）。
+  System::Call 'shell32::SHChangeNotify(i 0x00002000, i 0x0005, w "$INSTDIR\${APP_EXECUTABLE_FILENAME}", i 0)'
+  System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0x1000, i 0, i 0)'
 !macroend

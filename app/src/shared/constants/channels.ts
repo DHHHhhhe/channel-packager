@@ -74,6 +74,8 @@ export const IPC_CHANNELS = {
   updateGetState: 'update:getState',
   /** 主进程推给渲染层的状态变化 */
   updateState: 'update:state',
+  /** 取走「刚更新过」的一次性提示；没有待提示的返回 null。取过一次就不再返回 */
+  updateConsumeVersionNotice: 'update:consumeVersionNotice',
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]

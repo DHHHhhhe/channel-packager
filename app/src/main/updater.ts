@@ -5,6 +5,7 @@ import { IPC_CHANNELS } from '../shared/constants/channels'
 import type { UpdateState } from '../shared/types/update'
 import { getDataDir, isInstalledLayout } from './paths'
 import { readSettings, writeSettings } from './store'
+import { consumeVersionNotice } from './version-notice'
 
 /** electron-updater 的 AppUpdater。用类型引用，避免顶层 import 把加载失败拖到启动期 */
 type AutoUpdater = import('electron-updater').AppUpdater
@@ -413,4 +414,5 @@ export function registerUpdateIpc(): void {
   ipcMain.handle(IPC_CHANNELS.updateInstall, () => {
     installUpdate()
   })
+  ipcMain.handle(IPC_CHANNELS.updateConsumeVersionNotice, () => consumeVersionNotice())
 }

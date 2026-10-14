@@ -12,6 +12,7 @@ import { installApplicationMenu } from './menu'
 import { initPaths } from './paths'
 import { currentBackgroundColor, initTheme } from './theme'
 import { initUpdater, registerUpdateIpc } from './updater'
+import { initVersionNotice } from './version-notice'
 import type { ThemeChoice } from '../shared/types/settings'
 
 /** dev 时由 vite-plugin-electron 注入；打包后不存在 */
@@ -91,6 +92,13 @@ if (!app.requestSingleInstanceLock()) {
     registerShellIpc()
     registerDialogIpc()
     registerUpdateIpc()
+
+    /*
+     * 建窗口之前记下版本变化。渲染层一挂载就会来取「刚更新过」的提示，
+     * 晚了它取到的是空 —— 而那条提示是用户确认更新装成功了的唯一依据：
+     * 安装那几十秒应用是关着的，他看不到任何界面。
+     */
+    initVersionNotice()
 
     // 建窗口之前定下主题：底色与渲染层的 prefers-color-scheme 都取它
     const theme = initTheme()

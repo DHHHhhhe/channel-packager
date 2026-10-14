@@ -13,6 +13,7 @@ import type {
 } from '../shared/types/store'
 import {
   parseAutoCheckUpdate,
+  parseLastRunVersion,
   parseThemeChoice,
   type SettingsFile,
   type SettingsPatch,
@@ -146,14 +147,16 @@ export function settingsFilePath(): string {
  * 弹一条「配置坏了」，用户按一下开关就覆盖回去了，报了反而吓人。
  */
 export function readSettings(): SettingsFile {
-  const { value } = readJson<{ theme?: unknown; autoCheckUpdate?: unknown }>(
-    settingsFilePath(),
-    SETTINGS_FILE_NAME,
-  )
+  const { value } = readJson<{
+    theme?: unknown
+    autoCheckUpdate?: unknown
+    lastRunVersion?: unknown
+  }>(settingsFilePath(), SETTINGS_FILE_NAME)
   return {
     version: SETTINGS_FILE_VERSION,
     theme: parseThemeChoice(value?.theme),
     autoCheckUpdate: parseAutoCheckUpdate(value?.autoCheckUpdate),
+    lastRunVersion: parseLastRunVersion(value?.lastRunVersion),
   }
 }
 

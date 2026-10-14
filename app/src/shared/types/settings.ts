@@ -19,6 +19,14 @@ export interface SettingsFile {
    * 关掉它不会影响手动检查，也不会影响已经下好的更新继续安装。
    */
   autoCheckUpdate: boolean
+  /**
+   * 上一次运行时的版本号。空串表示还没记录过（第一次装，或者设置文件被删了）。
+   *
+   * 用途只有一个：下次启动时如果它和当前版本不一样，说明刚更新过，
+   * 界面据此提示一句「已更新到 x.y.z」。用户点完「重启并更新」在装机那几十秒里
+   * 看不到任何界面，回来之后得有个东西告诉他成了。
+   */
+  lastRunVersion: string
 }
 
 /** 写设置时提交的改动。只带要改的字段，其余保持原值 */
@@ -44,4 +52,14 @@ export function parseAutoCheckUpdate(value: unknown): boolean {
     return value
   }
   return DEFAULT_AUTO_CHECK_UPDATE
+}
+
+/**
+ * 校验「上次运行的版本」。
+ *
+ * 不认识的类型一律当空串（= 没记录过）。空串的语义是「不提示更新」，
+ * 所以设置文件坏掉时最多是少提示一次，不会凭空冒出一句「已更新到」。
+ */
+export function parseLastRunVersion(value: unknown): string {
+  return typeof value === 'string' ? value : ''
 }

@@ -247,6 +247,10 @@ const api: RendererApi = {
       ipcRenderer.removeListener(IPC_CHANNELS.updateState, handler)
     }
   },
+
+  consumeVersionNotice(): Promise<{ from: string; to: string } | null> {
+    return ipcRenderer.invoke(IPC_CHANNELS.updateConsumeVersionNotice)
+  },
 }
 
 contextBridge.exposeInMainWorld('api', api)

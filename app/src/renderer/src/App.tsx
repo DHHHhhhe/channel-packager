@@ -5,6 +5,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary'
 import RuntimeBanner from '@/components/RuntimeBanner'
 import StoreProblemBanner from '@/components/StoreProblemBanner'
 import UpdateBanner from '@/components/UpdateBanner'
+import UpdateNoticeToast from '@/components/UpdateNoticeToast'
 import { AppSidebar, viewTitle, type AppView } from '@/components/AppSidebar'
 import { TaskIndicator } from '@/components/TaskIndicator'
 import { Button } from '@/components/ui/button'
@@ -170,6 +171,9 @@ export default function App() {
        * 跨页存活 —— 任务在后台跑完时用户可能已经切到别的页了。
        */}
       <Toaster position="bottom-right" richColors closeButton />
+
+      {/* 更新后的一次性提示。组件自己 return null，挂这儿只为拿到「启动时」这个时机 */}
+      <UpdateNoticeToast />
     </ErrorBoundary>
   )
 }

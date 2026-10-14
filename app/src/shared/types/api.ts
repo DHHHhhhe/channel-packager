@@ -236,4 +236,13 @@ export interface RendererApi {
 
   /** 订阅更新状态变化，返回取消订阅函数 */
   onUpdateState(listener: (state: UpdateState) => void): () => void
+
+  /**
+   * 取走「刚更新过」的一次性提示；没有待提示的返回 null。
+   *
+   * from 是更新前的版本，to 是当前版本。取过一次就不再返回，界面在启动时调一次即可，
+   * 不必自己去重 —— 装更新的那几十秒界面是关着的，用户看不到任何进度，
+   * 回来之后需要一句明确的「成了」。
+   */
+  consumeVersionNotice(): Promise<{ from: string; to: string } | null>
 }
