@@ -82,8 +82,12 @@ nsis:
   #
   # 默认目录仍是 %LOCALAPPDATA%\Programs\channel-packager（模板拿 APP_FILENAME 拼的，
   # 与原来一键装的位置一模一样），已经装过的机器会读注册表里的 InstallLocation
-  # 装回原目录，不会装出两份；自动更新走静默安装，不弹任何页面。
-  # 数据目录另算：见 src/main/paths.ts 的 installedDataDir()。
+  # 装回原目录，不会装出两份。
+  #
+  # 关于自动更新时会不会弹向导：**取决于调用方传的参数**，不是这里决定的。
+  # electron-updater 的 isSilent 默认为 false —— 不显式传 true 就会弹出这个向导。
+  # 退出时自动安装那条路径由库内部传了 true（见 BaseUpdater.addQuitHandler），
+  # 手动点「重启并更新」那条走 installUpdate()，见 src/main/updater.ts。
   oneClick: false
   allowToChangeInstallationDirectory: true
   # 保持 per-user：不写 Program Files，不需要管理员权限，也就没有 UAC 弹窗。

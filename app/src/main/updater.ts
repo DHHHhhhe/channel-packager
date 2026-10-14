@@ -323,9 +323,45 @@ export async function downloadUpdate(): Promise<UpdateState> {
  *
  * 界面在调用前必须先确认两件事：没有出包任务在跑（重启会掐掉它），
  * 以及没有未保存的修改（重启会丢）。
+ *
+ * 两个参数都得显式给：不传的话 electron-updater 的 isSilent 默认是 false，
+ * 安装程序会弹出向导 —— 用户已经点过「重启并更新」，不该再被问一遍。
+ * isForceRunAfter 也只在 isSilent 为 true 时才被认，否则装完应用不会自己回来。
  */
 export function installUpdate(): void {
-  updater?.quitAndInstall()
+  updater?.quitAndInstall(true, true)
+}
+
+/** 系统会话正在结束（关机 / 重启 / 注销）。见 installSessionEndGuard */
+let sessionEnding = false
+
+/**
+ * 关机时不装更新。
+ *
+ * electron-updater 默认会在应用退出时把已下载的更新装上（那条路径本身是静默的，
+ * 见 BaseUpdater.addQuitHandler 里的 install(true, false)）。但如果这次退出是系统关机，
+ * Windows 会在安装程序跑到一半时把它掐掉，留下「旧的卸了、新的没装上」的残局 ——
+ * electron-builder 的 issue #7807 说的就是这个。
+ *
+ * Windows 上拿不到 powerMonitor 的 shutdown 事件，但每个窗口都会收到 session-end，
+ * 那就是关机/注销的信号。退出前把 autoInstallOnAppQuit 关掉，更新留在缓存里，
+ * 下次正常关窗口时会装上。
+ *
+ * electron-updater 7.0 起官方提供 autoInstallEvent = 'onNextLaunch' 做这件事
+ * （目前还是 alpha；升上去之后这一段可以整个删掉）。
+ */
+function installSessionEndGuard(): void {
+  app.on('browser-window-created', (_event, win) => {
+    win.on('session-end', () => {
+      sessionEnding = true
+    })
+  })
+
+  app.on('before-quit', () => {
+    if (sessionEnding && updater) {
+      updater.autoInstallOnAppQuit = false
+    }
+  })
 }
 
 /**
@@ -333,6 +369,9 @@ export function installUpdate(): void {
  * 便携版与解压即用版没有安装目录，把 NSIS 安装包装上去只会多出一份莫名其妙的副本。
  */
 export function initUpdater(): void {
+  // 关机守卫跟「是不是安装版」无关，先挂上
+  installSessionEndGuard()
+
   if (!app.isPackaged || !isInstalledLayout()) {
     return
   }

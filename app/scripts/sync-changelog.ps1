@@ -54,9 +54,16 @@ if (-not $firstSection.Success) {
 
 $head = $changelog.Substring(0, $firstSection.Index)
 $tail = $changelog.Substring($firstSection.Index)
-$entry = "## $version - $Date`r`n`r`n$notes`r`n`r`n"
+$entry = "## $version - $Date`n`n$notes`n`n"
+
+# 行尾统一成 LF。脚本是整文件重写的，跑一次全文就统一了，
+# 免得每次提交都报一句 "CRLF will be replaced by LF"。
+#
+# 先算进变量再传给 WriteAllText：直接在参数列表里写 -replace 会被 PowerShell
+# 按逗号拆成两个参数，报「找不到参数计数为 4 的重载」。
+$content = ($head + $entry + $tail) -replace "`r`n", "`n"
 
 # 写 UTF-8 无 BOM：带 BOM 的话开头会多出一个不可见字符，界面上解析标题行会错位
-[System.IO.File]::WriteAllText($ChangelogFile, $head + $entry + $tail, [System.Text.UTF8Encoding]::new($false))
+[System.IO.File]::WriteAllText($ChangelogFile, $content, [System.Text.UTF8Encoding]::new($false))
 
 Write-Output "已把 $version（$Date）并入 CHANGELOG.md"
