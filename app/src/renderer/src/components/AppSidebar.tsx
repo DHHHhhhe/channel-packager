@@ -1,7 +1,8 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { KeyRound, ListTree, Package, ScrollText } from 'lucide-react'
 import logoUrl from '@/assets/logo.png'
 import { AutoCheckUpdateToggle } from '@/components/AutoCheckUpdateToggle'
+import { ChangelogDialog } from '@/components/ChangelogDialog'
 import { SidebarResizer } from '@/components/SidebarResizer'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import UpdateCheckButton from '@/components/UpdateCheckButton'
@@ -52,6 +53,14 @@ export function AppSidebar({
    * 计数为 0 照样显示：这是配置家底，不是「有未读要处理」，0 也是有效信息（还没配）。
    * 所以样式做成低调的灰色数字，而不是那种提示「有东西要处理」的高亮徽章。
    */
+  /*
+   * 更新记录的开合。
+   *
+   * 它不是一个「页面」—— 四个导航项都是干活的入口，而更新记录只是关于这个应用本身的
+   * 说明，混进导航会把「我要做什么」和「这版改了什么」并成一类。所以做成叠在上面的对话框。
+   */
+  const [changelogOpen, setChangelogOpen] = useState(false)
+
   const navCounts: Partial<Record<AppView, number>> = { jks: jksCount, channels: groupCount }
 
   /*
@@ -136,9 +145,19 @@ export function AppSidebar({
          */}
         <div className="mt-2 flex items-center justify-between gap-2">
           {appVersion ? (
-            <span className="text-xs text-muted-foreground" title={`当前版本 ${appVersion}`}>
+            /*
+             * 版本号兼作更新记录的入口 —— 想知道「这版改了什么」时，眼睛本来就在找版本号。
+             * 带下划线是刻意的：左列其余文字都是纯信息，只有这一个能点，外观上必须有区别，
+             * 否则只能逐个 hover 去试（左列静、右列动的约定见上面那段注释）。
+             */
+            <button
+              type="button"
+              onClick={() => setChangelogOpen(true)}
+              title="查看更新记录"
+              className="rounded-sm text-xs text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+            >
               v{appVersion}
-            </span>
+            </button>
           ) : null}
 
           <div className="-mr-2 flex items-center">
@@ -146,6 +165,12 @@ export function AppSidebar({
           </div>
         </div>
       </div>
+
+      <ChangelogDialog
+        open={changelogOpen}
+        onOpenChange={setChangelogOpen}
+        currentVersion={appVersion}
+      />
 
       <SidebarResizer targetRef={asideRef} />
     </aside>

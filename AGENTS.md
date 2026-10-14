@@ -113,7 +113,23 @@ GitHub 只接受它允许的字符做附件名，中文产物名会被换成 `ch
 - 只动了文档（README、AGENTS.md）、代码注释、`.trellis/` 记录
 - 只跑了检查、没有落盘任何改动
 
-发版流程见上一节（改 `package.json` 的 version → 改 `release-notes.md` → 提交 → 打标签 → 推），发完按下一节的约定提醒我，不要替我装。
+发版流程：改 `app/package.json` 的 version → 改 `app/build/release-notes.md` → **跑 `app/scripts/sync-changelog.ps1`** → 提交 → 打标签 → 推。
+
+那一步 sync-changelog 是干嘛的：它把本版说明并进 `app/CHANGELOG.md`，也就是界面上「更新记录」的数据源。
+**漏跑的话，新版本不会出现在更新记录里**，而这件事要等到有人点开才发现。脚本是幂等的，重复跑无害。
+
+发完按下一节的约定提醒我，不要替我装。
+
+### 更新记录的内容来源
+
+界面上的「更新记录」读的是 `app/CHANGELOG.md`，构建时用 `?raw` 内联进包 —— 所以断网也能看。
+
+不走 GitHub API 是有意的：这个工具常在内网分发，从外面拉一份列表未必拿得到，而「这版改了什么」
+恰恰是装不上网的那台机器更需要知道的事。
+
+格式沿用 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)：`## 版本 - 日期` 打头，下面按
+`### 新增 / 优化 / 修复 / 说明` 分组。**解析器认这个结构**（`app/src/renderer/src/lib/changelog.ts`），
+手改内容时别把标题层级改掉。
 
 ### 版本号：小改动只抬修订号
 
