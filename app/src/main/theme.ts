@@ -40,7 +40,7 @@ export function initTheme(): ThemeChoice {
 
 /** 用户切换主题：落盘 + 立即生效，返回实际生效的选择 */
 export function saveTheme(choice: ThemeChoice): ThemeChoice {
-  writeSettings(choice)
+  writeSettings({ theme: choice })
   applyNativeTheme(choice)
   return choice
 }

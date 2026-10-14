@@ -15,6 +15,7 @@ import type {
 import { addKeystore, refreshFromSource, removeJksItem, syncFromSource, updateJksItem } from '../keystore'
 import { getDataDir, isUsingFallbackDataDir } from '../paths'
 import { saveTheme } from '../theme'
+import { isAutoCheckEnabled, setAutoCheckEnabled } from '../updater'
 import {
   applyGroupMutation,
   drainStoreProblems,
@@ -111,6 +112,19 @@ export function registerStoreIpc(): void {
    */
   ipcMain.handle(IPC_CHANNELS.storeSaveTheme, (_event, choice: ThemeChoice): ThemeChoice =>
     saveTheme(choice),
+  )
+
+  /** 读「启动时自动检查更新」开关。默认开，设置文件缺失或坏掉也当开 */
+  ipcMain.handle(IPC_CHANNELS.storeGetAutoCheckUpdate, (): boolean => isAutoCheckEnabled())
+
+  /**
+   * 写「启动时自动检查更新」开关。
+   *
+   * 打开时主进程会顺手查一次，界面不需要自己再调一次检查 —— 两处都调的话，
+   * 用户拨一下开关会看到两个请求先后打到更新服务器。
+   */
+  ipcMain.handle(IPC_CHANNELS.storeSetAutoCheckUpdate, (_event, enabled: boolean): boolean =>
+    setAutoCheckEnabled(enabled),
   )
 }
 

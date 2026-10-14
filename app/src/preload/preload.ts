@@ -84,6 +84,14 @@ const api: RendererApi = {
     return ipcRenderer.invoke(IPC_CHANNELS.storeSaveTheme, choice)
   },
 
+  getAutoCheckUpdate(): Promise<boolean> {
+    return ipcRenderer.invoke(IPC_CHANNELS.storeGetAutoCheckUpdate)
+  },
+
+  setAutoCheckUpdate(enabled: boolean): Promise<boolean> {
+    return ipcRenderer.invoke(IPC_CHANNELS.storeSetAutoCheckUpdate, enabled)
+  },
+
   loadStore(): Promise<StoreSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.storeLoad)
   },

@@ -70,6 +70,15 @@ export interface RendererApi {
   /** 切换主题。主进程落盘并改 nativeTheme，返回实际生效的选择 */
   setTheme(choice: ThemeChoice): Promise<ThemeChoice>
 
+  /** 读「启动时自动检查更新」开关。默认开 */
+  getAutoCheckUpdate(): Promise<boolean>
+
+  /**
+   * 写「启动时自动检查更新」开关，返回写入后的值。
+   * 打开时主进程会顺手查一次更新，界面不需要自己再触发一遍。
+   */
+  setAutoCheckUpdate(enabled: boolean): Promise<boolean>
+
   /** 取存储快照：jks 列表、模板、数据目录。界面启动时调一次 */
   loadStore(): Promise<StoreSnapshot>
 

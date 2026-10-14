@@ -141,6 +141,15 @@ components:
     height: "36px"
     radius: "{rounded.lg}"
     focusRing: "{colors.light.ring}"
+  switch:
+    width: "36px"
+    height: "20px"
+    thumb: "16px"
+    radius: "full"
+    onTrackColor: "{colors.light.primary}"
+    offTrackColor: "{colors.light.foreground} 15%"
+    thumbColor: "{colors.light.card}"
+    darkOnThumbColor: "{colors.dark.primary-foreground}"
   card:
     shellBackgroundColor: "rgba(0,0,0,0.025)"
     shellPadding: "6px"
@@ -365,6 +374,27 @@ box-shadow:
 
 高 36px，圆角 20px，底色用 `background`（不是纯白），边框 `--input`。
 聚焦时边框变 `--ring`（近黑），**不加外发光** —— 单色界面里突然出现一圈彩色光晕会很跳。
+
+### 开关
+
+用于**立即生效的二元设置**，区别于复选框 —— 复选框属于表单（改完还要点保存），
+开关拨一下就是最终状态。
+
+尺寸 20×36px，胶囊形，圆点 16px。
+
+| 状态 | 轨道 | 圆点 |
+| --- | --- | --- |
+| 关 | `--foreground` 15% | `--card` |
+| 开 | `--primary` | `--card`；深色下换成 `--primary-foreground` |
+
+**未选中不要用 `--input`。** 它是 8% 的黑，在浅灰画布上几乎看不见 —— 使用者会
+分不清「开关是关着」还是「这里根本没放开关」。
+
+**深色下选中态的圆点要反色。** 深色的 `--primary` 是近白，圆点再用浅色就糊成一片，
+看不出拨到了哪边。
+
+**首次读盘之前短暂禁用**，不要先渲染成「关」再跳成「开」—— 那一下闪动会让人以为
+设置被改过。
 
 ### 对话框
 

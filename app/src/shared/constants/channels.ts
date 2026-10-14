@@ -21,6 +21,10 @@ export const IPC_CHANNELS = {
 
   /** 切换主题（跟随系统 / 浅色 / 深色）。主进程负责落盘并改 nativeTheme */
   storeSaveTheme: 'store:saveTheme',
+  /** 读「启动时自动检查更新」开关 */
+  storeGetAutoCheckUpdate: 'store:getAutoCheckUpdate',
+  /** 写「启动时自动检查更新」开关，返回写入后的值 */
+  storeSetAutoCheckUpdate: 'store:setAutoCheckUpdate',
 
   /** 选文件 + 解析，只读；返回文件里的条目供用户预览与编辑 */
   channelsImport: 'channels:import',

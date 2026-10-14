@@ -4,6 +4,7 @@ import path from 'node:path'
 import { IPC_CHANNELS } from '../shared/constants/channels'
 import type { UpdateState } from '../shared/types/update'
 import { getDataDir, isInstalledLayout } from './paths'
+import { readSettings, writeSettings } from './store'
 
 /** electron-updater 的 AppUpdater。用类型引用，避免顶层 import 把加载失败拖到启动期 */
 type AutoUpdater = import('electron-updater').AppUpdater
@@ -304,10 +305,34 @@ export function initUpdater(): void {
     return
   }
   const timer = setTimeout(() => {
+    // 用户关掉了自动检查就别去打扰更新服务器。手动点「检查更新」不受这里影响
+    if (!readSettings().autoCheckUpdate) {
+      return
+    }
     void checkForUpdates(false)
   }, STARTUP_CHECK_DELAY_MS)
   // 别让这个定时器把进程留在后台
   timer.unref?.()
+}
+
+/** 当前是否开着「启动时自动检查更新」 */
+export function isAutoCheckEnabled(): boolean {
+  return readSettings().autoCheckUpdate
+}
+
+/**
+ * 开关「启动时自动检查更新」。
+ *
+ * 打开时顺手查一次：用户刚表达完「我要自动检查」的意思，如果只写进文件、等下次
+ * 启动才生效，会以为开关没起作用。关掉时不打断已经开始的检查 —— 已经摆在界面上的
+ * 新版本照旧提示，用户只是不想每次启动都被查一遍。
+ */
+export function setAutoCheckEnabled(enabled: boolean): boolean {
+  writeSettings({ autoCheckUpdate: enabled })
+  if (enabled) {
+    void checkForUpdates(false)
+  }
+  return enabled
 }
 
 export function registerUpdateIpc(): void {

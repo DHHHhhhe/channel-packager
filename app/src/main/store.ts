@@ -11,7 +11,12 @@ import type {
   StoreProblem,
   TemplateFile,
 } from '../shared/types/store'
-import { parseThemeChoice, type ThemeChoice } from '../shared/types/settings'
+import {
+  parseAutoCheckUpdate,
+  parseThemeChoice,
+  type SettingsFile,
+  type SettingsPatch,
+} from '../shared/types/settings'
 import { allocateId, toFileId } from '../shared/utils/ids'
 import { getChannelsDir, getDataDir } from './paths'
 
@@ -127,7 +132,7 @@ export function groupsFilePath(): string {
 }
 
 /**
- * 界面偏好。目前只有主题一项，单独放一个文件而不是塞进 jks.json ——
+ * 界面偏好。单独放一个文件而不是塞进 jks.json ——
  * 它跟出包数据没有关系，配置包也不该把它带走（换了台机器，主题跟着人走没意义）。
  */
 export function settingsFilePath(): string {
@@ -135,18 +140,33 @@ export function settingsFilePath(): string {
 }
 
 /**
- * 读主题设置。文件不在、读不出来、内容不认识，一律退回「跟随系统」。
+ * 读界面偏好。文件不在、读不出来、内容不认识，一律退回默认值。
  *
- * 与其余 store 读法不同：这里**不报 StoreProblem**。主题偏好坏掉不该在界面上
+ * 与其余 store 读法不同：这里**不报 StoreProblem**。偏好坏掉不该在界面上
  * 弹一条「配置坏了」，用户按一下开关就覆盖回去了，报了反而吓人。
  */
-export function readSettings(): { theme: ThemeChoice } {
-  const { value } = readJson<{ theme?: unknown }>(settingsFilePath(), SETTINGS_FILE_NAME)
-  return { theme: parseThemeChoice(value?.theme) }
+export function readSettings(): SettingsFile {
+  const { value } = readJson<{ theme?: unknown; autoCheckUpdate?: unknown }>(
+    settingsFilePath(),
+    SETTINGS_FILE_NAME,
+  )
+  return {
+    version: SETTINGS_FILE_VERSION,
+    theme: parseThemeChoice(value?.theme),
+    autoCheckUpdate: parseAutoCheckUpdate(value?.autoCheckUpdate),
+  }
 }
 
-export function writeSettings(theme: ThemeChoice): void {
-  writeJsonAtomic(settingsFilePath(), { version: SETTINGS_FILE_VERSION, theme })
+/**
+ * 写界面偏好。**合并写**，只改传进来的那几个字段。
+ *
+ * 之前是整体覆盖（写死 `{ version, theme }`）。加第二个偏好之后那样写会出事：
+ * 改个主题顺手把自动检查开关重置回默认，而且不报错、很难查出原因。
+ */
+export function writeSettings(patch: SettingsPatch): SettingsFile {
+  const next: SettingsFile = { ...readSettings(), ...patch }
+  writeJsonAtomic(settingsFilePath(), next)
+  return next
 }
 
 /** 渠道文件的键是**分组 id**（迁移来的分组直接复用原 jks id，所以老路径一字不变） */

@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import { KeyRound, ListTree, Package, ScrollText } from 'lucide-react'
+import { AutoCheckUpdateToggle } from '@/components/AutoCheckUpdateToggle'
 import { SidebarResizer } from '@/components/SidebarResizer'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import UpdateCheckButton from '@/components/UpdateCheckButton'
@@ -113,9 +114,13 @@ export function AppSidebar({
           <ThemeToggle />
         </div>
 
+        <div className="mt-2">
+          <AutoCheckUpdateToggle />
+        </div>
+
         {/*
-         * 这一块统一成「左列放信息、右列放能点的东西」：上面一行是「主题」在左、
-         * 主题切换在右，下面一行是版本号在左、检查更新在右。
+         * 这一块统一成「左列放信息、右列放能点的东西」：三行都是左边静态文字、
+         * 右边可点控件（主题切换、自动检查开关、检查更新）。
          *
          * 之前是反的（检查更新在左、版本号在右），于是左列上静下动、右列上动下静，
          * 可点性正好交叉 —— 扫一眼看不出规律，只能逐个 hover 去试。静态文字与
