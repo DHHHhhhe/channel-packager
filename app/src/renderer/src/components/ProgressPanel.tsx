@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight, Terminal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { FlowEntry } from '@/store/task'
 
 interface ProgressPanelProps {
@@ -30,6 +31,13 @@ function timeOf(at: number): string {
  * 子进程的原始英文输出（walle / apksigner 刷的那些）折在「显示详细日志」后面 ——
  * 界面是给用工具的人看的，满屏英文日志既看不懂也分不出正常还是出错，
  * 真出问题时它才是有用的那一份，所以不删，只是不再占着主视野。
+ *
+ * **外壳必须用同一个 Card。** 这一页上每个区块都是「浅灰外壳 + 白色内芯」的卡片。
+ * 进度区早先只给自己铺了一层浅灰底、没有白色内芯，于是它成了夹在两张白卡片中间的一个
+ * 灰块 —— 看着像是漏配了样式的占位，而不是有意的层次。
+ *
+ * 同级区块就该长成同一副样子。要拉层次时，靠内芯里的内容（比如下面那块深色的原始日志）
+ * 去拉，而不是换掉整个区块的底色。
  */
 export function ProgressPanel({
   stage,
@@ -69,20 +77,10 @@ export function ProgressPanel({
   }, [failed])
 
   return (
-    /*
-     * 底用「叠一层 2.5% 黑」而不是 bg-muted/60。
-     *
-     * 浅色主题的 --muted（#f4f4f6）比画布 --background（#f2f2f4）还浅，
-     * 铺上去和画布几乎是同一个颜色，等于没铺 —— 这就是之前「看不到背景」的原因。
-     * 卡片外壳用的是叠加式加深（见 ui/card.tsx），这里跟着它走，两边才是一致的灰。
-     *
-     * 原始日志另给一块固定深色（--log-surface），不再靠灰阶分层 —— 浅色主题下
-     * 能用的灰阶就那两三档，再切下去谁也分不出来，不如直接换一类颜色。
-     */
-    <div className="flex flex-col gap-2 rounded-lg bg-black/[0.025] ring-1 ring-black/[0.04] dark:bg-white/[0.04] dark:ring-white/[0.06]">
-      <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2 text-sm">
-        <Terminal className="size-4 shrink-0" />
-        <span className="font-medium">进度</span>
+    <Card>
+      <CardHeader className="flex flex-row flex-wrap items-center gap-2 border-b">
+        <Terminal className="size-4 shrink-0 text-muted-foreground" />
+        <CardTitle>进度</CardTitle>
         {/* 读屏用户切页回来也能听到「跑到哪一步了」 */}
         <span className="text-muted-foreground" role="status" aria-live="polite">
           {queueProgress ? `第 ${queueProgress.index}/${queueProgress.total} 项 · ` : ''}
@@ -100,35 +98,46 @@ export function ProgressPanel({
             {showLog ? '收起详细日志' : '显示详细日志'}
           </Button>
         ) : null}
-      </div>
+      </CardHeader>
 
-      <div ref={flowRef} className="max-h-64 min-h-24 overflow-y-auto px-3 pb-3">
-        {idle ? (
-          <p className="text-sm text-muted-foreground">
-            开始出包后，这里会显示当前阶段与每一步的结果。
-          </p>
-        ) : (
-          <div className="flex flex-col gap-1">
-            {flow.map((entry, index) => (
-              <div key={`${entry.at}-${index}`} className="flex gap-2 text-sm">
-                <span className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
-                  {timeOf(entry.at)}
-                </span>
-                <span className="min-w-0 break-words">{entry.text}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {showLog && lines.length > 0 ? (
-        <div
-          ref={logRef}
-          className="max-h-64 overflow-y-auto rounded-b-lg bg-log-surface px-3 py-2 text-log-foreground"
-        >
-          <pre className="font-mono text-xs whitespace-pre-wrap">{lines.join('\n')}</pre>
+      <CardContent className="flex flex-col gap-3">
+        <div ref={flowRef} className="max-h-64 min-h-24 overflow-y-auto">
+          {idle ? (
+            <p className="text-sm text-muted-foreground">
+              开始出包后，这里会显示当前阶段与每一步的结果。
+            </p>
+          ) : (
+            <div className="flex flex-col gap-1">
+              {flow.map((entry, index) => (
+                <div key={`${entry.at}-${index}`} className="flex gap-2 text-sm">
+                  <span className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
+                    {timeOf(entry.at)}
+                  </span>
+                  <span className="min-w-0 break-words">{entry.text}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      ) : null}
-    </div>
+
+        {/*
+         * 原始输出是一块独立的深色面板，不跟随主题变浅。
+         *
+         * 它是「另一类内容」：上面是给人看的中文阶段流水，这里是给排障看的原始行。
+         * 浅色主题下可用的灰阶只有两三档，在白的卡片里再切一档谁也看不出来 ——
+         * 换一类颜色才是明确的边界。终端面板固定深色也是通行做法（VS Code、iTerm、
+         * Hyper 都不跟随编辑器明暗）：日志文本常带硬编码的颜色假设，跟随主题反而
+         * 容易出现「浅底浅字」。
+         */}
+        {showLog && lines.length > 0 ? (
+          <div
+            ref={logRef}
+            className="max-h-64 overflow-y-auto rounded-lg bg-log-surface px-3 py-2 text-log-foreground"
+          >
+            <pre className="font-mono text-xs whitespace-pre-wrap">{lines.join('\n')}</pre>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
   )
 }
