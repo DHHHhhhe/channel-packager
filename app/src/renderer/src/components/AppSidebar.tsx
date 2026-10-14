@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import { KeyRound, ListTree, Package, ScrollText } from 'lucide-react'
+import logoUrl from '@/assets/logo.png'
 import { AutoCheckUpdateToggle } from '@/components/AutoCheckUpdateToggle'
 import { SidebarResizer } from '@/components/SidebarResizer'
 import { ThemeToggle } from '@/components/ThemeToggle'
@@ -65,7 +66,11 @@ export function AppSidebar({
       className="relative flex w-[var(--sidebar-width)] shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground"
     >
       <div className="flex h-[var(--topbar-height)] shrink-0 items-center gap-2 border-b px-4">
-        <Package className="size-4 shrink-0" />
+        {/*
+         * 用应用图标当品牌标识，不用 lucide 的通用包裹图标 ——
+         * 那个图案说「这是个包裹」，但说不了「一个包分出多个渠道包」。
+         */}
+        <img src={logoUrl} alt="" className="size-6 shrink-0" />
         <span className="text-sm font-medium">渠道分包工具</span>
       </div>
 

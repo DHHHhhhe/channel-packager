@@ -1,3 +1,5 @@
+<img src="app/build/icon.png" alt="" width="76">
+
 # 渠道分包工具
 
 **中文** ｜ [English](README.en.md)

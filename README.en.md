@@ -1,3 +1,5 @@
+<img src="app/build/icon.png" alt="" width="76">
+
 # Channel Packager
 
 [中文](README.md) ｜ **English**
