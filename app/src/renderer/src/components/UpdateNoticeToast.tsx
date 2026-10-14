@@ -19,7 +19,8 @@ export default function UpdateNoticeToast(): null {
           return
         }
         toast.success(`已更新到 v${notice.to}`, {
-          description: `上一版是 v${notice.from}`,
+          // from 为空表示只知道更新过、不知道从哪一版来（从旧版升上来的那次）
+          description: notice.from ? `上一版是 v${notice.from}` : undefined,
           // 比默认长一些：这条是「刚才发生了什么」的回执，用户可能正看着别处
           duration: 8000,
         })

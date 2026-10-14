@@ -50,6 +50,10 @@
     var(--ring);
   --color-input:
     var(--input);
+  --color-log-surface:
+    var(--log-surface);
+  --color-log-foreground:
+    var(--log-foreground);
   --color-border:
     var(--border);
   --color-destructive:
@@ -166,6 +170,19 @@
     #f4f4f6;
   --muted-foreground:
     #6b6b73;
+  /*
+   * 原始日志面板的底与字。浅色主题下也是深色。
+   *
+   * 终端面板固定深色是通行做法（VS Code、iTerm、Hyper 都不跟随编辑器明暗），
+   * 这里还多一个理由：日志区默认折起来，展开时就是要一眼看出「这是另一类东西」，
+   * 而不是继续在灰白之间找那一档几乎分不出的差异。
+   *
+   * 取值借用了深色主题的 --popover，两套主题下是同一个近黑，不算新颜色。
+   */
+  --log-surface:
+    #1c1c1f;
+  --log-foreground:
+    #d4d4d8;
   --accent:
     #f4f4f6;
   --accent-foreground:
@@ -258,6 +275,11 @@
     #1f1f22;
   --muted-foreground:
     #8b8b93;
+  /* 深色主题下比卡片再深一档 —— 卡片是 #161618，日志要能从中浮出来 */
+  --log-surface:
+    #0a0a0c;
+  --log-foreground:
+    #d4d4d8;
   --accent:
     #1f1f22;
   --accent-foreground:

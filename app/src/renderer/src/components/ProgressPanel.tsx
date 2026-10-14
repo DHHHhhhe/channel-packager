@@ -70,11 +70,16 @@ export function ProgressPanel({
 
   return (
     /*
-     * 整块给一层比卡片深一档的底：进度区是「嵌进卡片里的一个面板」，
-     * 之前它和卡片同为白色、只靠一条边框分界，扫一眼分不出哪里是日志。
-     * 详细日志再深一档，于是卡片 → 进度区 → 原始输出形成三级层次。
+     * 底用「叠一层 2.5% 黑」而不是 bg-muted/60。
+     *
+     * 浅色主题的 --muted（#f4f4f6）比画布 --background（#f2f2f4）还浅，
+     * 铺上去和画布几乎是同一个颜色，等于没铺 —— 这就是之前「看不到背景」的原因。
+     * 卡片外壳用的是叠加式加深（见 ui/card.tsx），这里跟着它走，两边才是一致的灰。
+     *
+     * 原始日志另给一块固定深色（--log-surface），不再靠灰阶分层 —— 浅色主题下
+     * 能用的灰阶就那两三档，再切下去谁也分不出来，不如直接换一类颜色。
      */
-    <div className="flex flex-col gap-2 rounded-lg border bg-muted/60">
+    <div className="flex flex-col gap-2 rounded-lg bg-black/[0.025] ring-1 ring-black/[0.04] dark:bg-white/[0.04] dark:ring-white/[0.06]">
       <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2 text-sm">
         <Terminal className="size-4 shrink-0" />
         <span className="font-medium">进度</span>
@@ -117,7 +122,10 @@ export function ProgressPanel({
       </div>
 
       {showLog && lines.length > 0 ? (
-        <div ref={logRef} className="max-h-64 overflow-y-auto border-t bg-muted px-3 py-2">
+        <div
+          ref={logRef}
+          className="max-h-64 overflow-y-auto rounded-b-lg bg-log-surface px-3 py-2 text-log-foreground"
+        >
           <pre className="font-mono text-xs whitespace-pre-wrap">{lines.join('\n')}</pre>
         </div>
       ) : null}

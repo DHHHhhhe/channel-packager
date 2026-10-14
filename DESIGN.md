@@ -414,6 +414,31 @@ box-shadow:
 
 胶囊形，12px。**只用于状态与计数**（条目数、成功/失败），不做装饰性标签。
 
+### 输出面板（日志 / 控制台）
+
+原始输出区（命令行日志、构建日志、事件流）用**固定的深色底**，不跟随主题：
+
+```css
+.log-surface {
+  background: var(--log-surface);   /* 浅色主题下也是近黑 */
+  color: var(--log-foreground);
+  font-family: var(--font-mono);
+}
+```
+
+两个理由：
+
+1. **它是另一类内容，不该靠灰阶去分。** 浅色主题下能用的灰阶通常只有两三档，
+   嵌在面板里的日志再切一档，差别小到看不出来。换一类颜色才是明确的边界。
+2. **终端面板固定深色是通行做法** —— VS Code、iTerm、Hyper、Alacritty 都不跟随
+   编辑器的明暗。日志文本常带硬编码的颜色假设，跟随主题反而容易出现「浅底浅字」。
+
+深色主题下它取比卡片**更深**的一档，仍然能从卡片里浮出来。
+
+**不要拿 `--muted` 当嵌套面板的底**：它常常比画布还浅（浅色主题里 `--muted`
+比 `--background` 亮是常见设定），铺上去和画布几乎是同一个颜色，等于没铺。
+嵌套层次用叠加式加深，见第 5 节。
+
 ---
 
 ## 7. 交互状态
@@ -505,6 +530,10 @@ box-shadow:
   --accent: #f4f4f6;
   --accent-foreground: #0a0a0b;
 
+  /* ── 原始输出面板。浅色主题下也是深色，理由见第 6 节 ── */
+  --log-surface: #1c1c1f;
+  --log-foreground: #d4d4d8;
+
   /* ── 语义状态 ── */
   --destructive: #b3261e;
   --success: #2f6b3f;
@@ -575,6 +604,10 @@ box-shadow:
   --muted-foreground: #8b8b93;    /* 比浅色那档更亮，否则过不了 4.5:1 */
   --accent: #1f1f22;
   --accent-foreground: #fafafa;
+
+  /* 比卡片再深一档，从卡片里浮出来 */
+  --log-surface: #0a0a0c;
+  --log-foreground: #d4d4d8;
 
   /* 深底上取各色的浅档 */
   --destructive: #e5766f;
@@ -655,6 +688,8 @@ body {
   --color-secondary: var(--secondary);
   --color-muted: var(--muted);
   --color-accent: var(--accent);
+  --color-log-surface: var(--log-surface);
+  --color-log-foreground: var(--log-foreground);
   --color-destructive: var(--destructive);
   --color-border: var(--border);
   --color-input: var(--input);
