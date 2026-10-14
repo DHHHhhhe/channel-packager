@@ -217,10 +217,31 @@ export function getUpdateState(): UpdateState {
 }
 
 /**
- * 查一次更新。manual 为 true 表示用户自己点的（菜单里的「检查更新」），
+ * 查一次更新。manual 为 true 表示用户自己点的（菜单或侧栏里的「检查更新」），
  * 界面会据此把「已经是最新」「检查失败」说出来 —— 自动检查时这两种结果都保持安静。
  */
 export async function checkForUpdates(manual: boolean): Promise<UpdateState> {
+  /*
+   * 已经在查了就不再发起第二次。
+   *
+   * 两次并发的检查会让 electron-updater 把 up-to-date / error 各报两遍，而界面按
+   * 「manual 为真就提示结果」收尾 —— toast 用的是同一个 id，第二次是把第一条顶掉重放，
+   * 看起来就是「又弹了一次」。
+   *
+   * 最容易撞上的时机：启动后那次自动检查（15 秒延迟）还没回来，用户先点了「检查更新」。
+   */
+  if (state.phase === 'checking') {
+    /*
+     * 用户这次是主动点的：把「结果要显示出来」记在正在跑的那次身上，
+     * 否则他点完什么都看不到。反向不覆盖 —— 手动检查在跑时被自动检查碰一下，
+     * 不该把用户那次降级成静默。
+     */
+    if (manual && !state.manual) {
+      patch({ manual: true })
+    }
+    return state
+  }
+
   patch({ manual })
 
   // 便携版与解压即用版没有安装目录，把安装包装上去只会多出一份莫名其妙的副本
@@ -236,6 +257,17 @@ export async function checkForUpdates(manual: boolean): Promise<UpdateState> {
 
   // 已经在下载或下好了就别重来：重新检查会把状态打回 checking，进度条跟着倒退
   if (state.phase === 'downloading' || state.phase === 'downloaded') {
+    return state
+  }
+
+  /*
+   * 已经有结果摆在那儿了，自动检查不必再刷一遍。
+   *
+   * 重查会把 phase 打回 checking，界面上的更新提示条因此收起来又弹出来，闪一下。
+   * 用户点过「稍后」之后也是这样：提示条不该被下一次自动检查重新翻出来。
+   * 手动点不受此限 —— 那是用户明确要重新确认一次。
+   */
+  if (!manual && state.phase === 'available') {
     return state
   }
 
