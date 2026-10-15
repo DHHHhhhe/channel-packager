@@ -114,10 +114,15 @@ function DialogFooter({
       className={cn(
         /*
          * sticky：内容比对话框高时按钮钉在底部，不用滚到底才能点。
-         * backdrop-blur 是因为底色本身是半透明的，否则滚过去的文字会从按钮
-         * 后面透出来。
+         *
+         * **不铺底色。** 原本这里是 bg-muted/50 + backdrop-blur，想做成一条「底栏」，
+         * 但 DialogContent 带了 overflow-y-auto —— 容器高度由内容撑开，那句 -mb-4
+         * 只是把容器算矮了 16px，footer 自己并没有跟着贴到底，底下始终露着一条
+         * 17px 的对话框底色。两块颜色挤在一条窄边上，看起来像是没对齐。
+         *
+         * 去掉底色之后，分隔由 border-t 承担，footer 与对话框同底，那条缝自然消失。
          */
-        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 backdrop-blur-sm sm:flex-row sm:justify-end sticky bottom-0 z-10",
+        "-mx-4 flex flex-col-reverse gap-2 border-t p-4 sm:flex-row sm:justify-end sticky bottom-0 z-10",
         className
       )}
       {...props}
