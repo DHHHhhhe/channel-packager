@@ -1,3 +1,4 @@
+import type { ApkManifest } from './apk'
 import type { RuntimeCheckResult } from './runtime'
 import type { ThemeChoice } from './settings'
 import type { UpdateState } from './update'
@@ -160,6 +161,15 @@ export interface RendererApi {
    * jksId 传空串表示不重签名、只写渠道。
    */
   checkSource(apkPath: string, jksId: string, signMode: SignMode): Promise<SourceCheckResult>
+
+  /**
+   * 读 APK 清单里的包名、版本与应用名。
+   *
+   * 纯本地解析（ZIP + 二进制 XML），不需要 Java 或 Android SDK。
+   * 读不出的字段是空串 —— 尤其是 `label`：编译后的清单里它多数是资源引用，
+   * 要解出真正的名字得再解析 resources.arsc，这里不做。
+   */
+  readApkManifest(apkPath: string): Promise<ApkManifest>
 
   /**
    * 导出渠道 JSON。导出的是**界面上**的列表（含尚未保存的修改），

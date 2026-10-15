@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import { IPC_CHANNELS } from '../shared/constants/channels'
+import type { ApkManifest } from '../shared/types/apk'
 import type { NavCommand, RendererApi } from '../shared/types/api'
 import type { RuntimeCheckResult } from '../shared/types/runtime'
 import { parseThemeChoice, type ThemeChoice } from '../shared/types/settings'
@@ -183,6 +184,10 @@ const api: RendererApi = {
 
   checkSource(apkPath: string, jksId: string, signMode: SignMode): Promise<SourceCheckResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.taskCheckSource, apkPath, jksId, signMode)
+  },
+
+  readApkManifest(apkPath: string): Promise<ApkManifest> {
+    return ipcRenderer.invoke(IPC_CHANNELS.apkReadManifest, apkPath)
   },
 
   exportChannels(id: string, channelInfoList: ChannelEntry[]): Promise<ChannelExportResult> {

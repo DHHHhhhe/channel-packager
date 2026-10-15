@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import { BrowserWindow, ipcMain } from 'electron'
 import { IPC_CHANNELS } from '../../shared/constants/channels'
+import type { ApkManifest } from '../../shared/types/apk'
 import type {
   SignMode,
   SourceCheckResult,
@@ -11,6 +12,7 @@ import type {
   TaskStartResult,
   WalleShowResult,
 } from '../../shared/types/task'
+import { readApkManifest } from '../apk-manifest'
 import { newTaskId, runPipeline } from '../pipeline'
 import { resolveInData } from '../paths'
 import { probeKeystoreCertificate, readApkSignature } from '../signer'
@@ -140,6 +142,17 @@ export function registerTaskIpc(): void {
       return describeSource(apkPath, jksId, signMode)
     },
   )
+
+  /*
+   * 只读：读 APK 清单里的包名、版本与应用名。
+   *
+   * 纯本地解析（ZIP + 二进制 XML），不需要 Java 或 Android SDK —— 与整个工具的
+   * 「装上就能用」是一回事。读不出来时返回全空字段而不是抛错：调用方多半只是
+   * 想顺手多拿一点信息去匹配，为此把导入流程弄失败不划算。
+   */
+  ipcMain.handle(IPC_CHANNELS.apkReadManifest, (_event, apkPath: string): ApkManifest => {
+    return readApkManifest(apkPath)
+  })
 }
 
 function shortDigest(digest: string): string {

@@ -53,7 +53,7 @@ import {
 } from '@/components/ui/dialog'
 import type { ChannelEntry } from '@shared/types/store'
 import type { SignMode, SourceCheckResult, TaskInput, WalleShowResult } from '@shared/types/task'
-import { matchGroupByApk } from '@/lib/group-match'
+import { fileStem, matchGroupByApk } from '@/lib/group-match'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { NO_JKS_KEY, readLastGroup, writeLastGroup } from '@/lib/last-group'
 import type { FixAction } from '@/lib/task-report'
@@ -448,14 +448,25 @@ export function PackScreen() {
     setStatus(null)
 
     /*
-     * 文件名撞上某个分组名就切过去 —— 出包时多半就是给这个应用的。
-     * 没撞上就什么都不做：分组保持原样，也就是这个签名身份上次用的那个。
+     * 拿这个包的几个身份去碰分组名，撞上就切过去 —— 出包时多半就是给这个应用的。
+     *
+     * 读清单是异步的（要解 ZIP 与二进制 XML），但不必等它：文件名这一路立刻就能比，
+     * 读到应用名之后再补一次。一个都没撞上就什么都不做，分组保持原样，
+     * 也就是这个签名身份上次用的那个。
+     *
      * 走 handlePickGroup 而不是直接 setGroupId，是为了顺带把它记成「上次用的」。
      */
-    const matched = matchGroupByApk(pickedPath, groups)
-    if (matched) {
-      handlePickGroup(matched.id)
+    const immediate = matchGroupByApk([fileStem(pickedPath)], groups)
+    if (immediate) {
+      handlePickGroup(immediate.id)
     }
+
+    void window.api.readApkManifest(pickedPath).then((manifest) => {
+      const matched = matchGroupByApk([manifest.label, manifest.packageName], groups)
+      if (matched) {
+        handlePickGroup(matched.id)
+      }
+    })
   }
 
   const toggleChannel = (channel: string, checked: boolean) => {
