@@ -39,7 +39,7 @@ export function TemplateScreen() {
   const [packPreview, setPackPreview] = useState<PackPreviewResult | null>(null)
   const [packBusy, setPackBusy] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
-  // 默认带凭据，保持原来的行为；勾上就是给同事的初始包
+  // 默认带凭据，保持原来的行为；勾上就是初始配置包
   const [credentialFree, setCredentialFree] = useState(false)
 
   // 首次加载与每次保存后用存储里的内容重置草稿
@@ -261,7 +261,7 @@ export function TemplateScreen() {
             <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
               <Info className="mt-0.5 size-3.5 shrink-0" />
               <span>
-                这份包里只有渠道模板，没有私钥、密码，也没有分组与渠道列表。适合发给同事作为初始配置，对方导入后自行新增
+                这份包里只有渠道模板，没有私钥、密码，也没有分组与渠道列表。适合作为初始配置分发，对方导入后自行新增
                 签名文件并套用模板。
               </span>
             </p>
@@ -313,7 +313,7 @@ export function TemplateScreen() {
           {credentialFree ? (
             <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
               <Info className="mt-0.5 size-3.5 shrink-0" />
-              <span>适合发给同事作为初始配置，对方导入后自行新增签名文件并套用模板。</span>
+              <span>适合作为初始配置分发，对方导入后自行新增签名文件并套用模板。</span>
             </p>
           ) : (
             <p className="flex items-start gap-1.5 text-xs text-destructive">

@@ -245,13 +245,13 @@ export async function checkForUpdates(manual: boolean): Promise<UpdateState> {
 
   patch({ manual })
 
-  // 便携版与解压即用版没有安装目录，把安装包装上去只会多出一份莫名其妙的副本
+  // 不是安装包装出来的版本没有安装目录，把安装包装上去只会多出一份莫名其妙的副本
   if (!app.isPackaged || !isInstalledLayout()) {
     patch({
       phase: 'error',
       version: '',
       percent: 0,
-      message: '这个版本是便携版或解压即用版，没有自动更新；要自动更新请装安装包版本。',
+      message: '这个版本没有自动更新（不是安装包装出来的）；要自动更新请用安装包安装。',
     })
     return state
   }
@@ -367,7 +367,7 @@ function installSessionEndGuard(): void {
 
 /**
  * 装好更新检查。只有安装版才走这条路：
- * 便携版与解压即用版没有安装目录，把 NSIS 安装包装上去只会多出一份莫名其妙的副本。
+ * 不是安装包装出来的版本没有安装目录，把 NSIS 安装包装上去只会多出一份莫名其妙的副本。
  */
 export function initUpdater(): void {
   // 关机守卫跟「是不是安装版」无关，先挂上

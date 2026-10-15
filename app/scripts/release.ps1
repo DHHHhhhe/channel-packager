@@ -56,4 +56,4 @@ if ($LASTEXITCODE -ne 0) { throw '构建或上传失败。' }
 
 Write-Host ''
 Write-Host "传完了。Release 默认是草稿，客户端看不见 ——"
-Write-Host "打开 https://github.com/$owner/$repo/releases 把 $version 那个草稿点 Publish，同事那边就能更新了。"
+Write-Host "打开 https://github.com/$owner/$repo/releases 把 $version 那个草稿点 Publish，已装的用户那边就能更新了。"

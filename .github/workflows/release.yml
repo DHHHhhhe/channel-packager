@@ -7,7 +7,7 @@
 #     3. git add -A && git commit -m "chore: 升到 0.3.0"
 #     4. git tag v0.3.0 && git push origin main --tags
 # 推完标签不用再做别的：Actions 跑完会在 Releases 里出现一个新版本，
-# 已装旧版的同事下次打开应用会自动下到它。
+# 已装旧版的用户下次打开应用会自动下到它。
 #
 # 想先出草稿、人工点 Publish 才对外：在仓库的
 # Settings → Secrets and variables → Actions → Variables 里加一个 EP_DRAFT=true，

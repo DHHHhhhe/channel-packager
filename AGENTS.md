@@ -30,22 +30,24 @@ Managed by Trellis. Edits outside this block are preserved; edits inside may be 
 
 ```powershell
 cd app
-.\node_modules\.bin\electron-builder.CMD --win nsis portable zip
+.\node_modules\.bin\electron-builder.CMD --win nsis
 ```
 
-本机不能用 `pnpm dist`（原因见 README「已知注意事项」）。产物都落在 `app/release/`，不入库：
+本机不能用 `pnpm dist`（原因见 README「已知注意事项」）。产物落在 `app/release/`，不入库：
 
-| 产物 | 给谁用 | 数据目录 |
+| 产物 | 用途 | 数据目录 |
 | --- | --- | --- |
-| `渠道分包工具-<版本>-安装包.exe` | 发给同事安装，带自动更新 | `%LOCALAPPDATA%\渠道分包工具\data` |
-| `渠道分包工具-<版本>.exe` | 便携版，双击就跑 | exe 旁边的 `data\` |
-| `渠道分包工具-<版本>-解压即用.zip` | 解压后跑里面的 exe | 同上 |
+| `渠道分包工具-<版本>-安装包.exe` | 唯一的产物，带自动更新 | `%LOCALAPPDATA%\渠道分包工具\data` |
+
+**只出一种产物。** 早先还出过便携版（单文件 exe）与解压即用版（zip），后来去掉了 ——
+三种形态的数据目录规则、更新行为、说明文档都要各写一套，而它们解决的问题
+（不想装东西、想放 U 盘）在这个工具上并没有真实需求。配置见 `app/electron-builder.yml`。
 
 版本号在 `app/package.json` 的 `version`，改完要重新构建才会进产物名与「帮助 → 版本」里。
 
 改完至少核对一次：产物的修改时间要晚于最后一次源码改动。
 
-要**发布一个新版本给同事**（而不是自己本地构建），用 `app/scripts/release.ps1`，见下一节。
+要**发布一个新版本**（而不是自己本地构建），用 `app/scripts/release.ps1`，见下一节。
 
 ### 自动更新：走 GitHub Releases
 
@@ -66,7 +68,7 @@ GitHub 只接受它允许的字符做附件名，中文产物名会被换成 `ch
 
 不想在本机构建也可以推标签让 CI 发：`.github/workflows/release.yml` 在 `v<版本>` 标签上跑，用 Actions 自带的 `GITHUB_TOKEN`，只上传安装包（nsis）。仓库 Variables 里加 `EP_DRAFT=true` 就改成出草稿。
 
-不想重新打包也能换地址：在数据目录放一份 `update.json`（内容是 `{"url":"http://内网服务器/渠道分包工具/"}`），应用启动时用它覆盖构建时的地址 —— 见 `app/src/main/updater.ts`。安装版与便携版都认这个文件。
+不想重新打包也能换地址：在数据目录放一份 `update.json`（内容是 `{"url":"http://内网服务器/渠道分包工具/"}`），应用启动时用它覆盖构建时的地址 —— 见 `app/src/main/updater.ts`。
 
 已知限制：装好的应用把地址固化在 `app-update.yml` 里，**换地址之前装出去的旧包看不到新地址的 Release**，只能重装，或者让它读 `update.json`。
 
@@ -122,9 +124,9 @@ GitHub 只接受它允许的字符做附件名，中文产物名会被换成 `ch
 
 为什么：
 
-- 这个工具是发给同事装的，而桌面应用的**每一次发版，他们那边都会弹一条更新提示**。改动小到只是一个间距的时候也发一版，等于用一条打扰去换一个几乎看不见的变化。
-- 更要紧的是**「狼来了」**：更新提示发得太勤，同事会习惯性忽略，等到真正重要的那一版也没人看。
-- 攒一批再发，同事一次收到的东西才有意义，更新说明里也才说得清「这版改了几件事」。
+- 桌面应用的**每一次发版，装了这个工具的人都会收到一条更新提示**。改动小到只是一个间距的时候也发一版，等于用一条打扰去换一个几乎看不见的变化。
+- 更要紧的是**「狼来了」**：更新提示发得太勤，用户会习惯性忽略，等到真正重要的那一版也没人看。
+- 攒一批再发，用户一次收到的东西才有意义，更新说明里也才说得清「这版改了几件事」。
 
 **但代码要随时保持可发布。** 攒的是「发布的时机」，不是「发布的质量」—— 改完仍然要编译通过、自己验过，
 别把一堆没验证的改动堆到发版那天。
@@ -184,9 +186,9 @@ GitHub 只接受它允许的字符做附件名，中文产物名会被换成 `ch
 
 ### 构建产物目录里不能放 data/
 
-`app/release/` 是构建产物目录，而 `app/release/data/` 是便携版的数据目录 —— 只要从 `app/release/` 里双击过那个 exe，它就会在那儿当场生成一份。里面有 jks 副本、明文口令、分组与渠道列表；`release/` 重建或清理时会被整个删掉，打包发人时也会被一起带走。
+`app/release/` 是构建产物目录，而数据目录默认落在 exe 旁边 —— nsis 打包用的 `release/win-unpacked/` 也在那儿。只要有人从那些目录里双击过 exe，它就会当场生成一份 `data/`，里面有 jks 副本、明文口令、分组与渠道列表；`release/` 重建或清理时会被整个删掉，而 nsis 打的正是 `win-unpacked/`，那份 `data/` 会跟着进安装包被发出去。
 
-- 正常用法：把 exe 与 `data/` 一起放在仓库外的目录（例如 `D:\工具\渠道分包工具\`），从那里双击使用。
-- 已加一道保险：`app/electron-builder.yml` 的 `beforePack` 钩子（实现在 `app/scripts/before-pack.cjs`）检测到 `app/release/data/` 就直接中止构建。
-- 真被拦下来时，按提示把 `data/` 挪到 exe 旁边，再重新构建。
+- 正常用法：从安装版启动（数据在 `%LOCALAPPDATA%\渠道分包工具\data`），`release/` 只留构建产物。
+- 已加一道保险：`app/electron-builder.yml` 的 `beforePack` 钩子（实现在 `app/scripts/before-pack.cjs`）检测到 `app/release/data/` 或 `app/release/win-unpacked/data/` 就直接中止构建。
+- 真被拦下来时，按提示把 `data/` 挪走再重新构建。
 

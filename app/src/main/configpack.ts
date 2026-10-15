@@ -269,7 +269,7 @@ export interface PackExportInput {
   /**
    * 是否把签名凭据（jks 副本与 jks.json 里的条目）打进去。
    *
-   * 置 false 时包内只有 template.json 与一份空的 jks.json，给同事当初始包用：
+   * 置 false 时包内只有 template.json 与一份空的 jks.json，当初始配置包用：
    * 对方导入后拿到渠道模板，自己再新增 jks —— 私钥与明文密码不出本机。
    */
   includeCredentials: boolean

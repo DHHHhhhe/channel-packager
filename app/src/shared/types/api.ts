@@ -183,7 +183,7 @@ export interface RendererApi {
   /**
    * 导出配置包 zip。
    * `includeCredentials` 为 false 时只带 template.json 与一份空的 jks.json，
-   * 给同事当初始包用；为 true 时包内含明文密码与私钥，导出前界面必须提示。
+   * 当初始配置包用；为 true 时包内含明文密码与私钥，导出前界面必须提示。
    */
   exportConfigPack(includeCredentials: boolean): Promise<PackExportResult>
 

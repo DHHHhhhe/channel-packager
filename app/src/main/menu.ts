@@ -95,7 +95,7 @@ export function installApplicationMenu(): void {
       label: '帮助',
       submenu: [
         /*
-         * 只有安装版才摆这一项：便携版与解压即用版没有安装目录，
+         * 只有安装版才摆这一项：不是安装包装出来的版本没有安装目录，
          * 自动更新没有可落脚的地方（见 updater.ts）。
          */
         ...(isInstalledLayout()

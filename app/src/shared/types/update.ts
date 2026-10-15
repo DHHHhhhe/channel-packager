@@ -43,7 +43,7 @@ export interface UpdateState {
    *
    * 开发态一律为 true：那时 app.isPackaged 为假，检查会走「没有安装目录」那条分支
    * 并给出明确报错 —— 本地得先看得见这个入口才能自测。
-   * 打包后只有安装版为 true；便携版与解压即用版为 false（菜单里那一项也是按同一条件隐藏的）。
+   * 打包后只有安装版为 true；不是安装版的为 false（菜单里那一项也是按同一条件隐藏的）。
    */
   canUpdate: boolean
 }

@@ -43,7 +43,7 @@ No Java to install, no Android SDK to configure — the JRE, apksigner, zipalign
 | Channels organised in groups | One channel list per group, decoupled from keystores, several can coexist; add channels from a template |
 | Passwords stored per keystore | Each keystore's password is kept separately, editable in the UI, with an eye button to check the plaintext |
 | No local toolchain | The JRE, apksigner, zipalign and walle are all bundled — no Java to install, no Android SDK to configure |
-| Portable configuration | Export a config pack (optionally without credentials) to move machines or sync a team in a single step |
+| Config packs | Export a config pack (optionally without credentials) to move machines or sync a team in a single step |
 | Failures you can act on | The result card names the failing step, its exit code and the tail of its output, plus a full log |
 | Auto-update | Installed builds check for updates automatically; the release notes are shown first and you decide whether to download |
 
@@ -70,8 +70,6 @@ In short: **your app's channel-reading code and this tool must use the same sche
 > The first launch trips Windows SmartScreen (the exe has no code-signing certificate, so the publisher shows as "Unknown publisher"). Click "More info" → "Run anyway" — the file is not corrupt.
 
 Installed builds **check for updates automatically**: when a new version is found the release notes are shown first and you decide whether to download; once downloaded you can restart immediately or let it install when you next close the window.
-
-> The portable build (渠道分包工具-&lt;version&gt;.exe) and the unzip-and-run build have no auto-update — you replace those by hand. Neither is in the repository; build them yourself (see [Building from source](#building-from-source)).
 
 ## The interface
 
@@ -133,12 +131,9 @@ If all you have is a package someone else already signed and no private key, set
 
 ## Where the data lives
 
-**Installed builds** keep their data in `%LOCALAPPDATA%\渠道分包工具\data`, separate from the install directory — uninstalling does not delete it.
-
-**Portable / unzip-and-run builds** are a single exe that self-extracts to `%TEMP%` on each launch, but the data directory is pinned next to the exe:
+Data lives in `%LOCALAPPDATA%\渠道分包工具\data`, separate from the install directory — uninstalling does not delete it. It looks like this:
 
 ```
-渠道分包工具-<version>.exe
 data/
 ├── jks.json                # alias and passwords for each keystore
 ├── groups.json             # group index: group name, Chinese app name
@@ -149,7 +144,7 @@ data/
 └── .runtime/               # Chromium cache, safe to delete
 ```
 
-Copying the whole folder migrates everything; copying only the exe gives you a clean tool (no certificates, no channels).
+Copying the whole `data/` folder migrates everything; the config pack in the next section can also leave certificates and channels out.
 
 `groups.json` is the index of the channel files — it and `channels/` must stay paired, or those channel files have no owner (config-pack import pairs them the same way). When upgrading from an older version, the channel lists that used to hang off each keystore are adopted as a group of the same name, and the old "English app name" is merged into the Chinese one; the process is idempotent and does not create duplicates on repeated launches.
 
@@ -165,9 +160,9 @@ Adding a keystore copies it into `data/keystores/`, and signing only ever uses t
 
 | What you send | Contents | Use case |
 | --- | --- | --- |
-| The installer | A clean tool, no certificates or channels | Give a colleague the tool |
+| The installer | A clean tool, no certificates or channels | Hand someone the tool |
 | A config pack | Keystore copies + credentials + groups and channel lists + templates, zipped | Migrate to another machine, keep a team's setup in sync |
-| A config pack with "不含签名凭据" ticked | Templates + an empty keystore list, zipped | Give a colleague the channel templates and let them add their own keystores |
+| A config pack with "不含签名凭据" ticked | Templates + an empty keystore list, zipped | Hand someone the channel templates and let them add their own keystores |
 
 Before importing, the manifest and the SHA256 of every file are verified and conflicts are listed; conflict handling can **skip**, **keep both** (the new entry is renamed &lt;id&gt;_2) or **overwrite**.
 
@@ -199,10 +194,10 @@ pnpm dev               # development mode
 pnpm build             # type-check + bundle the renderer
 ```
 
-To produce the installer / portable build (output lands in `app/release/`):
+To produce the installer (output lands in `app/release/`):
 
 ```powershell
-.\node_modules\.bin\electron-builder.CMD --win nsis portable zip
+.\node_modules\.bin\electron-builder.CMD --win nsis
 ```
 
 > `pnpm dist` does not work on some setups — see [Known issues](#local-pnpm-dist-fails-with-unknown-argument-electron-builderclijs).
@@ -247,7 +242,7 @@ The script reads the account and repository from `origin` (the two values in `el
 | GitHub Actions | Releasing from another machine, or for collaborators | The repository is already on GitHub |
 | `app/scripts/release.ps1` | You have a build environment and want it now | Node / pnpm installed, `GH_TOKEN` configured |
 
-Both routes upload only the **installer** (the only artifact with auto-update); the portable and unzip-and-run builds stay in your local `app/release/` — upload those by hand if you need them.
+Both routes upload only the **installer** (the only artifact).
 
 ### About the update URL
 
@@ -278,7 +273,7 @@ Work around it with:
 
 ```powershell
 cd app
-.\node_modules\.bin\electron-builder.CMD --win portable
+.\node_modules\.bin\electron-builder.CMD --win nsis
 ```
 
 Under a normal Node installation `pnpm dist` works fine.

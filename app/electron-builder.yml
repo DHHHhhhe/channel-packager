@@ -1,20 +1,17 @@
-# 三种产物，用途不同（数据目录规则见 src/main/paths.ts）：
+# 只出一种产物：Windows 安装包（nsis）。
 #
-#   nsis     安装包。装一次之后从快捷方式开（约 0.35 秒），支持自动更新 —— 日常和分发的默认选择。
-#   portable 单文件 exe。每次启动都要自解压到 %TEMP%（约 10 秒），发给不想装东西的人。
-#   zip      解压即用。解压一次之后跑文件夹里的 exe（约 0.4 秒），留作绿色版。
-#
-# portable 的 data/ 必须落在 PORTABLE_EXECUTABLE_DIR（exe 真实所在目录），
-# 不能用 app.getPath('exe') —— 那指向临时解压目录，用户加完配置一关就丢。
+# 装一次之后从快捷方式开，支持自动更新 —— 这是唯一的分发方式。
+# 早先还出过便携版（单文件 exe）与解压即用版（zip），后来去掉了：三种产物的
+# 数据目录规则、更新行为、说明文档都要各写一套，而它们解决的问题
+# （不想装东西、想放 U 盘）在这个工具上并没有真实需求。
+# 数据目录规则见 src/main/paths.ts。
 appId: com.example.channelpackager
 productName: 渠道分包工具
 
-# 这是 zip 目标的命名（portable 在下面单独指定 artifactName，不受这里影响）。
-# 名字里写明用途：解压一次之后直接跑文件夹里的 exe，不用每次等自解压。
-artifactName: ${productName}-${version}-解压即用.zip
+# 产物命名。nsis 段另有自己的命名（带「安装包」字样），这里只是兜底。
+artifactName: ${productName}-${version}.${ext}
 
-# 只打包中文和英文语言包。Electron 自带 55 个 .pak 约 48 MB，
-# 而便携版每次启动都要把它们完整解压一遍，留着纯属拖慢启动。
+# 只打包中文和英文语言包。Electron 自带 55 个 .pak 约 48 MB，用不到的语言留着纯属占体积。
 electronLanguages:
   - zh-CN
   - en-US
@@ -41,8 +38,6 @@ extraResources:
 win:
   target:
     - nsis
-    - portable
-    - zip
   # build/icon.ico 由 scripts/make-icon.ps1 生成，改图形重跑该脚本即可
   icon: build/icon.ico
 
@@ -103,6 +98,3 @@ nsis:
   # 只写标记文件（见 build/installer.nsh），应用据此把数据放到安装目录之外。
   # 卸载时删的只有安装目录，渠道配置和 jks 留在 %LOCALAPPDATA%\渠道分包工具\data。
   include: build/installer.nsh
-
-portable:
-  artifactName: 渠道分包工具-${version}.exe

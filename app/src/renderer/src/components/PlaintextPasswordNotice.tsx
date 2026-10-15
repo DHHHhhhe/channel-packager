@@ -2,7 +2,8 @@ import { ShieldAlert } from 'lucide-react'
 
 /**
  * 口令以明文存在 `data/jks.json` 里，和 jks 副本同一目录。
- * 这是刻意的取舍（便携、可整目录搬迁），但必须让使用者一直看得见，不能藏在帮助文档里。
+ * 这是刻意的取舍（签名要能一键套用，就不能每次让人重输口令），
+ * 但必须让使用者一直看得见，不能藏在帮助文档里。
  */
 export function PlaintextPasswordNotice() {
   return (

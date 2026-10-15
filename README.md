@@ -69,7 +69,7 @@
 
 装好的版本会**自动检查更新**：发现新版本时先展示更新内容，由使用者决定是否下载；下载完成后可以立即重启，也可以下次关窗口时自动安装。
 
-> 便携版（`渠道分包工具-<版本>.exe`）与解压即用版不带自动更新，要更新得手动换包。这两种形态仓库里没有，需要自己构建（见[从源码构建](#从源码构建)）。
+
 
 ## 界面
 
@@ -131,12 +131,9 @@
 
 ## 数据放在哪
 
-**安装版**的数据目录在 `%LOCALAPPDATA%\渠道分包工具\data`（与安装目录分开，卸载不会连数据一起删）。
-
-**便携版 / 解压即用版**是单文件 exe，每次启动自解压到 `%TEMP%`，但数据目录固定在 exe 旁边：
+数据目录固定在 `%LOCALAPPDATA%\渠道分包工具\data`，与安装目录分开 —— 卸载不会连数据一起删。里面长这样：
 
 ```
-渠道分包工具-<版本>.exe
 data/
 ├── jks.json                # 每个签名文件的别名、口令
 ├── groups.json             # 分组索引：分组名、中文应用名
@@ -147,7 +144,7 @@ data/
 └── .runtime/               # Chromium 缓存，可删
 ```
 
-整个文件夹拷走就是完整迁移；只拷 exe 就是一份干净的新工具（无证书、无渠道）。
+把 `data/` 整个拷走就是完整迁移；也可以走下一节的配置包 —— 它可以选择不带证书与渠道。
 
 `groups.json` 是渠道文件的索引 —— 它和 `channels/` 必须成对，删了索引那些渠道文件就没人认领了（导入配置包时也按它配对）。旧版本升级上来时，会把原来挂在每个签名文件上的渠道列表自动认成一个同名分组，并把旧的「英文应用名」并进「中文应用名」；这个过程幂等，重复启动不会重复建。
 
@@ -163,9 +160,9 @@ data/
 
 | 方式 | 内容 | 用途 |
 | --- | --- | --- |
-| 发安装包 | 干净工具，无任何证书与渠道 | 给同事一份工具 |
+| 发安装包 | 干净工具，无任何证书与渠道 | 给别人一份工具 |
 | 发配置包 | jks 副本 + 凭据 + 分组与渠道列表 + 模板，打成一个 zip | 换机器整体迁移、统一团队配置 |
-| 发配置包（勾上「不含签名凭据」） | 只有模板 + 一份空的签名文件列表，打成一个 zip | 给同事一份渠道模板，签名文件让他自己补 |
+| 发配置包（勾上「不含签名凭据」） | 只有模板 + 一份空的签名文件列表，打成一个 zip | 给别人一份渠道模板，签名文件让他自己补 |
 
 导入前会校验 manifest 与每个文件的 SHA256，并列出冲突；冲突处理可选**跳过**、**保留两份**（新条目改名为 &lt;id&gt;_2）或**覆盖**。
 
@@ -197,10 +194,10 @@ pnpm dev               # 开发模式
 pnpm build             # 类型检查 + 打包渲染层
 ```
 
-出安装包 / 便携版（产物在 `app/release/`）：
+出安装包（产物在 `app/release/`）：
 
 ```powershell
-.\node_modules\.bin\electron-builder.CMD --win nsis portable zip
+.\node_modules\.bin\electron-builder.CMD --win nsis
 ```
 
 > 本机不能用 `pnpm dist`，原因见[已知注意事项](#本机-pnpm-dist-报-unknown-argument-electron-builderclijs)。
@@ -238,14 +235,14 @@ $env:GH_TOKEN = 'ghp_xxx'                                   # 公开仓库勾 pu
 pwsh -File app/scripts/release.ps1
 ```
 
-脚本从 `origin` 读出账号与仓库名（`electron-builder.yml` 里那两个是占位值，构建机器上必须覆盖，否则会直接构建失败），先 `pnpm build`，再用 `electron-builder --win nsis --publish always` 构建并上传。上传完 Release 是**草稿**，要去网页点 Publish，同事那边才看得到。
+脚本从 `origin` 读出账号与仓库名（`electron-builder.yml` 里那两个是占位值，构建机器上必须覆盖，否则会直接构建失败），先 `pnpm build`，再用 `electron-builder --win nsis --publish always` 构建并上传。上传完 Release 是**草稿**，要去网页点 Publish 才对外可见。
 
 | 发版方式 | 适合 | 前置 |
 | --- | --- | --- |
 | GitHub Actions | 换机器发、给协作者发 | 仓库已经推到 GitHub |
 | `app/scripts/release.ps1` | 本机就有构建环境，想立刻发 | 装好 Node / pnpm，配好 `GH_TOKEN` |
 
-两种方式都只上传**安装包**（它是唯一带自动更新的产物）；便携版与解压即用版留在本机 `app/release/` 里，要发就手动传。
+两种方式都只上传**安装包**（它是唯一的产物）。
 
 ### 关于更新地址
 
@@ -254,7 +251,7 @@ pwsh -File app/scripts/release.ps1
 
 ## 已知注意事项
 
-### 发给别人时，第一次打开会被 Windows 拦一下
+### 第一次运行时，Windows 会拦一下
 
 安装包没有代码签名证书，Windows SmartScreen 会弹「Windows 已保护你的电脑」，发布者显示为「未知发布者」。这不是文件损坏，点「更多信息」→「仍要运行」即可。
 
@@ -276,7 +273,7 @@ pnpm 会把脚本体里的 `node` 替换成它自己运行所在的 Node。如�
 
 ```powershell
 cd app
-.\node_modules\.bin\electron-builder.CMD --win portable
+.\node_modules\.bin\electron-builder.CMD --win nsis
 ```
 
 在普通 Node 环境下 `pnpm dist` 正常。

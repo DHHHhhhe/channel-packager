@@ -18,8 +18,9 @@ let usedFallback = false
 /**
  * 是不是安装包装出来的（安装目录里有标记文件）。
  *
- * 不能只看 exe 路径像不像 Program Files：解压即用的文件夹被人挪到那儿也不该算，
- * 而一键安装的默认位置是 %LOCALAPPDATA%\Programs，两者都会落进「像」的范围里。
+ * 不能只看 exe 路径像不像 Program Files：默认安装位置本来就是
+ * %LOCALAPPDATA%\Programs，而手动解压出来的 win-unpacked 被人挪到那儿也不该算。
+ * 只有安装脚本写下的那个标记文件才算数。
  */
 export function isInstalledLayout(): boolean {
   if (!app.isPackaged) {
@@ -47,17 +48,15 @@ function installedDataDir(): string {
 }
 
 /**
- * 便携版 exe 每次启动自解压到 %TEMP%，`path.dirname(app.getPath('exe'))` 指向的是临时目录，
- * 数据写进去下次启动就没了 —— 必须用 electron-builder 注入的 PORTABLE_EXECUTABLE_DIR。
+ * 数据目录：安装版放系统用户目录，其余放在程序自己旁边。
  *
+ * 安装版必须另放一处 —— 见 installedDataDir 的说明。
+ *
+ * 兜底那条覆盖两种情形：手动解压 win-unpacked 直接跑、以及开发态。
  * 开发态不能用 `app.getPath('exe')`：那时它指向 `node_modules/electron/dist/electron.exe`，
- * 数据会落进 node_modules 并被下一次重装清掉。开发态改用工程根目录。
+ * 数据会落进 node_modules 并被下一次重装清掉，所以改用工程根目录。
  */
 function preferredDataDir(): string {
-  const portableDir = process.env.PORTABLE_EXECUTABLE_DIR
-  if (portableDir) {
-    return path.join(portableDir, DATA_DIR_NAME)
-  }
   if (isInstalledLayout()) {
     return installedDataDir()
   }
@@ -88,7 +87,7 @@ function ensureLayout(dir: string): void {
 /**
  * 解析并落定数据目录。
  * 必须在 app ready 之前调用：`app.setPath('userData')` 要在此之前生效，
- * 否则 Chromium 缓存仍会另落一份到 %APPDATA%，便携版就不便携了。
+ * 否则 Chromium 缓存会另落一份到 %APPDATA%，数据就被拆成两处了。
  */
 export function initPaths(): void {
   const preferred = preferredDataDir()
