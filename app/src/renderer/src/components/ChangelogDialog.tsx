@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Info, Sparkles, TrendingUp, Wrench } from 'lucide-react'
+import { GithubMark } from '@/components/icons/GithubMark'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -65,7 +66,31 @@ export function ChangelogDialog({
   // CHANGELOG 是构建期就定下来的常量，解析一次就够，不必跟着开合重算
   const entries = useMemo(() => parseChangelog(changelogRaw), [])
   const [page, setPage] = useState(0)
+  // 开源仓库地址；拿不到就是空串，那种情况下不显示跳转按钮
+  const [repoUrl, setRepoUrl] = useState('')
   const listRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void window.api.getRepoUrl().then((url) => {
+      if (!cancelled) {
+        setRepoUrl(url)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  /**
+   * 跳到开源仓库。
+   *
+   * 用 window.open 而不是改 location：主进程的 setWindowOpenHandler 会把它拦下来、
+   * 交给系统浏览器，应用自己不会离开当前页面（见 main/main.ts）。
+   */
+  const openRepo = (): void => {
+    window.open(repoUrl, '_blank', 'noopener')
+  }
 
   const pageCount = Math.max(1, Math.ceil(entries.length / PAGE_SIZE))
   // 夹一下：CHANGELOG 变短时（比如换了包）不至于停在一个不存在的页上
@@ -164,35 +189,59 @@ export function ChangelogDialog({
           })}
         </div>
 
-        {/* 只有一页时不出现翻页条 —— 摆着两个永远点不动的按钮没有意义 */}
-        {pageCount > 1 ? (
+        {/*
+         * 只有一页时不出现翻页条 —— 摆着两个永远点不动的按钮没有意义。
+         * 但仓库入口得有地方放，所以只要拿到了地址，这一条就仍然出现。
+         */}
+        {pageCount > 1 || repoUrl !== '' ? (
           <DialogFooter className="items-center sm:justify-between">
-            <p className="text-xs text-muted-foreground tabular-nums">
-              第 {safePage * PAGE_SIZE + 1}–{Math.min(entries.length, (safePage + 1) * PAGE_SIZE)} 条，
-              共 {entries.length} 个版本
-            </p>
+            {pageCount > 1 ? (
+              <p className="text-xs text-muted-foreground tabular-nums">
+                第 {safePage * PAGE_SIZE + 1}–{Math.min(entries.length, (safePage + 1) * PAGE_SIZE)} 条，
+                共 {entries.length} 个版本
+              </p>
+            ) : (
+              // 占位：justify-between 要有两个子元素才能把右侧推到边上
+              <span />
+            )}
             <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={safePage === 0}
-                onClick={() => step(-1)}
-              >
-                上一页
-              </Button>
-              <span className="text-xs text-muted-foreground tabular-nums">
-                {safePage + 1} / {pageCount}
-              </span>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={safePage >= pageCount - 1}
-                onClick={() => step(1)}
-              >
-                下一页
-              </Button>
+              {pageCount > 1 ? (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={safePage === 0}
+                    onClick={() => step(-1)}
+                  >
+                    上一页
+                  </Button>
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {safePage + 1} / {pageCount}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={safePage >= pageCount - 1}
+                    onClick={() => step(1)}
+                  >
+                    下一页
+                  </Button>
+                </>
+              ) : null}
+              {repoUrl !== '' ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="在浏览器中打开开源仓库"
+                  title="在浏览器中打开开源仓库"
+                  onClick={openRepo}
+                >
+                  <GithubMark />
+                </Button>
+              ) : null}
             </div>
           </DialogFooter>
         ) : null}
