@@ -125,7 +125,22 @@ export function ChangelogDialog({
     <Dialog open={open} onOpenChange={(next) => (next ? undefined : onOpenChange(false))}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>更新记录</DialogTitle>
+          {/* 图标紧跟在标题后面，所以不能直接用 DialogHeader 的 flex-col */}
+          <div className="flex items-center gap-1.5">
+            <DialogTitle>更新记录</DialogTitle>
+            {repoUrl !== '' ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label="在浏览器中打开开源仓库"
+                title="在浏览器中打开开源仓库"
+                onClick={openRepo}
+              >
+                <GithubMark className="size-3.5" />
+              </Button>
+            ) : null}
+          </div>
           <DialogDescription>
             共 {entries.length} 个版本，最新的在最前。
           </DialogDescription>
@@ -189,59 +204,35 @@ export function ChangelogDialog({
           })}
         </div>
 
-        {/*
-         * 只有一页时不出现翻页条 —— 摆着两个永远点不动的按钮没有意义。
-         * 但仓库入口得有地方放，所以只要拿到了地址，这一条就仍然出现。
-         */}
-        {pageCount > 1 || repoUrl !== '' ? (
+        {/* 只有一页时不出现翻页条 —— 摆着两个永远点不动的按钮没有意义 */}
+        {pageCount > 1 ? (
           <DialogFooter className="items-center sm:justify-between">
-            {pageCount > 1 ? (
-              <p className="text-xs text-muted-foreground tabular-nums">
-                第 {safePage * PAGE_SIZE + 1}–{Math.min(entries.length, (safePage + 1) * PAGE_SIZE)} 条，
-                共 {entries.length} 个版本
-              </p>
-            ) : (
-              // 占位：justify-between 要有两个子元素才能把右侧推到边上
-              <span />
-            )}
+            <p className="text-xs text-muted-foreground tabular-nums">
+              第 {safePage * PAGE_SIZE + 1}–{Math.min(entries.length, (safePage + 1) * PAGE_SIZE)} 条，
+              共 {entries.length} 个版本
+            </p>
             <div className="flex items-center gap-2">
-              {pageCount > 1 ? (
-                <>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={safePage === 0}
-                    onClick={() => step(-1)}
-                  >
-                    上一页
-                  </Button>
-                  <span className="text-xs text-muted-foreground tabular-nums">
-                    {safePage + 1} / {pageCount}
-                  </span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={safePage >= pageCount - 1}
-                    onClick={() => step(1)}
-                  >
-                    下一页
-                  </Button>
-                </>
-              ) : null}
-              {repoUrl !== '' ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="在浏览器中打开开源仓库"
-                  title="在浏览器中打开开源仓库"
-                  onClick={openRepo}
-                >
-                  <GithubMark />
-                </Button>
-              ) : null}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={safePage === 0}
+                onClick={() => step(-1)}
+              >
+                上一页
+              </Button>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {safePage + 1} / {pageCount}
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={safePage >= pageCount - 1}
+                onClick={() => step(1)}
+              >
+                下一页
+              </Button>
             </div>
           </DialogFooter>
         ) : null}
