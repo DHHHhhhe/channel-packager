@@ -114,6 +114,8 @@ export default function UpdateBanner(): JSX.Element | null {
   const [dismissed, setDismissed] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [starting, setStarting] = useState(false)
+  // 开源仓库地址；拿不到就是空串，那种情况下不显示跳转按钮
+  const [repoUrl, setRepoUrl] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -121,6 +123,12 @@ export default function UpdateBanner(): JSX.Element | null {
     void window.api.getUpdateState().then((next) => {
       if (!cancelled) {
         setState(next)
+      }
+    })
+
+    void window.api.getRepoUrl().then((url) => {
+      if (!cancelled) {
+        setRepoUrl(url)
       }
     })
 
@@ -203,6 +211,16 @@ export default function UpdateBanner(): JSX.Element | null {
     restart()
   }
 
+  /**
+   * 跳到开源仓库。
+   *
+   * 用 window.open 而不是改 location：主进程的 setWindowOpenHandler 会把它拦下来、
+   * 交给系统浏览器，应用自己不会离开当前页面（见 main/main.ts）。
+   */
+  const openRepo = (): void => {
+    window.open(repoUrl, '_blank', 'noopener')
+  }
+
   return (
     <div
       data-slot="update-banner"
@@ -279,6 +297,11 @@ export default function UpdateBanner(): JSX.Element | null {
           <Button variant="ghost" size="sm" onClick={() => setDismissed(true)}>
             稍后
           </Button>
+          {repoUrl !== '' ? (
+            <Button variant="ghost" size="sm" onClick={openRepo}>
+              开源仓库
+            </Button>
+          ) : null}
         </div>
       ) : null}
 
@@ -290,6 +313,11 @@ export default function UpdateBanner(): JSX.Element | null {
           <Button variant="ghost" size="sm" onClick={() => setDismissed(true)}>
             稍后
           </Button>
+          {repoUrl !== '' ? (
+            <Button variant="ghost" size="sm" onClick={openRepo}>
+              开源仓库
+            </Button>
+          ) : null}
         </div>
       ) : null}
 

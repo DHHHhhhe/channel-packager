@@ -251,6 +251,10 @@ const api: RendererApi = {
   consumeVersionNotice(): Promise<{ from: string; to: string } | null> {
     return ipcRenderer.invoke(IPC_CHANNELS.updateConsumeVersionNotice)
   },
+
+  getRepoUrl(): Promise<string> {
+    return ipcRenderer.invoke(IPC_CHANNELS.appRepoUrl)
+  },
 }
 
 contextBridge.exposeInMainWorld('api', api)

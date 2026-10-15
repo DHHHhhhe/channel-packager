@@ -238,6 +238,14 @@ export interface RendererApi {
   onUpdateState(listener: (state: UpdateState) => void): () => void
 
   /**
+   * 开源仓库主页地址，给更新提示条上的跳转按钮用。
+   *
+   * 地址来自构建时写进安装包的更新配置，不是代码里写死的常量 —— fork 出去之后
+   * 这里跟着变。拿不到时是空串，界面据此不显示那个按钮。
+   */
+  getRepoUrl(): Promise<string>
+
+  /**
    * 取走「刚更新过」的一次性提示；没有待提示的返回 null。
    *
    * `from` 是更新前的版本，**可能为空串** —— 那表示知道更新过、但不知道从哪一版来

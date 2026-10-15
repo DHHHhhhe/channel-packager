@@ -76,6 +76,8 @@ export const IPC_CHANNELS = {
   updateState: 'update:state',
   /** 取走「刚更新过」的一次性提示；没有待提示的返回 null。取过一次就不再返回 */
   updateConsumeVersionNotice: 'update:consumeVersionNotice',
+  /** 读开源仓库主页地址，给更新提示条上的跳转按钮用。拿不到时返回空串 */
+  appRepoUrl: 'app:repoUrl',
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]

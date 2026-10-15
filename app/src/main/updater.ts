@@ -19,6 +19,14 @@ type AutoUpdater = import('electron-updater').AppUpdater
 const FEED_OVERRIDE_FILE = 'update.json'
 
 /**
+ * electron-builder 写进安装包的更新配置，里面有仓库坐标（owner / repo）。
+ *
+ * 界面上的「开源仓库」按钮从这里取地址，而不是在代码里写死 ——
+ * CI 与 release.ps1 会用当前仓库的坐标覆盖构建配置，fork 出去之后写死的地址就指到别处了。
+ */
+const UPDATE_CONFIG_FILE = 'app-update.yml'
+
+/**
  * 启动后隔多久查一次更新。
  *
  * 查更新要联网，刚启动时正忙着建窗口、读配置、自检运行时，别在这时候抢带宽与主线程。
@@ -407,8 +415,38 @@ export function setAutoCheckEnabled(enabled: boolean): boolean {
   return enabled
 }
 
+/**
+ * 开源仓库主页地址，给更新提示条上的跳转按钮用；拿不到时返回空串。
+ *
+ * 打包后读 resources/app-update.yml —— 那是 electron-builder 按构建配置写的，
+ * CI 与 release.ps1 覆盖过的坐标也在里面，所以 fork 出去也对。
+ * 开发态没有这个文件，退回仓库里的 electron-builder.yml（字段名相同）。
+ * 两边都读不到就返回空串，界面据此不显示按钮 —— 不猜一个地址出来。
+ */
+export function getRepoUrl(): string {
+  const read = (file: string): string => {
+    try {
+      return fs.readFileSync(file, 'utf8')
+    } catch {
+      return ''
+    }
+  }
+
+  const packaged = read(path.join(process.resourcesPath, UPDATE_CONFIG_FILE))
+  const raw = packaged !== '' ? packaged : read(path.join(app.getAppPath(), 'electron-builder.yml'))
+
+  // 允许前导空格：app-update.yml 里是顶格的，electron-builder.yml 里缩在 publish 下面
+  const owner = /^[ \t]*owner:[ \t]*(\S+)[ \t]*$/m.exec(raw)?.[1]
+  const repo = /^[ \t]*repo:[ \t]*(\S+)[ \t]*$/m.exec(raw)?.[1]
+  if (owner === undefined || repo === undefined) {
+    return ''
+  }
+  return `https://github.com/${owner}/${repo}`
+}
+
 export function registerUpdateIpc(): void {
   ipcMain.handle(IPC_CHANNELS.updateCheck, () => checkForUpdates(true))
+  ipcMain.handle(IPC_CHANNELS.appRepoUrl, () => getRepoUrl())
   ipcMain.handle(IPC_CHANNELS.updateDownload, () => downloadUpdate())
   ipcMain.handle(IPC_CHANNELS.updateGetState, () => state)
   ipcMain.handle(IPC_CHANNELS.updateInstall, () => {
