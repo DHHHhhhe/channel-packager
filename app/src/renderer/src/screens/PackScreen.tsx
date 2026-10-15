@@ -53,6 +53,7 @@ import {
 } from '@/components/ui/dialog'
 import type { ChannelEntry } from '@shared/types/store'
 import type { SignMode, SourceCheckResult, TaskInput, WalleShowResult } from '@shared/types/task'
+import { matchGroupByApk } from '@/lib/group-match'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { NO_JKS_KEY, readLastGroup, writeLastGroup } from '@/lib/last-group'
 import type { FixAction } from '@/lib/task-report'
@@ -445,6 +446,16 @@ export function PackScreen() {
     setApkPath(pickedPath)
     setOutputDir(defaultOutputDir(pickedPath))
     setStatus(null)
+
+    /*
+     * 文件名撞上某个分组名就切过去 —— 出包时多半就是给这个应用的。
+     * 没撞上就什么都不做：分组保持原样，也就是这个签名身份上次用的那个。
+     * 走 handlePickGroup 而不是直接 setGroupId，是为了顺带把它记成「上次用的」。
+     */
+    const matched = matchGroupByApk(pickedPath, groups)
+    if (matched) {
+      handlePickGroup(matched.id)
+    }
   }
 
   const toggleChannel = (channel: string, checked: boolean) => {
