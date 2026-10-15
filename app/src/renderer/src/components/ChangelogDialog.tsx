@@ -126,13 +126,22 @@ export function ChangelogDialog({
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           {/* 图标紧跟在标题后面，所以不能直接用 DialogHeader 的 flex-col */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             <DialogTitle>更新记录</DialogTitle>
             {repoUrl !== '' ? (
+              /*
+               * 用次要色，不要跟着标题走。
+               *
+               * 图标默认继承按钮的文字色（= --foreground，纯黑），和粗体标题是同一个重量，
+               * 贴在标题后面会被当成标题的一部分而不是一个按钮。降到 --muted-foreground
+               * 就落回「辅助动作」的位置；悬停时 ghost 变体的 hover:text-foreground 会把它
+               * 提回深色，可发现性不丢。
+               */
               <Button
                 type="button"
                 variant="ghost"
                 size="icon-xs"
+                className="text-muted-foreground"
                 aria-label="在浏览器中打开开源仓库"
                 title="在浏览器中打开开源仓库"
                 onClick={openRepo}
